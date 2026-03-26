@@ -1,0 +1,1006 @@
+openapi: 3.0.3
+info:
+  title: Supply Console API Contract Draft
+  version: 1.0.0-draft
+  description: |
+    供应侧三大页面（账号挂载、套餐发布、收益结算）接口契约草案。
+    安全边界要求：
+    1) 仅接受平台鉴权头（Authorization），不接受 query key 鉴权。
+    2) 任何响应不得返回可复用上游凭证明文片段。
+servers:
+  - url: https://api.example.com
+    description: Production
+security:
+  - BearerAuth: []
+tags:
+  - name: SupplyAccounts
+  - name: SupplyPackages
+  - name: SupplySettlements
+  - name: SupplyEarnings
+  - name: SupplierBilling
+paths:
+  /api/v1/supply/accounts/verify:
+    post:
+      tags: [SupplyAccounts]
+      summary: 验证供应账号凭证可用性
+      operationId: verifySupplyAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifySupplyAccountRequest'
+      responses:
+        '200':
+          description: 验证成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifySupplyAccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/BusinessError'
+  /api/v1/supply/accounts:
+    post:
+      tags: [SupplyAccounts]
+      summary: 创建供应账号
+      operationId: createSupplyAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupplyAccountRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateSupplyAccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/BusinessError'
+  /api/v1/supply/accounts/{accountId}/activate:
+    post:
+      tags: [SupplyAccounts]
+      summary: 激活供应账号
+      operationId: activateSupplyAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountIdParam'
+      responses:
+        '200':
+          description: 激活成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyAccountStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/supply/accounts/{accountId}/suspend:
+    post:
+      tags: [SupplyAccounts]
+      summary: 暂停供应账号
+      operationId: suspendSupplyAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountIdParam'
+      responses:
+        '200':
+          description: 暂停成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyAccountStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/supply/accounts/{accountId}:
+    delete:
+      tags: [SupplyAccounts]
+      summary: 删除供应账号
+      operationId: deleteSupplyAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountIdParam'
+      responses:
+        '204':
+          description: 删除成功
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/supply/accounts/{accountId}/audit-logs:
+    get:
+      tags: [SupplyAccounts]
+      summary: 查询账号审计日志
+      operationId: listSupplyAccountAuditLogs
+      parameters:
+        - $ref: '#/components/parameters/AccountIdParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/supply/packages/draft:
+    post:
+      tags: [SupplyPackages]
+      summary: 保存套餐草稿
+      operationId: saveSupplyPackageDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveSupplyPackageDraftRequest'
+      responses:
+        '201':
+          description: 保存成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyPackageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/BusinessError'
+  /api/v1/supply/packages/{packageId}/publish:
+    post:
+      tags: [SupplyPackages]
+      summary: 发布套餐上架
+      operationId: publishSupplyPackage
+      parameters:
+        - $ref: '#/components/parameters/PackageIdParam'
+      responses:
+        '200':
+          description: 发布成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyPackageStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/supply/packages/{packageId}/pause:
+    post:
+      tags: [SupplyPackages]
+      summary: 暂停售卖套餐
+      operationId: pauseSupplyPackage
+      parameters:
+        - $ref: '#/components/parameters/PackageIdParam'
+      responses:
+        '200':
+          description: 暂停成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyPackageStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/supply/packages/{packageId}/unlist:
+    post:
+      tags: [SupplyPackages]
+      summary: 下架套餐
+      operationId: unlistSupplyPackage
+      parameters:
+        - $ref: '#/components/parameters/PackageIdParam'
+      responses:
+        '200':
+          description: 下架成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyPackageStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/supply/packages/batch-price:
+    post:
+      tags: [SupplyPackages]
+      summary: 批量调价
+      operationId: batchUpdateSupplyPackagePrice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchUpdateSupplyPackagePriceRequest'
+      responses:
+        '200':
+          description: 调价完成
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchUpdateSupplyPackagePriceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/supply/packages/{packageId}/clone:
+    post:
+      tags: [SupplyPackages]
+      summary: 复制套餐
+      operationId: cloneSupplyPackage
+      parameters:
+        - $ref: '#/components/parameters/PackageIdParam'
+      responses:
+        '201':
+          description: 复制成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyPackageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/supplier/billing:
+    get:
+      tags: [SupplierBilling]
+      summary: 查询供应方账单汇总
+      operationId: getSupplierBilling
+      parameters:
+        - $ref: '#/components/parameters/StartDateParam'
+        - $ref: '#/components/parameters/EndDateParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierBillingResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/supply/settlements/withdraw:
+    post:
+      tags: [SupplySettlements]
+      summary: 发起提现申请
+      operationId: createSupplySettlementWithdraw
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWithdrawRequest'
+      responses:
+        '201':
+          description: 提现申请创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateWithdrawResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/supply/settlements/{settlementId}/cancel:
+    post:
+      tags: [SupplySettlements]
+      summary: 撤销提现申请
+      operationId: cancelSupplySettlementWithdraw
+      parameters:
+        - $ref: '#/components/parameters/SettlementIdParam'
+      responses:
+        '200':
+          description: 撤销成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplySettlementStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/supply/settlements/{settlementId}/statement:
+    get:
+      tags: [SupplySettlements]
+      summary: 下载对账单
+      operationId: downloadSupplySettlementStatement
+      parameters:
+        - $ref: '#/components/parameters/SettlementIdParam'
+      responses:
+        '200':
+          description: 下载地址
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementStatementResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/supply/earnings/records:
+    get:
+      tags: [SupplyEarnings]
+      summary: 查询收益流水
+      operationId: listSupplyEarningRecords
+      parameters:
+        - $ref: '#/components/parameters/StartDateParam'
+        - $ref: '#/components/parameters/EndDateParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyEarningRecordListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    AccountIdParam:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    PackageIdParam:
+      name: packageId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    SettlementIdParam:
+      name: settlementId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    StartDateParam:
+      name: start_date
+      in: query
+      schema:
+        type: string
+        format: date
+    EndDateParam:
+      name: end_date
+      in: query
+      schema:
+        type: string
+        format: date
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSizeParam:
+      name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 20
+  responses:
+    BadRequest:
+      description: 参数错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: 未认证或认证失效
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: 状态冲突
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BusinessError:
+      description: 业务校验失败
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    VerifySupplyAccountRequest:
+      type: object
+      required: [provider, account_type, credential_input]
+      properties:
+        provider:
+          type: string
+          enum: [openai, anthropic, gemini, baidu, xfyun, tencent]
+        account_type:
+          type: string
+          enum: [api_key, oauth]
+        credential_input:
+          type: string
+          minLength: 8
+          maxLength: 4096
+          writeOnly: true
+        min_quota_threshold:
+          type: number
+          format: double
+          minimum: 0
+    VerifySupplyAccountResponse:
+      type: object
+      required: [request_id, data]
+      properties:
+        request_id:
+          type: string
+        data:
+          type: object
+          required: [verify_status, risk_score]
+          properties:
+            verify_status:
+              type: string
+              enum: [pass, review_required, reject]
+            available_quota:
+              type: number
+              format: double
+            risk_score:
+              type: integer
+              minimum: 0
+              maximum: 100
+            check_items:
+              type: array
+              items:
+                type: object
+                properties:
+                  item:
+                    type: string
+                  result:
+                    type: string
+                    enum: [pass, fail, warn]
+                  message:
+                    type: string
+    CreateSupplyAccountRequest:
+      allOf:
+        - $ref: '#/components/schemas/VerifySupplyAccountRequest'
+        - type: object
+          required: [risk_ack]
+          properties:
+            account_alias:
+              type: string
+              minLength: 1
+              maxLength: 100
+            risk_ack:
+              type: boolean
+              enum: [true]
+    CreateSupplyAccountResponse:
+      type: object
+      required: [request_id, data]
+      properties:
+        request_id:
+          type: string
+        data:
+          $ref: '#/components/schemas/SupplyAccount'
+    SupplyAccountStatusResponse:
+      type: object
+      required: [request_id, data]
+      properties:
+        request_id:
+          type: string
+        data:
+          type: object
+          required: [account_id, status, updated_at]
+          properties:
+            account_id:
+              type: integer
+              format: int64
+            status:
+              type: string
+              enum: [pending, active, suspended, disabled]
+            updated_at:
+              type: string
+              format: date-time
+    SupplyAccount:
+      type: object
+      required: [account_id, provider, account_type, status, created_at]
+      properties:
+        account_id:
+          type: integer
+          format: int64
+        provider:
+          type: string
+          enum: [openai, anthropic, gemini, baidu, xfyun, tencent]
+        account_type:
+          type: string
+          enum: [api_key, oauth]
+        account_alias:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, suspended, disabled]
+        available_quota:
+          type: number
+          format: double
+        risk_score:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    SaveSupplyPackageDraftRequest:
+      type: object
+      required:
+        - supply_account_id
+        - model
+        - total_quota
+        - price_per_1m_input
+        - price_per_1m_output
+        - valid_days
+      properties:
+        supply_account_id:
+          type: integer
+          format: int64
+        model:
+          type: string
+          minLength: 1
+          maxLength: 100
+        total_quota:
+          type: number
+          format: double
+          exclusiveMinimum: true
+          minimum: 0
+        price_per_1m_input:
+          type: number
+          format: double
+          minimum: 0
+        price_per_1m_output:
+          type: number
+          format: double
+          minimum: 0
+        valid_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        max_concurrent:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 10
+        rate_limit_rpm:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 60
+    SupplyPackageResponse:
+      type: object
+      required: [request_id, data]
+      properties:
+        request_id:
+          type: string
+        data:
+          $ref: '#/components/schemas/SupplyPackage'
+    SupplyPackage:
+      type: object
+      required:
+        - package_id
+        - supply_account_id
+        - model
+        - status
+        - total_quota
+        - available_quota
+        - created_at
+      properties:
+        package_id:
+          type: integer
+          format: int64
+        supply_account_id:
+          type: integer
+          format: int64
+        model:
+          type: string
+        total_quota:
+          type: number
+          format: double
+        available_quota:
+          type: number
+          format: double
+        price_per_1m_input:
+          type: number
+          format: double
+        price_per_1m_output:
+          type: number
+          format: double
+        valid_days:
+          type: integer
+        status:
+          type: string
+          enum: [draft, active, paused, sold_out, expired]
+        created_at:
+          type: string
+          format: date-time
+    SupplyPackageStatusResponse:
+      type: object
+      required: [request_id, data]
+      properties:
+        request_id:
+          type: string
+        data:
+          type: object
+          required: [package_id, status, updated_at]
+          properties:
+            package_id:
+              type: integer
+              format: int64
+            status:
+              type: string
+              enum: [draft, active, paused, sold_out, expired]
+            updated_at:
+              type: string
+              format: date-time
+    BatchUpdateSupplyPackagePriceRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            required: [package_id, price_per_1m_input, price_per_1m_output]
+            properties:
+              package_id:
+                type: integer
+                format: int64
+              price_per_1m_input:
+                type: number
+                format: double
+                minimum: 0
+              price_per_1m_output:
+                type: number
+                format: double
+                minimum: 0
+    BatchUpdateSupplyPackagePriceResponse:
+      type: object
+      required: [request_id, data]
+      properties:
+        request_id:
+          type: string
+        data:
+          type: object
+          required: [total, success_count, failed_count]
+          properties:
+            total:
+              type: integer
+            success_count:
+              type: integer
+            failed_count:
+              type: integer
+            failures:
+              type: array
+              items:
+                type: object
+                properties:
+                  package_id:
+                    type: integer
+                    format: int64
+                  error_code:
+                    type: string
+                  message:
+                    type: string
+
+    SupplierBillingResponse:
+      type: object
+      required: [request_id, data]
+      properties:
+        request_id:
+          type: string
+        data:
+          type: object
+          required: [period, summary]
+          properties:
+            period:
+              type: object
+              properties:
+                start:
+                  type: string
+                  format: date
+                end:
+                  type: string
+                  format: date
+            summary:
+              type: object
+              properties:
+                total_revenue:
+                  type: number
+                  format: double
+                total_orders:
+                  type: integer
+                total_usage:
+                  type: integer
+                  format: int64
+                total_requests:
+                  type: integer
+                  format: int64
+                avg_success_rate:
+                  type: number
+                  format: double
+                platform_fee:
+                  type: number
+                  format: double
+                net_earnings:
+                  type: number
+                  format: double
+            by_platform:
+              type: array
+              items:
+                type: object
+                properties:
+                  platform:
+                    type: string
+                  revenue:
+                    type: number
+                    format: double
+                  orders:
+                    type: integer
+                  tokens:
+                    type: integer
+                    format: int64
+                  success_rate:
+                    type: number
+                    format: double
+
+    CreateWithdrawRequest:
+      type: object
+      required: [withdraw_amount, payment_method, payment_account, sms_code]
+      properties:
+        withdraw_amount:
+          type: number
+          format: double
+          exclusiveMinimum: true
+          minimum: 0
+        payment_method:
+          type: string
+          enum: [bank, alipay, wechat]
+        payment_account:
+          type: string
+          minLength: 2
+          maxLength: 100
+        sms_code:
+          type: string
+          minLength: 4
+          maxLength: 10
+    CreateWithdrawResponse:
+      type: object
+      required: [request_id, data]
+      properties:
+        request_id:
+          type: string
+        data:
+          $ref: '#/components/schemas/SupplySettlement'
+    SupplySettlementStatusResponse:
+      type: object
+      required: [request_id, data]
+      properties:
+        request_id:
+          type: string
+        data:
+          type: object
+          required: [settlement_id, status, updated_at]
+          properties:
+            settlement_id:
+              type: integer
+              format: int64
+            status:
+              type: string
+              enum: [pending, processing, completed, failed]
+            updated_at:
+              type: string
+              format: date-time
+    SupplySettlement:
+      type: object
+      required: [settlement_id, settlement_no, status, total_amount, net_amount, created_at]
+      properties:
+        settlement_id:
+          type: integer
+          format: int64
+        settlement_no:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        total_amount:
+          type: number
+          format: double
+        fee_amount:
+          type: number
+          format: double
+        net_amount:
+          type: number
+          format: double
+        payment_method:
+          type: string
+          enum: [bank, alipay, wechat]
+        created_at:
+          type: string
+          format: date-time
+    SettlementStatementResponse:
+      type: object
+      required: [request_id, data]
+      properties:
+        request_id:
+          type: string
+        data:
+          type: object
+          required: [settlement_id, file_name, download_url, expires_at]
+          properties:
+            settlement_id:
+              type: integer
+              format: int64
+            file_name:
+              type: string
+            download_url:
+              type: string
+              format: uri
+            expires_at:
+              type: string
+              format: date-time
+    SupplyEarningRecordListResponse:
+      type: object
+      required: [request_id, data, pagination]
+      properties:
+        request_id:
+          type: string
+        data:
+          type: array
+          items:
+            type: object
+            required: [record_id, user_id, earnings_type, amount, status, earned_at]
+            properties:
+              record_id:
+                type: integer
+                format: int64
+              user_id:
+                type: integer
+                format: int64
+              settlement_id:
+                type: integer
+                format: int64
+              earnings_type:
+                type: string
+                enum: [usage, bonus, refund]
+              amount:
+                type: number
+                format: double
+              status:
+                type: string
+                enum: [pending, available, withdrawn, frozen]
+              description:
+                type: string
+              earned_at:
+                type: string
+                format: date-time
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    AuditLogListResponse:
+      type: object
+      required: [request_id, data, pagination]
+      properties:
+        request_id:
+          type: string
+        data:
+          type: array
+          items:
+            type: object
+            required:
+              [event_id, operator_id, tenant_id, object_type, object_id, request_id, created_at]
+            properties:
+              event_id:
+                type: string
+              operator_id:
+                type: integer
+                format: int64
+              tenant_id:
+                type: integer
+                format: int64
+              object_type:
+                type: string
+              object_id:
+                type: string
+              action:
+                type: string
+              before_state:
+                type: object
+                additionalProperties: true
+              after_state:
+                type: object
+                additionalProperties: true
+              request_id:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Pagination:
+      type: object
+      required: [page, page_size, total]
+      properties:
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      required: [request_id, error]
+      properties:
+        request_id:
+          type: string
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: SUP_ACC_4001
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
