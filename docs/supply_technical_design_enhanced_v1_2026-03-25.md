@@ -1,7 +1,7 @@
 # 供应侧技术设计增强版（XR-001）
 
-- 版本：v1.0
-- 日期：2026-03-25
+- 版本：v1.1
+- 日期：2026-03-27
 - 状态：生效（实施基线）
 - 目标：补齐供应侧关键写路径的幂等、并发、事务、不变量与可靠性闭环
 - 关联 SSOT：
@@ -9,6 +9,7 @@
   - `acceptance_gate_single_source_v1_2026-03-18.md`
   - `supply_button_level_prd_v1_2026-03-25.md`
   - `supply_api_contract_openapi_draft_v1_2026-03-25.yaml`
+  - `database_domain_model_and_governance_v1_2026-03-27.md`
 
 ---
 
@@ -38,6 +39,7 @@
 2. Header 必填：`Idempotency-Key`（长度 16-128）
 3. 幂等作用域：`tenant_id + operator_id + api_path + idempotency_key`
 4. 幂等有效期：`24h`（提现类可扩展到 `72h`）
+5. 契约落地状态：已在 OpenAPI 写操作路径挂载上述 header，并补充 `409/202` 幂等语义示例（2026-03-27）。
 
 ## 2.3 语义规范
 
@@ -91,7 +93,7 @@ create table if not exists supply_idempotency_record (
 
 ```sql
 create unique index if not exists uq_settlement_supplier_processing
-on supply_settlement(supplier_id)
+on supply_settlements(user_id)
 where status = 'processing';
 ```
 
@@ -160,12 +162,12 @@ where status = 'processing';
 
 | 页面按钮 | API | SLI | SLO | Error Budget |
 |---|---|---|---|---|
-| BTN-ACC-001 立即验证 | `/accounts/verify` | 可用率 + P95 | 可用率 >= 99.9%，P95 <= 800ms | 月度 0.1% |
-| BTN-ACC-002 提交挂载 | `/accounts` | 成功率 | 成功率 >= 99.5% | 月度 0.5% |
-| BTN-PKG-002 发布上架 | `/packages/{id}/publish` | 成功率 + 冲突率 | 成功率 >= 99.5%，冲突率 <= 0.3% | 月度 0.5% |
-| BTN-PKG-005 批量调价 | `/packages/batch-price` | 局部成功可解释率 | 明细可解释率 = 100% | 0 |
-| BTN-SET-002 发起提现 | `/settlements/withdraw` | 一致性 + 时延 | `billing_error_rate_pct<=0.1%`，P95<=1200ms | 与 M-004 联动 |
-| BTN-SET-003 撤销申请 | `/settlements/{id}/cancel` | 成功率 | 成功率 >= 99.9% | 月度 0.1% |
+| BTN-ACC-001 立即验证 | `/api/v1/supply/accounts/verify` | 可用率 + P95 | 可用率 >= 99.9%，P95 <= 800ms | 月度 0.1% |
+| BTN-ACC-002 提交挂载 | `/api/v1/supply/accounts` | 成功率 | 成功率 >= 99.5% | 月度 0.5% |
+| BTN-PKG-002 发布上架 | `/api/v1/supply/packages/{id}/publish` | 成功率 + 冲突率 | 成功率 >= 99.5%，冲突率 <= 0.3% | 月度 0.5% |
+| BTN-PKG-005 批量调价 | `/api/v1/supply/packages/batch-price` | 局部成功可解释率 | 明细可解释率 = 100% | 0 |
+| BTN-SET-002 发起提现 | `/api/v1/supply/settlements/withdraw` | 一致性 + 时延 | `billing_error_rate_pct<=0.1%`，P95<=1200ms | 与 M-004 联动 |
+| BTN-SET-003 撤销申请 | `/api/v1/supply/settlements/{id}/cancel` | 成功率 | 成功率 >= 99.9% | 月度 0.1% |
 
 ---
 
@@ -191,3 +193,18 @@ where status = 'processing';
 6. 证据层：执行日志、指标截图、审计抽样、签署记录齐全。
 
 达到以上 6 项即视为 XR-001 关闭。
+
+---
+
+## 10. 跨域数据库约束（新增）
+
+1. 供应域不是独立孤岛，必须依赖 Core/IAM/Auth/Billing/Audit 五域主表。
+2. 供应域关键表必须补齐三类字段：
+   1. 加密字段：`*_cipher_algo`、`*_kms_key_alias`、`*_key_version`、`*_fingerprint`。
+   2. 单位字段：`quota_unit`、`price_unit`、`amount_unit`、`currency_code`。
+   3. 审计字段：`request_id`、`idempotency_key`、`audit_trace_id`、`created_ip`、`updated_ip`、`version`。
+3. 数据库实施顺序固定：
+   1. `platform_core_schema_v1.sql`
+   2. `supply_schema_v1.sql`
+   3. `supply_schema_v1_patch_2026-03-27.sql`
+4. 未完成上述顺序与字段补齐，不得判定 XR-001 关闭。

@@ -1,0 +1,3 @@
+date,status,overall,base_http,active_http,run_active_smoke,report,note
+2026-03-30,PASS,PASS,404,200,0,/home/long/project/立交桥/reports/gates/minimax_upstream_smoke_2026-03-30_231930.md,latest_report=/home/long/project/立交桥/reports/gates/minimax_upstream_smoke_2026-03-30_231930.md; run_active_smoke=0(use latest report only)
+2026-03-31,PASS,PASS,404,200,1,/home/long/project/立交桥/reports/gates/minimax_upstream_smoke_2026-03-31_104254.md,latest_report=/home/long/project/立交桥/reports/gates/minimax_upstream_smoke_2026-03-31_104254.md

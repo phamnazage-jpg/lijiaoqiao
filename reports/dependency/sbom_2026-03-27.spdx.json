@@ -1,0 +1,32 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "lijiaoqiao-dependency-sbom-2026-03-27",
+  "documentNamespace": "https://lijiaoqiao.local/sbom/2026-03-27",
+  "creationInfo": {
+    "created": "2026-03-27T12:00:00Z",
+    "creators": [
+      "Tool: codex-manual-baseline"
+    ]
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-Go",
+      "name": "go-runtime",
+      "versionInfo": "1.21.x",
+      "downloadLocation": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-PostgreSQL",
+      "name": "postgresql",
+      "versionInfo": "15.x",
+      "downloadLocation": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-Redis",
+      "name": "redis",
+      "versionInfo": "7.x",
+      "downloadLocation": "NOASSERTION"
+    }
+  ]
+}

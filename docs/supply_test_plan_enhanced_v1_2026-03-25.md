@@ -1,7 +1,7 @@
 # 供应侧测试方案增强版（XR-002）
 
-- 版本：v1.0
-- 日期：2026-03-25
+- 版本：v1.1
+- 日期：2026-03-27
 - 状态：生效（测试执行基线）
 - 目标：形成“需求-接口-测试-指标-门禁”全链路闭环，补齐并发与重放风险覆盖
 - 关联文档：
@@ -35,22 +35,26 @@
 
 ## 2. 测试追踪矩阵（Requirement -> API -> Test -> Metric -> Gate）
 
-| 需求ID | 需求描述 | API | 测试用例 | 验收指标 | 门禁映射 |
-|---|---|---|---|---|---|
-| R-ACC-001 | 账号凭证验证成功可视化 | `POST /accounts/verify` | UI-SUP-ACC-001 | 验证成功率 >=99.5% | SUP-004 |
-| R-ACC-002 | 挂载需风险确认与审计 | `POST /accounts` | UI-SUP-ACC-002 | 审计覆盖率=100% | SUP-004 |
-| R-ACC-003 | 账号状态不跳态 | `POST /accounts/{id}/activate/suspend` | UI-SUP-ACC-003/004 + INT-ACC-STATE-001 | 冲突可解释率=100% | SUP-004 |
-| R-ACC-004 | 活跃账号不可删除 | `DELETE /accounts/{id}` | UI-SUP-ACC-005 | 违规删除成功率=0 | SUP-004 |
-| R-PKG-001 | 草稿保存可追踪 | `POST /packages/draft` | UI-SUP-PKG-001 | 保存成功率>=99.5% | SUP-005 |
-| R-PKG-002 | 套餐发布满足保护价与状态约束 | `POST /packages/{id}/publish` | UI-SUP-PKG-002 + INT-PKG-INV-001 | 保护价违规放行率=0 | SUP-005 |
-| R-PKG-003 | 批量调价部分失败可回执 | `POST /packages/batch-price` | UI-SUP-PKG-005 | 明细完备率=100% | SUP-005 |
-| R-SET-001 | 提现发起防重复防双扣 | `POST /settlements/withdraw` | UI-SUP-SET-002 + CON-SET-001 | M-004/M-005 达标 | SUP-006 |
-| R-SET-002 | 处理中/已完成不可撤销 | `POST /settlements/{id}/cancel` | UI-SUP-SET-003 + INT-SET-STATE-001 | 跳态成功率=0 | SUP-006 |
-| R-SET-003 | 对账单导出不泄露敏感信息 | `GET /settlements/{id}/statement` | UI-SUP-SET-004 + SEC-SUP-001 | M-013=0 | SUP-006/SUP-007 |
-| R-SEC-001 | 仅平台凭证入站 | 全部北向 API | SEC-SUP-002 | M-014=100% | SUP-007 |
-| R-SEC-002 | 外部 query key 全拒绝 | 全部北向 API | SEC-SUP-002 | M-016=100% | SUP-007 |
-| R-SEC-003 | 需求方不可绕平台直连 | 出网策略与告警 | SEC-SUP-002 + SEC-DIRECT-001 | M-015=0 | SUP-007 |
-| R-UX-001 | 按钮可见性和禁用规则正确 | 三页面全部按钮 | UI-DESIGN-QA-001~020 | 按钮规则通过率=100% | SUP-003/SUP-008 |
+| 需求ID | 需求描述 | API | api_alias | 测试用例 | 验收指标 | 门禁映射 |
+|---|---|---|---|---|---|---|
+| R-ACC-001 | 账号凭证验证成功可视化 | `POST /api/v1/supply/accounts/verify` | - | UI-SUP-ACC-001 | 验证成功率 >=99.5% | SUP-004 |
+| R-ACC-002 | 挂载需风险确认与审计 | `POST /api/v1/supply/accounts` | - | UI-SUP-ACC-002 | 审计覆盖率=100% | SUP-004 |
+| R-ACC-003 | 账号状态不跳态 | `POST /api/v1/supply/accounts/{accountId}/activate` / `POST /api/v1/supply/accounts/{accountId}/suspend` | `POST /api/v1/supply/accounts/{id}/activate` / `POST /api/v1/supply/accounts/{id}/suspend` | UI-SUP-ACC-003/004 + INT-ACC-STATE-001 | 冲突可解释率=100% | SUP-004 |
+| R-ACC-004 | 活跃账号不可删除 | `DELETE /api/v1/supply/accounts/{accountId}` | `DELETE /api/v1/supply/accounts/{id}` | UI-SUP-ACC-005 | 违规删除成功率=0 | SUP-004 |
+| R-PKG-001 | 草稿保存可追踪 | `POST /api/v1/supply/packages/draft` | - | UI-SUP-PKG-001 | 保存成功率>=99.5% | SUP-005 |
+| R-PKG-002 | 套餐发布满足保护价与状态约束 | `POST /api/v1/supply/packages/{packageId}/publish` | `POST /api/v1/supply/packages/{id}/publish` | UI-SUP-PKG-002 + INT-PKG-INV-001 | 保护价违规放行率=0 | SUP-005 |
+| R-PKG-003 | 批量调价部分失败可回执 | `POST /api/v1/supply/packages/batch-price` | - | UI-SUP-PKG-005 | 明细完备率=100% | SUP-005 |
+| R-SET-001 | 提现发起防重复防双扣 | `POST /api/v1/supply/settlements/withdraw` | - | UI-SUP-SET-002 + CON-SET-001 | M-004/M-005 达标 | SUP-006 |
+| R-SET-002 | 处理中/已完成不可撤销 | `POST /api/v1/supply/settlements/{settlementId}/cancel` | `POST /api/v1/supply/settlements/{id}/cancel` | UI-SUP-SET-003 + INT-SET-STATE-001 | 跳态成功率=0 | SUP-006 |
+| R-SET-003 | 对账单导出不泄露敏感信息 | `GET /api/v1/supply/settlements/{settlementId}/statement` | `GET /api/v1/supply/settlements/{id}/statement` | UI-SUP-SET-004 + SEC-SUP-001 | M-013=0 | SUP-006/SUP-007 |
+| R-SEC-001 | 仅平台凭证入站 | 全部北向 API | - | SEC-SUP-002 | M-014=100% | SUP-007 |
+| R-SEC-002 | 外部 query key 全拒绝 | 全部北向 API | - | SEC-SUP-002 | M-016=100% | SUP-007 |
+| R-SEC-003 | 需求方不可绕平台直连 | 出网策略与告警 | - | SEC-SUP-002 + SEC-DIRECT-001 | M-015=0 | SUP-007 |
+| R-UX-001 | 按钮可见性和禁用规则正确 | 三页面全部按钮 | - | UI-DESIGN-QA-001~020 | 按钮规则通过率=100% | SUP-003/SUP-008 |
+
+跨域映射补充：
+1. 全局 P0 中预算/告警/组织级账单导出映射见：`docs/product/global_p0_to_supply_platform_mapping_v1_2026-03-27.md`。
+2. 对应追踪项已并入：`reports/supply_traceability_matrix_2026-03-25.csv`（`R-PLAT-001~003`）。
 
 ---
 
@@ -143,6 +147,16 @@
 4. `SEC-SUP Gate`：凭证边界与泄露扫描（阻断）。
 5. `PERF/REL Gate`：每晚定时跑，异常进入发布前强制复核。
 
+## 7.3 分阶段质量门禁（防偏航）
+
+1. G0 Requirement Gate：检查 PRD/OpenAPI/按钮清单版本一致，任一漂移阻断开发。
+2. G1 Design Gate：检查 DDL、状态机、不变量、审计字段齐套，缺一阻断联调。
+3. G2 Dev Gate：单测与契约测试达标后才允许合并。
+4. G3 Integration Gate：DB/Redis/Outbox/权限链路通过后才允许提测。
+5. G4 Release Gate：SUP-004~SUP-007 与安全门禁全绿才允许发布。
+6. G5 Post Gate：发布后 24h 观察窗口出现 P0/P1 立即冻结后续升波。
+7. 指标约束：`M-018=100%` 且 `M-019=100%`，否则回退到失败阶段整改。
+
 ## 7.2 失败策略
 
 1. P0 用例失败：立即阻断发布 + 当日复盘。
@@ -158,6 +172,7 @@
 1. PRD 按钮级规格冻结。
 2. OpenAPI 字段冻结。
 3. 技术增强稿（XR-001）已落地。
+4. 路径一致性检查通过（API 字段与 OpenAPI 主路径一致，alias 映射完整）。
 
 ## 8.2 退出（Exit）
 

@@ -1,0 +1,2 @@
+2026/03/31 09:53:09 platform-token-runtime listening on :18082
+2026/03/31 09:53:09 listen failed: listen tcp :18082: bind: address already in use

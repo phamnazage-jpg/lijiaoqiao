@@ -1,0 +1,10 @@
+#===============================================================================
+# 自动化Review Cron配置
+#===============================================================================
+# 使用方法：crontab -e 并添加以下行
+
+# 每3小时执行一次review（0点、3点、6点、9点、12点、15点、18点、21点）
+0 */3 * * * /home/long/project/立交桥/scripts/auto_review/review.sh hourly >> /home/long/project/立交桥/logs/auto_review/cron.log 2>&1
+
+# 每天凌晨3点执行全面review并更新知识库
+0 3 * * * /home/long/project/立交桥/scripts/auto_review/review.sh daily >> /home/long/project/立交桥/logs/auto_review/cron_daily.log 2>&1

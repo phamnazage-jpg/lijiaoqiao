@@ -1,7 +1,7 @@
-# Subapi 集成风险控制实施任务单（两周执行版，v1.4）
+# Subapi 集成风险控制实施任务单（两周执行版，v1.5）
 
-- 版本：v1.4
-- 日期：2026-03-25
+- 版本：v1.5
+- 日期：2026-03-27
 - 执行窗口：2026-03-18 至 2026-03-31（两周）
 - 关联文档：
   - `subapi_integration_compat_security_reliability_design_v1_2026-03-17.md`
@@ -11,13 +11,15 @@
   - `router_core_s2_acceptance_test_cases_v1_2026-03-17.md`
   - `acceptance_gate_single_source_v1_2026-03-18.md`（v1.1, 2026-03-24）
   - `llm_gateway_subapi_evolution_plan_v4_2_2026-03-24.md`
-  - `supply_button_level_prd_v1_2026-03-25.md`
+  - `supply_button_level_prd_v1_2026-03-25.md`（v1.1 冻结，2026-03-27）
   - `supply_api_contract_openapi_draft_v1_2026-03-25.yaml`
   - `supply_ui_test_cases_executable_v1_2026-03-25.md`
   - `supply_gate_command_playbook_v1_2026-03-25.md`
   - `supply_technical_design_enhanced_v1_2026-03-25.md`
   - `supply_test_plan_enhanced_v1_2026-03-25.md`
   - `supply_uiux_design_spec_v1_2026-03-25.md`
+  - `database_domain_model_and_governance_v1_2026-03-27.md`
+  - `dependency_compatibility_audit_baseline_v1_2026-03-27.md`
   - `tests/supply/ui_design_qa_cases_v1_2026-03-25.md`
   - `reports/supply_gate_preflight_2026-03-25.md`
   - `review/multi_expert_planning_review_v1_2026-03-25.md`
@@ -31,6 +33,7 @@
 5. 建立“凭证边界”硬门禁：需求方仅用平台凭证，供应方上游凭证零外发。
 6. 建立供应侧发布门禁链路（SUP）：账号挂载 -> 套餐发布 -> 结算提现全链路可验收。
 7. 建立四专家整改发布链路（XR）：技术/测试/UIUX/业主条款与门禁统一闭环。
+8. 建立 token 运行态交付链路（TOK）：从实现、部署到门禁验收可追踪闭环。
 
 ## 2. 责任角色映射（实名RACI）
 
@@ -138,7 +141,7 @@
 
 | 任务ID | 任务 | Owner | 截止日期 | 依赖 | 验收标准 | 证据产物 |
 |---|---|---|---|---|---|---|
-| SUP-001 | 供应侧按钮级 PRD 冻结（3 页面） | `产品` + `ARCH` | 2026-03-26 | 无 | 页面字段、按钮、状态机、错误码冻结 | `docs/supply_button_level_prd_v1_2026-03-25.md` |
+| SUP-001 | 供应侧按钮级 PRD 冻结（3 页面） | `产品` + `ARCH` | 2026-03-26 | 无 | 页面字段、按钮、状态机、错误码冻结 | `docs/supply_button_level_prd_v1_2026-03-25.md`（v1.1 冻结） |
 | SUP-002 | 供应侧 OpenAPI 契约冻结（3 页面） | `PLAT` + `ARCH` | 2026-03-26 | SUP-001 | 请求/响应字段、枚举、错误码冻结 | `docs/supply_api_contract_openapi_draft_v1_2026-03-25.yaml` |
 | SUP-003 | UI-SUP 可执行用例评审通过 | `QA` + `产品` | 2026-03-27 | SUP-001, SUP-002 | `UI-SUP-*` + `UI-DESIGN-QA-*` 全量可执行，覆盖按钮/状态/权限/可访问性 | `docs/supply_ui_test_cases_executable_v1_2026-03-25.md` + `tests/supply/ui_design_qa_cases_v1_2026-03-25.md` |
 | SUP-004 | 账号挂载链路联调（验证/创建/激活/暂停） | `PLAT` + `QA` | 2026-03-28 | SUP-002, SUP-003 | `UI-SUP-ACC-001~006` 通过率 100% | `scripts/supply-gate/sup004_accounts.sh` + `tests/supply/ui_sup_acc_report_2026-03-28.md` |
@@ -152,10 +155,33 @@
 | 任务ID | 任务 | Owner | 截止日期 | 依赖 | 验收标准 | 证据产物 |
 |---|---|---|---|---|---|---|
 | XR-001 | 供应侧技术设计增强落地（幂等/并发/不变量/事务） | `ARCH` + `PLAT` | 2026-03-26 | SUP-002 | 关键写路径均具备双键幂等和冲突语义 | `docs/supply_technical_design_enhanced_v1_2026-03-25.md` |
-| XR-002 | 供应侧测试方案增强落地（追踪矩阵+并发重放） | `QA` + `ARCH` | 2026-03-27 | XR-001 | Requirement->API->Test->Metric->Gate 全量可追踪 | `docs/supply_test_plan_enhanced_v1_2026-03-25.md` + `reports/supply_traceability_matrix_2026-03-25.csv` + `reports/supply_flaky_budget_2026-03-25.md` |
+| XR-002 | 供应侧测试方案增强落地（追踪矩阵+并发重放） | `QA` + `ARCH` | 2026-03-27 | XR-001 | Requirement->API->Test->Metric->Gate 全量可追踪，且路径一致性检查通过 | `docs/supply_test_plan_enhanced_v1_2026-03-25.md` + `reports/supply_traceability_matrix_2026-03-25.csv` + `docs/supply_traceability_matrix_generation_rules_v1_2026-03-27.md` + `reports/supply_flaky_budget_2026-03-25.md` |
 | XR-003 | 供应侧 UI/UX 规范与设计验收清单落地 | `产品` + `UIUX` + `QA` | 2026-03-27 | SUP-003 | DQA P0=0，P1 通过率>=95% | `docs/supply_uiux_design_spec_v1_2026-03-25.md` |
 | XR-004 | 业主 SLA/申诉/赔付条款并入门禁验收 | `产品` + `CS` + `FIN` | 2026-03-28 | XR-002, XR-003 | 条款可执行可测且签字确认 | `docs/product/owner_sla_dispute_compensation_rules_v1.md` |
 | XR-005 | 四专家再次对齐复核并形成发布结论 | `ARCH` + `QA` + `产品` + `UIUX` | 2026-03-28 | XR-001~XR-004 | 复核结论明确（GO/CONDITIONAL GO/NO-GO） | `review/multi_expert_alignment_recheck_v1_2026-03-25.md` |
+
+## 4.9 Workstream I：数据库与依赖质量闭环（新增）
+
+| 任务ID | 任务 | Owner | 截止日期 | 依赖 | 验收标准 | 证据产物 |
+|---|---|---|---|---|---|---|
+| DB-001 | 跨域核心表基线落地（Core/IAM/Auth/Billing/Audit） | `ARCH` + `PLAT` | 2026-03-27 | XR-001 | `platform_core_schema_v1.sql` 可执行且评审通过 | `sql/postgresql/platform_core_schema_v1.sql` |
+| DB-002 | 供应域加密/单位/审计字段与索引补齐 | `PLAT` + `QA` | 2026-03-28 | DB-001 | patch 可幂等执行，关键查询计划不回退 | `sql/postgresql/supply_schema_v1_patch_2026-03-27.sql` |
+| DB-003 | 数据模型与迁移策略文档并入 SSOT | `ARCH` | 2026-03-28 | DB-001, DB-002 | 迁移顺序、回滚策略、验收清单完整 | `docs/database_domain_model_and_governance_v1_2026-03-27.md` |
+| DEP-001 | 依赖兼容审计四件套接入发布流程 | `PLAT` + `SEC` | 2026-03-28 | COMP-005 | SBOM/锁差异/兼容矩阵/风险清单缺一阻断 | `docs/dependency_compatibility_audit_baseline_v1_2026-03-27.md` |
+| DEP-002 | 分阶段质量门禁（G0-G5）接入 CI | `QA` + `PLAT` | 2026-03-29 | DEP-001, XR-002 | `M-018` 与 `M-019` 自动计算并阻断 | CI 记录 + Gate 汇总 |
+| DEP-003 | 需求-设计-测试漂移日检机制上线 | `PMO` + `QA` | 2026-03-29 | DEP-002 | 发现漂移 24h 内闭环，周报可追踪 | `reports/design_drift_daily_*.md` |
+
+## 4.10 Workstream J：token 运行态实现与验收闭环（TOK，新增）
+
+| 任务ID | 任务 | Owner | 截止日期 | 依赖 | 验收标准 | 证据产物 |
+|---|---|---|---|---|---|---|
+| TOK-001 | token 能力最小实现清单冻结（签发/校验/吊销/续期/审计） | `ARCH` + `SEC` + `PLAT` | 2026-03-28 | SUP-002 | 功能边界、接口与状态机冻结，禁止再口头变更 | `docs/token_runtime_minimal_spec_v1.md` |
+| TOK-002 | 平台鉴权与 token 校验中间件实现（仅平台凭证入站） | `PLAT` + `SEC` | 2026-03-30 | TOK-001 | 外部请求必须通过平台凭证校验，覆盖率=100% | 开发阶段：`docs/token_auth_middleware_design_v1_2026-03-29.md` + `docs/platform_token_api_contract_openapi_draft_v1_2026-03-29.yaml`；联调阶段：实现代码 + 单测报告 |
+| TOK-003 | token 生命周期实现（签发/短期TTL/吊销/轮换） | `PLAT` | 2026-03-31 | TOK-001 | 生命周期状态可追踪，吊销生效延迟满足阈值 | 开发阶段：`docs/token_lifecycle_audit_test_assertions_v1_2026-03-29.md`；联调阶段：实现代码 + 集成测试报告 |
+| TOK-004 | 安全审计与事件入库（签发/鉴权失败/吊销/越权） | `SEC` + `PLAT` | 2026-03-31 | TOK-002, TOK-003 | 审计事件完整入库，可按租户/角色追踪 | 开发阶段：`docs/token_lifecycle_audit_test_assertions_v1_2026-03-29.md`；联调阶段：审计表样例 + 查询结果 |
+| TOK-005 | 凭证边界联调（SUP-007 合并复测） | `SEC` + `QA` | 2026-04-01 | TOK-002~TOK-004 | M-013~M-016 在 staging 实测全部达标 | 开发阶段：`scripts/supply-gate/tok005_boundary_dryrun.sh` + `reports/gates/tok005_dryrun_*.md`；联调阶段：`tests/supply/sec_sup_boundary_report_2026-03-30.md`（staging回填） |
+| TOK-006 | staging 一键回归（SUP-004~SUP-007 + TOK） | `QA` + `PLAT` | 2026-04-01 | TOK-005 | 全链路通过且无 mock 依赖 | 开发阶段：`scripts/supply-gate/tok006_gate_bundle.sh` + `scripts/ci/superpowers_stage_validate.sh` + `reports/gates/tok006_gate_bundle_*.md` + `reports/gates/superpowers_stage_validation_*.md` + `reports/gates/tok006_release_decision_onepager_template_v1_2026-03-30.md`；联调阶段：`reports/gates/sup_run_all_staging_*.log` + 实测单页判定报告 |
+| TOK-007 | 发布门禁复审（并入 EXP-006 决议） | `ARCH` + `QA` + `SEC` | 2026-04-03 | TOK-006 | F-04 关闭，生产决议可重新评估 | 开发阶段：`scripts/ci/tok007_release_recheck.sh` + `scripts/ci/final_decision_consistency_check.sh` + `scripts/ci/tok007_generate_final_decision_candidate.sh` + `review/outputs/tok007_release_recheck_*.md` + `review/outputs/final_decision_candidate_from_tok007_*.md` + `reports/gates/final_decision_consistency_*.md`；联调阶段：`review/final_decision_2026-03-31.md`（复审回填） |
 
 ## 5. 验收门禁（每日/每周）
 
@@ -174,6 +200,10 @@
 11. 供应侧 UI Gate 是否全绿（`UI-SUP-ACC-* / UI-SUP-PKG-* / UI-SUP-SET-*`）。
 12. 供应侧凭证边界专项（`SEC-SUP-*`）是否全绿（失败即 P0）。
 13. 四专家整改链路（XR-001~XR-003）是否全绿（未完成即禁止进入 SUP-008 结论环节）。
+14. 数据库补丁任务（DB-001~DB-003）是否按阶段达成（未完成即禁止升波）。
+15. 依赖兼容审计四件套是否完整（缺任一项即阻断发布）。
+16. 分阶段质量门禁 `M-018/M-019` 是否持续 = 100%（否则回退到失败阶段）。
+17. token 运行态链路（TOK-002~TOK-006）是否完成（未完成即禁止生产 GO）。
 
 ## 5.2 Weekly Gate（2026-03-24 / 2026-03-31）
 
@@ -184,6 +214,10 @@
 5. 是否完成当周专家评审并关闭必须整改项。
 6. 供应侧 Gate（SUP-004~SUP-008）是否完成并出具结论。
 7. 四专家复核链路（XR-001~XR-005）是否完成并形成签署结论。
+8. DB/依赖质量链路（DB-* / DEP-*）是否全量关闭。
+9. 依赖兼容审计指标 `M-017` 是否连续 7 天达标。
+10. 阶段质量与追踪覆盖指标 `M-018/M-019` 是否连续 7 天达标。
+11. token 运行态审计缺口（`TOK-REAL-001~003`）是否全部关闭。
 
 ## 6. 风险与阻断规则
 

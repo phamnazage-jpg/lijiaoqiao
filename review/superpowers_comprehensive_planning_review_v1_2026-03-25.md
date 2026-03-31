@@ -50,6 +50,11 @@
   - 同文档存在“待拍板项”：`supply_button_level_prd_v1_2026-03-25.md:236`
 - 风险：接口和测试可能按不同口径实现，导致回归不稳定。
 - 处置建议：将待拍板项迁移为“已决议记录”，文档状态改为“冻结”。
+- 状态：**Closed（2026-03-27）**
+- 关闭证据：
+  - `docs/supply_button_level_prd_v1_2026-03-25.md`（v1.1，已改“冻结”并替换为“已决议项”）
+  - `docs/product/supply_prd_pending_to_decision_map_v1_2026-03-27.md`
+  - `review/outputs/supply_prd_decision_meeting_minutes_2026-03-27.md`
 
 ### P0-02：技术设计强制的幂等头未进入 OpenAPI 契约
 
@@ -58,6 +63,11 @@
   - OpenAPI 未定义上述 header 参数（路径定义中无对应参数）：`supply_api_contract_openapi_draft_v1_2026-03-25.yaml:22`
 - 风险：客户端无法按契约实现幂等，后端幂等策略无法端到端落地。
 - 处置建议：在 OpenAPI 全量写操作中加入 header 参数并标注 required。
+- 状态：**Closed（2026-03-27）**
+- 关闭证据：
+  - `docs/supply_api_contract_openapi_draft_v1_2026-03-25.yaml`（`XRequestIdHeader`、`IdempotencyKeyHeader` 已定义并挂载到写操作）
+  - `docs/supply_api_contract_openapi_draft_v1_2026-03-25.yaml`（`Conflict` 与 `AcceptedInProgress` 示例）
+  - `docs/supply_technical_design_enhanced_v1_2026-03-25.md`（2.2 节标注契约已落地）
 
 ### P0-03：SUP 执行链路阻塞，发布证据不可得
 

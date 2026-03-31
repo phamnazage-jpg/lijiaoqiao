@@ -1,0 +1,15 @@
+.tools/
+
+# Local/sensitive env files
+scripts/supply-gate/.env
+scripts/supply-gate/.env.*
+!scripts/supply-gate/.env.example
+
+# Generated raw artifacts and process files
+tests/supply/artifacts/
+reports/gates/*.log
+reports/gates/*.out.log
+reports/gates/*.pid
+
+# Local build output
+platform-token-runtime/platform-token-runtime

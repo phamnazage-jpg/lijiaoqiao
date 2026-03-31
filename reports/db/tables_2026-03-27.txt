@@ -1,0 +1,15 @@
+audit_events
+auth_platform_api_keys
+billing_accounts
+billing_ledger_entries
+core_projects
+core_tenants
+iam_users
+routing_policies
+security_kms_key_registry
+supply_accounts
+supply_earnings
+supply_orders
+supply_packages
+supply_settlements
+supply_usage_records

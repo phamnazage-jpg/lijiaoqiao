@@ -7,6 +7,9 @@ info:
     安全边界要求：
     1) 仅接受平台鉴权头（Authorization），不接受 query key 鉴权。
     2) 任何响应不得返回可复用上游凭证明文片段。
+    变更日志：
+    - 2026-03-27：新增幂等请求头组件与写操作挂载；补充 409/202 幂等语义示例。
+    - 2026-03-27：命名策略调整为 `/supply` 主路径；`/supplier` 保留为兼容 alias。
 servers:
   - url: https://api.example.com
     description: Production
@@ -48,6 +51,9 @@ paths:
       tags: [SupplyAccounts]
       summary: 创建供应账号
       operationId: createSupplyAccount
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
       requestBody:
         required: true
         content:
@@ -61,10 +67,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateSupplyAccountResponse'
+        '202':
+          $ref: '#/components/responses/AcceptedInProgress'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/BusinessError'
   /api/v1/supply/accounts/{accountId}/activate:
@@ -175,6 +185,8 @@ paths:
       operationId: publishSupplyPackage
       parameters:
         - $ref: '#/components/parameters/PackageIdParam'
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
       responses:
         '200':
           description: 发布成功
@@ -182,6 +194,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SupplyPackageStatusResponse'
+        '202':
+          $ref: '#/components/responses/AcceptedInProgress'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -233,6 +247,9 @@ paths:
       tags: [SupplyPackages]
       summary: 批量调价
       operationId: batchUpdateSupplyPackagePrice
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
       requestBody:
         required: true
         content:
@@ -246,6 +263,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BatchUpdateSupplyPackagePriceResponse'
+        '202':
+          $ref: '#/components/responses/AcceptedInProgress'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -271,11 +290,35 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/v1/supply/billing:
+    get:
+      tags: [SupplierBilling]
+      summary: 查询供应方账单汇总（canonical）
+      operationId: getSupplyBilling
+      parameters:
+        - $ref: '#/components/parameters/StartDateParam'
+        - $ref: '#/components/parameters/EndDateParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierBillingResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/v1/supplier/billing:
     get:
       tags: [SupplierBilling]
-      summary: 查询供应方账单汇总
-      operationId: getSupplierBilling
+      summary: 查询供应方账单汇总（alias，兼容路径）
+      description: |
+        Deprecated alias of `/api/v1/supply/billing`.
+        仅用于历史客户端兼容，不新增能力字段。
+      deprecated: true
+      operationId: getSupplierBillingAlias
       parameters:
         - $ref: '#/components/parameters/StartDateParam'
         - $ref: '#/components/parameters/EndDateParam'
@@ -296,6 +339,9 @@ paths:
       tags: [SupplySettlements]
       summary: 发起提现申请
       operationId: createSupplySettlementWithdraw
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
       requestBody:
         required: true
         content:
@@ -309,6 +355,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateWithdrawResponse'
+        '202':
+          $ref: '#/components/responses/AcceptedInProgress'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -322,6 +370,8 @@ paths:
       operationId: cancelSupplySettlementWithdraw
       parameters:
         - $ref: '#/components/parameters/SettlementIdParam'
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
       responses:
         '200':
           description: 撤销成功
@@ -329,6 +379,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SupplySettlementStatusResponse'
+        '202':
+          $ref: '#/components/responses/AcceptedInProgress'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -428,6 +480,24 @@ components:
         minimum: 1
         maximum: 200
         default: 20
+    XRequestIdHeader:
+      name: X-Request-Id
+      in: header
+      required: true
+      description: 客户端请求幂等追踪ID（全链路唯一）
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 写操作幂等键（同资源同动作语义唯一）
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
   responses:
     BadRequest:
       description: 参数错误
@@ -453,6 +523,34 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            idempotencyPayloadMismatch:
+              summary: 幂等键命中但请求体不一致
+              value:
+                request_id: req_20260327_001
+                error:
+                  code: IDEMPOTENCY_PAYLOAD_MISMATCH
+                  message: idempotency key replay with different payload
+                  details:
+                    retryable: false
+                    expected_action: reuse_same_payload_or_new_idempotency_key
+    AcceptedInProgress:
+      description: 首次请求仍在处理，请按建议间隔重试
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            idempotencyInProgress:
+              summary: 幂等处理中重放
+              value:
+                request_id: req_20260327_002
+                error:
+                  code: IDEMPOTENCY_IN_PROGRESS
+                  message: request is processing
+                  details:
+                    retry_after_ms: 2000
+                    retryable: true
     BusinessError:
       description: 业务校验失败
       content:

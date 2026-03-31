@@ -46,3 +46,16 @@
 1. `SUP-004~SUP-007`：BLOCKED
 2. `SUP-008`：不通过（证据不足）
 3. 结论等级：`CONDITIONAL GO`（仅限设计层），执行层 `NO-GO` 直至补齐前置。
+
+---
+
+## 5. 2026-03-27 本地演练补充
+
+1. 已新增 local-mock 网关并完成 `SUP-004~SUP-007` 脚本演练。
+2. 演练环境：`http://127.0.0.1:18080`。
+3. 演练产物：
+   1. `tests/supply/artifacts/sup004/*`
+   2. `tests/supply/artifacts/sup005/*`
+   3. `tests/supply/artifacts/sup006/*`
+   4. `tests/supply/artifacts/sup007/*`
+4. 结论：本地演练链路通过，真实 staging 仍需复核。

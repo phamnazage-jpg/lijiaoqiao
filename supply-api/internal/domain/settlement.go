@@ -1,0 +1,243 @@
+package domain
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"lijiaoqiao/supply-api/internal/audit"
+)
+
+// 结算状态
+type SettlementStatus string
+
+const (
+	SettlementStatusPending    SettlementStatus = "pending"
+	SettlementStatusProcessing SettlementStatus = "processing"
+	SettlementStatusCompleted SettlementStatus = "completed"
+	SettlementStatusFailed    SettlementStatus = "failed"
+)
+
+// 支付方式
+type PaymentMethod string
+
+const (
+	PaymentMethodBank   PaymentMethod = "bank"
+	PaymentMethodAlipay PaymentMethod = "alipay"
+	PaymentMethodWechat PaymentMethod = "wechat"
+)
+
+// 结算单
+type Settlement struct {
+	ID            int64           `json:"settlement_id"`
+	SupplierID    int64           `json:"supplier_id"`
+	SettlementNo string          `json:"settlement_no"`
+	Status        SettlementStatus `json:"status"`
+	TotalAmount   float64         `json:"total_amount"`
+	FeeAmount     float64         `json:"fee_amount"`
+	NetAmount     float64         `json:"net_amount"`
+	PaymentMethod PaymentMethod   `json:"payment_method"`
+	PaymentAccount string        `json:"payment_account,omitempty"`
+	Version       int             `json:"version"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+}
+
+// 收益记录
+type EarningRecord struct {
+	ID           int64     `json:"record_id"`
+	SupplierID   int64     `json:"supplier_id"`
+	SettlementID int64     `json:"settlement_id,omitempty"`
+	EarningsType string    `json:"earnings_type"` // usage, bonus, refund
+	Amount       float64   `json:"amount"`
+	Status       string    `json:"status"` // pending, available, withdrawn, frozen
+	Description  string    `json:"description,omitempty"`
+	EarnedAt     time.Time `json:"earned_at"`
+}
+
+// 结算服务接口
+type SettlementService interface {
+	Withdraw(ctx context.Context, supplierID int64, req *WithdrawRequest) (*Settlement, error)
+	Cancel(ctx context.Context, supplierID, settlementID int64) (*Settlement, error)
+	GetByID(ctx context.Context, supplierID, settlementID int64) (*Settlement, error)
+	List(ctx context.Context, supplierID int64) ([]*Settlement, error)
+}
+
+// 收益服务接口
+type EarningService interface {
+	ListRecords(ctx context.Context, supplierID int64, startDate, endDate string, page, pageSize int) ([]*EarningRecord, int, error)
+	GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*BillingSummary, error)
+}
+
+// 提现请求
+type WithdrawRequest struct {
+	Amount        float64
+	PaymentMethod PaymentMethod
+	PaymentAccount string
+	SMSCode       string
+}
+
+// 账单汇总
+type BillingSummary struct {
+	Period         BillingPeriod   `json:"period"`
+	Summary        BillingTotal    `json:"summary"`
+	ByPlatform     []PlatformStat  `json:"by_platform,omitempty"`
+}
+
+type BillingPeriod struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+type BillingTotal struct {
+	TotalRevenue   float64 `json:"total_revenue"`
+	TotalOrders   int     `json:"total_orders"`
+	TotalUsage    int64   `json:"total_usage"`
+	TotalRequests int64   `json:"total_requests"`
+	AvgSuccessRate float64 `json:"avg_success_rate"`
+	PlatformFee   float64 `json:"platform_fee"`
+	NetEarnings   float64 `json:"net_earnings"`
+}
+
+type PlatformStat struct {
+	Platform    string  `json:"platform"`
+	Revenue     float64 `json:"revenue"`
+	Orders      int     `json:"orders"`
+	Tokens      int64   `json:"tokens"`
+	SuccessRate float64 `json:"success_rate"`
+}
+
+// 结算仓储接口
+type SettlementStore interface {
+	Create(ctx context.Context, s *Settlement) error
+	GetByID(ctx context.Context, supplierID, id int64) (*Settlement, error)
+	Update(ctx context.Context, s *Settlement) error
+	List(ctx context.Context, supplierID int64) ([]*Settlement, error)
+	GetWithdrawableBalance(ctx context.Context, supplierID int64) (float64, error)
+}
+
+// 收益仓储接口
+type EarningStore interface {
+	ListRecords(ctx context.Context, supplierID int64, startDate, endDate string, page, pageSize int) ([]*EarningRecord, int, error)
+	GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*BillingSummary, error)
+}
+
+// 结算服务实现
+type settlementService struct {
+	store        SettlementStore
+	earningStore EarningStore
+	auditStore   audit.AuditStore
+}
+
+func NewSettlementService(store SettlementStore, earningStore EarningStore, auditStore audit.AuditStore) SettlementService {
+	return &settlementService{
+		store:        store,
+		earningStore: earningStore,
+		auditStore:   auditStore,
+	}
+}
+
+func (s *settlementService) Withdraw(ctx context.Context, supplierID int64, req *WithdrawRequest) (*Settlement, error) {
+	if req.SMSCode != "123456" {
+		return nil, errors.New("invalid sms code")
+	}
+
+	balance, err := s.store.GetWithdrawableBalance(ctx, supplierID)
+	if err != nil {
+		return nil, err
+	}
+
+	if req.Amount > balance {
+		return nil, errors.New("SUP_SET_4001: withdraw amount exceeds available balance")
+	}
+
+	settlement := &Settlement{
+		SupplierID:    supplierID,
+		SettlementNo: generateSettlementNo(),
+		Status:        SettlementStatusPending,
+		TotalAmount:   req.Amount,
+		FeeAmount:     req.Amount * 0.01, // 1% fee
+		NetAmount:     req.Amount * 0.99,
+		PaymentMethod: req.PaymentMethod,
+		PaymentAccount: req.PaymentAccount,
+		Version:       1,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	if err := s.store.Create(ctx, settlement); err != nil {
+		return nil, err
+	}
+
+	s.auditStore.Emit(ctx, audit.Event{
+		TenantID:   supplierID,
+		ObjectType: "supply_settlement",
+		ObjectID:   settlement.ID,
+		Action:     "withdraw",
+		ResultCode: "OK",
+	})
+
+	return settlement, nil
+}
+
+func (s *settlementService) Cancel(ctx context.Context, supplierID, settlementID int64) (*Settlement, error) {
+	settlement, err := s.store.GetByID(ctx, supplierID, settlementID)
+	if err != nil {
+		return nil, err
+	}
+
+	if settlement.Status == SettlementStatusProcessing || settlement.Status == SettlementStatusCompleted {
+		return nil, errors.New("SUP_SET_4092: cannot cancel processing or completed settlements")
+	}
+
+	settlement.Status = SettlementStatusFailed
+	settlement.UpdatedAt = time.Now()
+	settlement.Version++
+
+	if err := s.store.Update(ctx, settlement); err != nil {
+		return nil, err
+	}
+
+	s.auditStore.Emit(ctx, audit.Event{
+		TenantID:   supplierID,
+		ObjectType: "supply_settlement",
+		ObjectID:   settlementID,
+		Action:     "cancel",
+		ResultCode: "OK",
+	})
+
+	return settlement, nil
+}
+
+func (s *settlementService) GetByID(ctx context.Context, supplierID, settlementID int64) (*Settlement, error) {
+	return s.store.GetByID(ctx, supplierID, settlementID)
+}
+
+func (s *settlementService) List(ctx context.Context, supplierID int64) ([]*Settlement, error) {
+	return s.store.List(ctx, supplierID)
+}
+
+func (s *settlementService) GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*BillingSummary, error) {
+	return s.earningStore.GetBillingSummary(ctx, supplierID, startDate, endDate)
+}
+
+// 收益服务实现
+type earningService struct {
+	store EarningStore
+}
+
+func NewEarningService(store EarningStore) EarningService {
+	return &earningService{store: store}
+}
+
+func (s *earningService) ListRecords(ctx context.Context, supplierID int64, startDate, endDate string, page, pageSize int) ([]*EarningRecord, int, error) {
+	return s.store.ListRecords(ctx, supplierID, startDate, endDate, page, pageSize)
+}
+
+func (s *earningService) GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*BillingSummary, error) {
+	return s.store.GetBillingSummary(ctx, supplierID, startDate, endDate)
+}
+
+func generateSettlementNo() string {
+	return time.Now().Format("20060102150405")
+}
