@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,9 +15,9 @@ func TestTokenVerify(t *testing.T) {
 	issuer := "test-issuer"
 
 	tests := []struct {
-		name        string
-		token       string
-		expectError bool
+		name          string
+		token         string
+		expectError   bool
 		errorContains string
 	}{
 		{
@@ -27,21 +26,21 @@ func TestTokenVerify(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "expired token",
-			token:       createTestToken(secretKey, issuer, "subject:1", "owner", time.Now().Add(-time.Hour)),
-			expectError: true,
+			name:          "expired token",
+			token:         createTestToken(secretKey, issuer, "subject:1", "owner", time.Now().Add(-time.Hour)),
+			expectError:   true,
 			errorContains: "expired",
 		},
 		{
-			name:        "wrong issuer",
-			token:       createTestToken(secretKey, "wrong-issuer", "subject:1", "owner", time.Now().Add(time.Hour)),
-			expectError: true,
+			name:          "wrong issuer",
+			token:         createTestToken(secretKey, "wrong-issuer", "subject:1", "owner", time.Now().Add(time.Hour)),
+			expectError:   true,
 			errorContains: "issuer",
 		},
 		{
-			name:        "invalid token",
-			token:       "invalid.token.string",
-			expectError: true,
+			name:          "invalid token",
+			token:         "invalid.token.string",
+			expectError:   true,
 			errorContains: "",
 		},
 	}
@@ -74,38 +73,38 @@ func TestTokenVerify(t *testing.T) {
 
 func TestQueryKeyRejectMiddleware(t *testing.T) {
 	tests := []struct {
-		name        string
-		query       string
+		name         string
+		query        string
 		expectStatus int
 	}{
 		{
-			name:        "no query params",
-			query:       "",
+			name:         "no query params",
+			query:        "",
 			expectStatus: http.StatusOK,
 		},
 		{
-			name:        "normal params",
-			query:       "?page=1&size=10",
+			name:         "normal params",
+			query:        "?page=1&size=10",
 			expectStatus: http.StatusOK,
 		},
 		{
-			name:        "blocked key param",
-			query:       "?key=abc123",
+			name:         "blocked key param",
+			query:        "?key=abc123",
 			expectStatus: http.StatusUnauthorized,
 		},
 		{
-			name:        "blocked api_key param",
-			query:       "?api_key=secret123",
+			name:         "blocked api_key param",
+			query:        "?api_key=secret123",
 			expectStatus: http.StatusUnauthorized,
 		},
 		{
-			name:        "blocked token param",
-			query:       "?token=bearer123",
+			name:         "blocked token param",
+			query:        "?token=bearer123",
 			expectStatus: http.StatusUnauthorized,
 		},
 		{
-			name:        "suspicious long param",
-			query:       "?apikey=verylongparamvalueexceeding20chars",
+			name:         "suspicious long param",
+			query:        "?apikey=verylongparamvalueexceeding20chars",
 			expectStatus: http.StatusUnauthorized,
 		},
 	}
@@ -143,28 +142,28 @@ func TestQueryKeyRejectMiddleware(t *testing.T) {
 
 func TestBearerExtractMiddleware(t *testing.T) {
 	tests := []struct {
-		name        string
-		authHeader  string
+		name         string
+		authHeader   string
 		expectStatus int
 	}{
 		{
-			name:        "valid bearer",
-			authHeader:  "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+			name:         "valid bearer",
+			authHeader:   "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
 			expectStatus: http.StatusOK,
 		},
 		{
-			name:        "missing header",
-			authHeader:  "",
+			name:         "missing header",
+			authHeader:   "",
 			expectStatus: http.StatusUnauthorized,
 		},
 		{
-			name:        "wrong prefix",
-			authHeader:  "Basic abc123",
+			name:         "wrong prefix",
+			authHeader:   "Basic abc123",
 			expectStatus: http.StatusUnauthorized,
 		},
 		{
-			name:        "empty token",
-			authHeader:  "Bearer ",
+			name:         "empty token",
+			authHeader:   "Bearer ",
 			expectStatus: http.StatusUnauthorized,
 		},
 	}
@@ -332,9 +331,9 @@ func createTestToken(secretKey, issuer, subject, role string, expiresAt time.Tim
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 		SubjectID: subject,
-		Role:     role,
-		Scope:    []string{"read", "write"},
-		TenantID: 1,
+		Role:      role,
+		Scope:     []string{"read", "write"},
+		TenantID:  1,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

@@ -63,7 +63,7 @@ func (r *SettlementRepository) GetByID(ctx context.Context, supplierID, id int64
 	`
 
 	s := &domain.Settlement{}
-	var paidAt pgx.NullTime
+	var paidAt *time.Time
 	err := r.pool.QueryRow(ctx, query, id, supplierID).Scan(
 		&s.ID, &s.SettlementNo, &s.SupplierID, &s.TotalAmount, &s.FeeAmount, &s.NetAmount,
 		&s.Status, &s.PaymentMethod, &s.PaymentAccount,
@@ -79,8 +79,8 @@ func (r *SettlementRepository) GetByID(ctx context.Context, supplierID, id int64
 		return nil, fmt.Errorf("failed to get settlement: %w", err)
 	}
 
-	if paidAt.Valid {
-		s.PaidAt = &paidAt.Time
+	if paidAt != nil {
+		s.PaidAt = paidAt
 	}
 
 	return s, nil

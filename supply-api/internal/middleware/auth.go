@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"lijiaoqiao/supply-api/internal/repository"
 )
 
 // TokenClaims JWT token claims
@@ -27,17 +26,17 @@ type TokenClaims struct {
 
 // AuthConfig 鉴权中间件配置
 type AuthConfig struct {
-	SecretKey     string
-	Issuer        string
-	CacheTTL      time.Duration // token状态缓存TTL
-	Enabled       bool          // 是否启用鉴权
+	SecretKey string
+	Issuer    string
+	CacheTTL  time.Duration // token状态缓存TTL
+	Enabled   bool          // 是否启用鉴权
 }
 
 // AuthMiddleware 鉴权中间件
 type AuthMiddleware struct {
-	config         AuthConfig
-	tokenCache    *TokenCache
-	auditEmitter  AuditEmitter
+	config       AuthConfig
+	tokenCache   *TokenCache
+	auditEmitter AuditEmitter
 }
 
 // AuditEmitter 审计事件发射器
@@ -63,8 +62,8 @@ func NewAuthMiddleware(config AuthConfig, tokenCache *TokenCache, auditEmitter A
 		config.CacheTTL = 30 * time.Second
 	}
 	return &AuthMiddleware{
-		config:        config,
-		tokenCache:    tokenCache,
+		config:       config,
+		tokenCache:   tokenCache,
 		auditEmitter: auditEmitter,
 	}
 }
@@ -274,11 +273,11 @@ func (m *AuthMiddleware) ScopeRoleAuthzMiddleware(requiredScope string) func(htt
 
 			// 路由权限要求
 			routeRoles := map[string]string{
-				"/api/v1/supply/accounts":     "owner",
-				"/api/v1/supply/packages":      "owner",
-				"/api/v1/supply/settlements":    "owner",
-				"/api/v1/supply/billing":        "viewer",
-				"/api/v1/supplier/billing":      "viewer",
+				"/api/v1/supply/accounts":    "owner",
+				"/api/v1/supply/packages":    "owner",
+				"/api/v1/supply/settlements": "owner",
+				"/api/v1/supply/billing":     "viewer",
+				"/api/v1/supplier/billing":   "viewer",
 			}
 
 			for path, requiredRole := range routeRoles {

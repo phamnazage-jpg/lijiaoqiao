@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/netip"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -84,7 +83,7 @@ func (r *PackageRepository) GetByID(ctx context.Context, supplierID, id int64) (
 	`
 
 	pkg := &domain.Package{}
-	var startAt, endAt pgx.NullTime
+	var startAt, endAt *time.Time
 	err := r.pool.QueryRow(ctx, query, id, supplierID).Scan(
 		&pkg.ID, &pkg.SupplierID, &pkg.SupplierID, &pkg.Platform, &pkg.Model,
 		&pkg.TotalQuota, &pkg.AvailableQuota, &pkg.SoldQuota, &pkg.ReservedQuota,
@@ -103,11 +102,11 @@ func (r *PackageRepository) GetByID(ctx context.Context, supplierID, id int64) (
 		return nil, fmt.Errorf("failed to get package: %w", err)
 	}
 
-	if startAt.Valid {
-		pkg.StartAt = startAt.Time
+	if startAt != nil {
+		pkg.StartAt = *startAt
 	}
-	if endAt.Valid {
-		pkg.EndAt = endAt.Time
+	if endAt != nil {
+		pkg.EndAt = *endAt
 	}
 
 	return pkg, nil

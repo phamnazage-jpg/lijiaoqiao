@@ -8,17 +8,17 @@ import (
 
 // 审计事件
 type Event struct {
-	EventID    string            `json:"event_id,omitempty"`
-	TenantID   int64             `json:"tenant_id"`
-	ObjectType string            `json:"object_type"`
-	ObjectID   int64             `json:"object_id"`
-	Action     string            `json:"action"`
-	BeforeState map[string]any  `json:"before_state,omitempty"`
-	AfterState  map[string]any  `json:"after_state,omitempty"`
-	RequestID  string            `json:"request_id,omitempty"`
-	ResultCode string            `json:"result_code"`
-	ClientIP   string            `json:"client_ip,omitempty"`
-	CreatedAt  time.Time         `json:"created_at"`
+	EventID     string         `json:"event_id,omitempty"`
+	TenantID    int64          `json:"tenant_id"`
+	ObjectType  string         `json:"object_type"`
+	ObjectID    int64          `json:"object_id"`
+	Action      string         `json:"action"`
+	BeforeState map[string]any `json:"before_state,omitempty"`
+	AfterState  map[string]any `json:"after_state,omitempty"`
+	RequestID   string         `json:"request_id,omitempty"`
+	ResultCode  string         `json:"result_code"`
+	ClientIP    string         `json:"client_ip,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
 }
 
 // 审计存储接口

@@ -191,9 +191,9 @@ func ValidateStateTransition(from, to AccountStatus) bool {
 // ValidatePackageStateTransition 验证套餐状态转换
 func ValidatePackageStateTransition(from, to PackageStatus) bool {
 	validTransitions := map[PackageStatus][]PackageStatus{
-		PackageStatusDraft:    {PackageStatusActive},
-		PackageStatusActive:   {PackageStatusPaused, PackageStatusSoldOut, PackageStatusExpired},
-		PackageStatusPaused:   {PackageStatusActive, PackageStatusExpired},
+		PackageStatusDraft:   {PackageStatusActive},
+		PackageStatusActive:  {PackageStatusPaused, PackageStatusSoldOut, PackageStatusExpired},
+		PackageStatusPaused:  {PackageStatusActive, PackageStatusExpired},
 		PackageStatusSoldOut: {}, // 只能由系统迁移
 		PackageStatusExpired: {}, // 不能直接恢复，需要通过克隆
 	}

@@ -13,37 +13,37 @@ import (
 type PackageStatus string
 
 const (
-	PackageStatusDraft    PackageStatus = "draft"
-	PackageStatusActive   PackageStatus = "active"
-	PackageStatusPaused   PackageStatus = "paused"
-	PackageStatusSoldOut  PackageStatus = "sold_out"
-	PackageStatusExpired  PackageStatus = "expired"
+	PackageStatusDraft   PackageStatus = "draft"
+	PackageStatusActive  PackageStatus = "active"
+	PackageStatusPaused  PackageStatus = "paused"
+	PackageStatusSoldOut PackageStatus = "sold_out"
+	PackageStatusExpired PackageStatus = "expired"
 )
 
 // 套餐
 type Package struct {
 	ID               int64         `json:"package_id"`
-	SupplierID      int64         `json:"supply_account_id"`
-	AccountID       int64         `json:"account_id,omitempty"`
-	Platform        string        `json:"platform,omitempty"`
-	Model           string        `json:"model"`
-	TotalQuota      float64       `json:"total_quota"`
-	AvailableQuota  float64       `json:"available_quota"`
-	SoldQuota       float64       `json:"sold_quota"`
-	ReservedQuota   float64       `json:"reserved_quota"`
-	PricePer1MInput float64      `json:"price_per_1m_input"`
-	PricePer1MOutput float64     `json:"price_per_1m_output"`
-	MinPurchase     float64      `json:"min_purchase,omitempty"`
-	StartAt         time.Time    `json:"start_at,omitempty"`
-	EndAt           time.Time    `json:"end_at,omitempty"`
-	ValidDays       int          `json:"valid_days"`
-	MaxConcurrent   int          `json:"max_concurrent,omitempty"`
-	RateLimitRPM    int          `json:"rate_limit_rpm,omitempty"`
-	Status          PackageStatus `json:"status"`
-	TotalOrders     int          `json:"total_orders"`
-	TotalRevenue    float64      `json:"total_revenue"`
-	Rating          float64      `json:"rating"`
-	RatingCount     int          `json:"rating_count"`
+	SupplierID       int64         `json:"supply_account_id"`
+	AccountID        int64         `json:"account_id,omitempty"`
+	Platform         string        `json:"platform,omitempty"`
+	Model            string        `json:"model"`
+	TotalQuota       float64       `json:"total_quota"`
+	AvailableQuota   float64       `json:"available_quota"`
+	SoldQuota        float64       `json:"sold_quota"`
+	ReservedQuota    float64       `json:"reserved_quota"`
+	PricePer1MInput  float64       `json:"price_per_1m_input"`
+	PricePer1MOutput float64       `json:"price_per_1m_output"`
+	MinPurchase      float64       `json:"min_purchase,omitempty"`
+	StartAt          time.Time     `json:"start_at,omitempty"`
+	EndAt            time.Time     `json:"end_at,omitempty"`
+	ValidDays        int           `json:"valid_days"`
+	MaxConcurrent    int           `json:"max_concurrent,omitempty"`
+	RateLimitRPM     int           `json:"rate_limit_rpm,omitempty"`
+	Status           PackageStatus `json:"status"`
+	TotalOrders      int           `json:"total_orders"`
+	TotalRevenue     float64       `json:"total_revenue"`
+	Rating           float64       `json:"rating"`
+	RatingCount      int           `json:"rating_count"`
 
 	// 单位与币种 (XR-001)
 	QuotaUnit    string `json:"quota_unit"`
@@ -51,10 +51,10 @@ type Package struct {
 	CurrencyCode string `json:"currency_code"`
 
 	// 审计字段 (XR-001)
-	Version      int        `json:"version"`
+	Version      int         `json:"version"`
 	CreatedIP    *netip.Addr `json:"created_ip,omitempty"`
 	UpdatedIP    *netip.Addr `json:"updated_ip,omitempty"`
-	AuditTraceID string     `json:"audit_trace_id,omitempty"`
+	AuditTraceID string      `json:"audit_trace_id,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -73,15 +73,15 @@ type PackageService interface {
 
 // 创建套餐草稿请求
 type CreatePackageDraftRequest struct {
-	SupplierID      int64
-	AccountID      int64
-	Model          string
-	TotalQuota     float64
-	PricePer1MInput float64
+	SupplierID       int64
+	AccountID        int64
+	Model            string
+	TotalQuota       float64
+	PricePer1MInput  float64
 	PricePer1MOutput float64
-	ValidDays      int
-	MaxConcurrent  int
-	RateLimitRPM   int
+	ValidDays        int
+	MaxConcurrent    int
+	RateLimitRPM     int
 }
 
 // 批量调价请求
@@ -90,17 +90,17 @@ type BatchUpdatePriceRequest struct {
 }
 
 type BatchPriceItem struct {
-	PackageID      int64   `json:"package_id"`
-	PricePer1MInput float64 `json:"price_per_1m_input"`
+	PackageID        int64   `json:"package_id"`
+	PricePer1MInput  float64 `json:"price_per_1m_input"`
 	PricePer1MOutput float64 `json:"price_per_1m_output"`
 }
 
 // 批量调价响应
 type BatchUpdatePriceResponse struct {
-	Total       int                   `json:"total"`
-	SuccessCount int                   `json:"success_count"`
-	FailedCount  int                   `json:"failed_count"`
-	Failures     []BatchPriceFailure  `json:"failures,omitempty"`
+	Total        int                 `json:"total"`
+	SuccessCount int                 `json:"success_count"`
+	FailedCount  int                 `json:"failed_count"`
+	Failures     []BatchPriceFailure `json:"failures,omitempty"`
 }
 
 type BatchPriceFailure struct {
@@ -134,20 +134,20 @@ func NewPackageService(store PackageStore, accountStore AccountStore, auditStore
 
 func (s *packageService) CreateDraft(ctx context.Context, supplierID int64, req *CreatePackageDraftRequest) (*Package, error) {
 	pkg := &Package{
-		SupplierID:      supplierID,
-		AccountID:       req.AccountID,
-		Model:           req.Model,
-		TotalQuota:      req.TotalQuota,
-		AvailableQuota:  req.TotalQuota,
-		PricePer1MInput: req.PricePer1MInput,
+		SupplierID:       supplierID,
+		AccountID:        req.AccountID,
+		Model:            req.Model,
+		TotalQuota:       req.TotalQuota,
+		AvailableQuota:   req.TotalQuota,
+		PricePer1MInput:  req.PricePer1MInput,
 		PricePer1MOutput: req.PricePer1MOutput,
-		ValidDays:       req.ValidDays,
-		MaxConcurrent:   req.MaxConcurrent,
-		RateLimitRPM:    req.RateLimitRPM,
-		Status:          PackageStatusDraft,
-		Version:         1,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+		ValidDays:        req.ValidDays,
+		MaxConcurrent:    req.MaxConcurrent,
+		RateLimitRPM:     req.RateLimitRPM,
+		Status:           PackageStatusDraft,
+		Version:          1,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 
 	if err := s.store.Create(ctx, pkg); err != nil {
@@ -255,20 +255,20 @@ func (s *packageService) Clone(ctx context.Context, supplierID, packageID int64)
 	}
 
 	clone := &Package{
-		SupplierID:      supplierID,
-		AccountID:       original.AccountID,
-		Model:           original.Model,
-		TotalQuota:      original.TotalQuota,
-		AvailableQuota:  original.TotalQuota,
-		PricePer1MInput: original.PricePer1MInput,
+		SupplierID:       supplierID,
+		AccountID:        original.AccountID,
+		Model:            original.Model,
+		TotalQuota:       original.TotalQuota,
+		AvailableQuota:   original.TotalQuota,
+		PricePer1MInput:  original.PricePer1MInput,
 		PricePer1MOutput: original.PricePer1MOutput,
-		ValidDays:       original.ValidDays,
-		MaxConcurrent:   original.MaxConcurrent,
-		RateLimitRPM:    original.RateLimitRPM,
-		Status:          PackageStatusDraft,
-		Version:         1,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+		ValidDays:        original.ValidDays,
+		MaxConcurrent:    original.MaxConcurrent,
+		RateLimitRPM:     original.RateLimitRPM,
+		Status:           PackageStatusDraft,
+		Version:          1,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 
 	if err := s.store.Create(ctx, clone); err != nil {

@@ -74,9 +74,9 @@ func (a *SupplyAPI) Register(mux *http.ServeMux) {
 // ==================== Account Handlers ====================
 
 type VerifyAccountRequest struct {
-	Provider         string  `json:"provider"`
-	AccountType      string  `json:"account_type"`
-	CredentialInput  string  `json:"credential_input"`
+	Provider          string  `json:"provider"`
+	AccountType       string  `json:"account_type"`
+	CredentialInput   string  `json:"credential_input"`
 	MinQuotaThreshold float64 `json:"min_quota_threshold,omitempty"`
 }
 
@@ -129,9 +129,9 @@ func (a *SupplyAPI) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 		if record, found := a.idempotencyStore.Get(idempotencyKey); found {
 			if record.Status == "succeeded" {
 				writeJSON(w, http.StatusOK, map[string]any{
-					"request_id":          requestID,
-					"idempotent_replay":   true,
-					"data":                record.Response,
+					"request_id":        requestID,
+					"idempotent_replay": true,
+					"data":              record.Response,
 				})
 				return
 			}
@@ -176,8 +176,8 @@ func (a *SupplyAPI) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 	}
 
 	resp := map[string]any{
-		"account_id":    account.ID,
-		"provider":      account.Provider,
+		"account_id":   account.ID,
+		"provider":     account.Provider,
 		"account_type": account.AccountType,
 		"status":       account.Status,
 		"created_at":   account.CreatedAt,
@@ -314,14 +314,14 @@ func (a *SupplyAPI) handleAccountAuditLogs(w http.ResponseWriter, r *http.Reques
 	var items []map[string]any
 	for _, ev := range events {
 		items = append(items, map[string]any{
-			"event_id":     ev.EventID,
-			"operator_id":  ev.TenantID,
-			"tenant_id":    ev.TenantID,
-			"object_type":  ev.ObjectType,
-			"object_id":    ev.ObjectID,
-			"action":       ev.Action,
-			"request_id":   ev.RequestID,
-			"created_at":   ev.CreatedAt,
+			"event_id":    ev.EventID,
+			"operator_id": ev.TenantID,
+			"tenant_id":   ev.TenantID,
+			"object_type": ev.ObjectType,
+			"object_id":   ev.ObjectID,
+			"action":      ev.Action,
+			"request_id":  ev.RequestID,
+			"created_at":  ev.CreatedAt,
 		})
 	}
 
@@ -369,14 +369,14 @@ func (a *SupplyAPI) handleCreatePackageDraft(w http.ResponseWriter, r *http.Requ
 
 	createReq := &domain.CreatePackageDraftRequest{
 		SupplierID:       a.supplierID,
-		AccountID:       req.SupplyAccountID,
-		Model:           req.Model,
-		TotalQuota:      req.TotalQuota,
+		AccountID:        req.SupplyAccountID,
+		Model:            req.Model,
+		TotalQuota:       req.TotalQuota,
 		PricePer1MInput:  req.PricePer1MInput,
 		PricePer1MOutput: req.PricePer1MOutput,
-		ValidDays:       req.ValidDays,
-		MaxConcurrent:   req.MaxConcurrent,
-		RateLimitRPM:    req.RateLimitRPM,
+		ValidDays:        req.ValidDays,
+		MaxConcurrent:    req.MaxConcurrent,
+		RateLimitRPM:     req.RateLimitRPM,
 	}
 
 	pkg, err := a.packageService.CreateDraft(r.Context(), a.supplierID, createReq)
@@ -530,11 +530,11 @@ func (a *SupplyAPI) handleClonePackage(w http.ResponseWriter, r *http.Request, p
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"request_id": getRequestID(r),
 		"data": map[string]any{
-			"package_id":       pkg.ID,
+			"package_id":        pkg.ID,
 			"supply_account_id": pkg.SupplierID,
-			"model":            pkg.Model,
-			"status":           pkg.Status,
-			"created_at":       pkg.CreatedAt,
+			"model":             pkg.Model,
+			"status":            pkg.Status,
+			"created_at":        pkg.CreatedAt,
 		},
 	})
 }
@@ -554,8 +554,8 @@ func (a *SupplyAPI) handleBatchUpdatePrice(w http.ResponseWriter, r *http.Reques
 
 	var rawReq struct {
 		Items []struct {
-			PackageID       int64   `json:"package_id"`
-			PricePer1MInput float64 `json:"price_per_1m_input"`
+			PackageID        int64   `json:"package_id"`
+			PricePer1MInput  float64 `json:"price_per_1m_input"`
 			PricePer1MOutput float64 `json:"price_per_1m_output"`
 		} `json:"items"`
 	}
@@ -570,8 +570,8 @@ func (a *SupplyAPI) handleBatchUpdatePrice(w http.ResponseWriter, r *http.Reques
 	}
 	for i, item := range rawReq.Items {
 		req.Items[i] = domain.BatchPriceItem{
-			PackageID:       item.PackageID,
-			PricePer1MInput: item.PricePer1MInput,
+			PackageID:        item.PackageID,
+			PricePer1MInput:  item.PricePer1MInput,
 			PricePer1MOutput: item.PricePer1MOutput,
 		}
 	}
@@ -583,8 +583,8 @@ func (a *SupplyAPI) handleBatchUpdatePrice(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"request_id":   getRequestID(r),
-		"data":         resp,
+		"request_id": getRequestID(r),
+		"data":       resp,
 	})
 }
 
@@ -628,7 +628,7 @@ func (a *SupplyAPI) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 			if record.Status == "succeeded" {
 				writeJSON(w, http.StatusOK, map[string]any{
 					"request_id":        requestID,
-					"idempotent_replay":  true,
+					"idempotent_replay": true,
 					"data":              record.Response,
 				})
 				return
@@ -645,8 +645,8 @@ func (a *SupplyAPI) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var req struct {
-		WithdrawAmount  float64 `json:"withdraw_amount"`
-		PaymentMethod   string  `json:"payment_method"`
+		WithdrawAmount float64 `json:"withdraw_amount"`
+		PaymentMethod  string  `json:"payment_method"`
 		PaymentAccount string  `json:"payment_account"`
 		SMSCode        string  `json:"sms_code"`
 	}
@@ -791,9 +791,9 @@ func (a *SupplyAPI) handleGetEarningRecords(w http.ResponseWriter, r *http.Reque
 		items = append(items, map[string]any{
 			"record_id":     record.ID,
 			"earnings_type": record.EarningsType,
-			"amount":       record.Amount,
-			"status":       record.Status,
-			"earned_at":    record.EarnedAt,
+			"amount":        record.Amount,
+			"status":        record.Status,
+			"earned_at":     record.EarnedAt,
 		})
 	}
 

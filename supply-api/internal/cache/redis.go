@@ -49,12 +49,12 @@ func (r *RedisCache) HealthCheck(ctx context.Context) error {
 
 // TokenStatus Token状态
 type TokenStatus struct {
-	TokenID   string `json:"token_id"`
-	SubjectID  string `json:"subject_id"`
-	Role       string `json:"role"`
-	Status     string `json:"status"` // active, revoked, expired
-	ExpiresAt  int64  `json:"expires_at"`
-	RevokedAt  int64  `json:"revoked_at,omitempty"`
+	TokenID       string `json:"token_id"`
+	SubjectID     string `json:"subject_id"`
+	Role          string `json:"role"`
+	Status        string `json:"status"` // active, revoked, expired
+	ExpiresAt     int64  `json:"expires_at"`
+	RevokedAt     int64  `json:"revoked_at,omitempty"`
 	RevokedReason string `json:"revoked_reason,omitempty"`
 }
 

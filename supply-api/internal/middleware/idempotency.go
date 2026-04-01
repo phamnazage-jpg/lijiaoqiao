@@ -17,15 +17,15 @@ import (
 
 // IdempotencyConfig 幂等中间件配置
 type IdempotencyConfig struct {
-	TTL             time.Duration // 幂等有效期，默认24h
-	ProcessingTTL   time.Duration // 处理中状态有效期，默认30s
-	Enabled         bool          // 是否启用幂等
+	TTL           time.Duration // 幂等有效期，默认24h
+	ProcessingTTL time.Duration // 处理中状态有效期，默认30s
+	Enabled       bool          // 是否启用幂等
 }
 
 // IdempotencyMiddleware 幂等中间件
 type IdempotencyMiddleware struct {
 	idempotencyRepo *repository.IdempotencyRepository
-	config         IdempotencyConfig
+	config          IdempotencyConfig
 }
 
 // NewIdempotencyMiddleware 创建幂等中间件
@@ -46,8 +46,8 @@ func NewIdempotencyMiddleware(repo *repository.IdempotencyRepository, config Ide
 type IdempotencyKey struct {
 	TenantID   int64
 	OperatorID int64
-	APIPath   string
-	Key       string
+	APIPath    string
+	Key        string
 }
 
 // ExtractIdempotencyKey 从请求中提取幂等信息
@@ -75,8 +75,8 @@ func ExtractIdempotencyKey(r *http.Request, tenantID, operatorID int64) (*Idempo
 	return &IdempotencyKey{
 		TenantID:   tenantID,
 		OperatorID: operatorID,
-		APIPath:   apiPath,
-		Key:       idempotencyKey,
+		APIPath:    apiPath,
+		Key:        idempotencyKey,
 	}, nil
 }
 
@@ -157,20 +157,8 @@ func (m *IdempotencyMiddleware) Wrap(handler IdempotentHandler) http.HandlerFunc
 			}
 		}
 
-		// 尝试创建或更新幂等记录
-		requestID := r.Header.Get("X-Request-Id")
-		record := &repository.IdempotencyRecord{
-			TenantID:       idempKey.TenantID,
-			OperatorID:     idempKey.OperatorID,
-			APIPath:       idempKey.APIPath,
-			IdempotencyKey: idempKey.Key,
-			RequestID:      requestID,
-			PayloadHash:    payloadHash,
-			Status:         repository.IdempotencyStatusProcessing,
-			ExpiresAt:      time.Now().Add(m.config.TTL),
-		}
-
 		// 使用AcquireLock获取锁
+		requestID := r.Header.Get("X-Request-Id")
 		lockedRecord, err := m.idempotencyRepo.AcquireLock(ctx, idempKey.TenantID, idempKey.OperatorID, idempKey.APIPath, idempKey.Key, m.config.TTL)
 		if err != nil {
 			writeIdempotencyError(w, http.StatusInternalServerError, "IDEMPOTENCY_LOCK_FAILED", err.Error())

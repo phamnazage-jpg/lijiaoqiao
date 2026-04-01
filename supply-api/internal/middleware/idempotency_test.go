@@ -54,7 +54,7 @@ func (r *MockIdempotencyRepository) AcquireLock(ctx context.Context, tenantID, o
 	record := &repository.IdempotencyRecord{
 		TenantID:       tenantID,
 		OperatorID:     operatorID,
-		APIPath:       apiPath,
+		APIPath:        apiPath,
 		IdempotencyKey: idempotencyKey,
 		RequestID:      "test-request-id",
 		PayloadHash:    "",

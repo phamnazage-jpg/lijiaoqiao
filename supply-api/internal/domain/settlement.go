@@ -15,8 +15,8 @@ type SettlementStatus string
 const (
 	SettlementStatusPending    SettlementStatus = "pending"
 	SettlementStatusProcessing SettlementStatus = "processing"
-	SettlementStatusCompleted SettlementStatus = "completed"
-	SettlementStatusFailed    SettlementStatus = "failed"
+	SettlementStatusCompleted  SettlementStatus = "completed"
+	SettlementStatusFailed     SettlementStatus = "failed"
 )
 
 // 支付方式
@@ -30,23 +30,23 @@ const (
 
 // 结算单
 type Settlement struct {
-	ID                 int64            `json:"settlement_id"`
-	SupplierID         int64           `json:"supplier_id"`
-	SettlementNo       string          `json:"settlement_no"`
-	Status             SettlementStatus `json:"status"`
-	TotalAmount        float64         `json:"total_amount"`
-	FeeAmount          float64         `json:"fee_amount"`
-	NetAmount          float64         `json:"net_amount"`
-	PaymentMethod      PaymentMethod   `json:"payment_method"`
-	PaymentAccount     string          `json:"payment_account,omitempty"`
-	PaymentTransactionID string        `json:"payment_transaction_id,omitempty"`
-	PaidAt            *time.Time      `json:"paid_at,omitempty"`
+	ID                   int64            `json:"settlement_id"`
+	SupplierID           int64            `json:"supplier_id"`
+	SettlementNo         string           `json:"settlement_no"`
+	Status               SettlementStatus `json:"status"`
+	TotalAmount          float64          `json:"total_amount"`
+	FeeAmount            float64          `json:"fee_amount"`
+	NetAmount            float64          `json:"net_amount"`
+	PaymentMethod        PaymentMethod    `json:"payment_method"`
+	PaymentAccount       string           `json:"payment_account,omitempty"`
+	PaymentTransactionID string           `json:"payment_transaction_id,omitempty"`
+	PaidAt               *time.Time       `json:"paid_at,omitempty"`
 
 	// 账期 (XR-001)
-	PeriodStart          time.Time `json:"period_start"`
-	PeriodEnd            time.Time `json:"period_end"`
-	TotalOrders          int       `json:"total_orders"`
-	TotalUsageRecords    int       `json:"total_usage_records"`
+	PeriodStart       time.Time `json:"period_start"`
+	PeriodEnd         time.Time `json:"period_end"`
+	TotalOrders       int       `json:"total_orders"`
+	TotalUsageRecords int       `json:"total_usage_records"`
 
 	// 单位与币种 (XR-001)
 	CurrencyCode string `json:"currency_code"`
@@ -57,8 +57,8 @@ type Settlement struct {
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 
 	// 审计字段 (XR-001)
-	AuditTraceID string `json:"audit_trace_id,omitempty"`
-	Version      int    `json:"version"`
+	AuditTraceID string      `json:"audit_trace_id,omitempty"`
+	Version      int         `json:"version"`
 	CreatedIP    *netip.Addr `json:"created_ip,omitempty"`
 	UpdatedIP    *netip.Addr `json:"updated_ip,omitempty"`
 
@@ -94,17 +94,17 @@ type EarningService interface {
 
 // 提现请求
 type WithdrawRequest struct {
-	Amount        float64
-	PaymentMethod PaymentMethod
+	Amount         float64
+	PaymentMethod  PaymentMethod
 	PaymentAccount string
-	SMSCode       string
+	SMSCode        string
 }
 
 // 账单汇总
 type BillingSummary struct {
-	Period         BillingPeriod   `json:"period"`
-	Summary        BillingTotal    `json:"summary"`
-	ByPlatform     []PlatformStat  `json:"by_platform,omitempty"`
+	Period     BillingPeriod  `json:"period"`
+	Summary    BillingTotal   `json:"summary"`
+	ByPlatform []PlatformStat `json:"by_platform,omitempty"`
 }
 
 type BillingPeriod struct {
@@ -114,12 +114,12 @@ type BillingPeriod struct {
 
 type BillingTotal struct {
 	TotalRevenue   float64 `json:"total_revenue"`
-	TotalOrders   int     `json:"total_orders"`
-	TotalUsage    int64   `json:"total_usage"`
-	TotalRequests int64   `json:"total_requests"`
+	TotalOrders    int     `json:"total_orders"`
+	TotalUsage     int64   `json:"total_usage"`
+	TotalRequests  int64   `json:"total_requests"`
 	AvgSuccessRate float64 `json:"avg_success_rate"`
-	PlatformFee   float64 `json:"platform_fee"`
-	NetEarnings   float64 `json:"net_earnings"`
+	PlatformFee    float64 `json:"platform_fee"`
+	NetEarnings    float64 `json:"net_earnings"`
 }
 
 type PlatformStat struct {
@@ -175,17 +175,17 @@ func (s *settlementService) Withdraw(ctx context.Context, supplierID int64, req 
 	}
 
 	settlement := &Settlement{
-		SupplierID:    supplierID,
-		SettlementNo: generateSettlementNo(),
-		Status:        SettlementStatusPending,
-		TotalAmount:   req.Amount,
-		FeeAmount:     req.Amount * 0.01, // 1% fee
-		NetAmount:     req.Amount * 0.99,
-		PaymentMethod: req.PaymentMethod,
+		SupplierID:     supplierID,
+		SettlementNo:   generateSettlementNo(),
+		Status:         SettlementStatusPending,
+		TotalAmount:    req.Amount,
+		FeeAmount:      req.Amount * 0.01, // 1% fee
+		NetAmount:      req.Amount * 0.99,
+		PaymentMethod:  req.PaymentMethod,
 		PaymentAccount: req.PaymentAccount,
-		Version:       1,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		Version:        1,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 
 	if err := s.store.Create(ctx, settlement); err != nil {

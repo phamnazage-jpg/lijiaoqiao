@@ -207,9 +207,9 @@ func (s *InMemorySettlementStore) GetWithdrawableBalance(ctx context.Context, su
 
 // 内存收益存储
 type InMemoryEarningStore struct {
-	mu       sync.RWMutex
-	records  map[int64]*domain.EarningRecord
-	nextID   int64
+	mu      sync.RWMutex
+	records map[int64]*domain.EarningRecord
+	nextID  int64
 }
 
 func NewInMemoryEarningStore() *InMemoryEarningStore {
@@ -252,28 +252,28 @@ func (s *InMemoryEarningStore) GetBillingSummary(ctx context.Context, supplierID
 		},
 		Summary: domain.BillingTotal{
 			TotalRevenue:   10000.0,
-			TotalOrders:   100,
-			TotalUsage:    1000000,
-			TotalRequests: 50000,
+			TotalOrders:    100,
+			TotalUsage:     1000000,
+			TotalRequests:  50000,
 			AvgSuccessRate: 99.5,
-			PlatformFee:   100.0,
-			NetEarnings:   9900.0,
+			PlatformFee:    100.0,
+			NetEarnings:    9900.0,
 		},
 	}, nil
 }
 
 // 内存幂等存储
 type InMemoryIdempotencyStore struct {
-	mu     sync.RWMutex
+	mu      sync.RWMutex
 	records map[string]*IdempotencyRecord
 }
 
 type IdempotencyRecord struct {
-	Key        string
-	Status     string // processing, succeeded, failed
-	Response   interface{}
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
+	Key       string
+	Status    string // processing, succeeded, failed
+	Response  interface{}
+	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 func NewInMemoryIdempotencyStore() *InMemoryIdempotencyStore {

@@ -16,8 +16,8 @@ type IdempotencyStatus string
 
 const (
 	IdempotencyStatusProcessing IdempotencyStatus = "processing"
-	IdempotencyStatusSucceeded IdempotencyStatus = "succeeded"
-	IdempotencyStatusFailed    IdempotencyStatus = "failed"
+	IdempotencyStatusSucceeded  IdempotencyStatus = "succeeded"
+	IdempotencyStatusFailed     IdempotencyStatus = "failed"
 )
 
 // IdempotencyRecord 幂等记录

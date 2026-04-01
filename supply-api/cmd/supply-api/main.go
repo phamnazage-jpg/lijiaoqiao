@@ -109,6 +109,7 @@ func main() {
 	if db != nil {
 		idempotencyRepo = repository.NewIdempotencyRepository(db.Pool)
 	}
+	_ = idempotencyRepo // TODO: 在生产环境中用于DB-backed幂等
 
 	// 初始化Token缓存
 	tokenCache := middleware.NewTokenCache()
@@ -127,9 +128,13 @@ func main() {
 
 	// 初始化幂等中间件
 	idempotencyMiddleware := middleware.NewIdempotencyMiddleware(nil, middleware.IdempotencyConfig{
-		TTL:       24 * time.Hour,
-		Enabled:   *env != "dev",
+		TTL:     24 * time.Hour,
+		Enabled: *env != "dev",
 	})
+	_ = idempotencyMiddleware // TODO: 在生产环境中用于幂等处理
+
+	// 初始化幂等存储
+	idempotencyStore := storage.NewInMemoryIdempotencyStore()
 
 	// 初始化HTTP API处理器
 	api := httpapi.NewSupplyAPI(
@@ -137,6 +142,7 @@ func main() {
 		packageService,
 		settlementService,
 		earningService,
+		idempotencyStore,
 		auditStore,
 		1, // 默认供应商ID
 		time.Now,
@@ -151,7 +157,7 @@ func main() {
 	mux.HandleFunc("/actuator/health/ready", handleReadiness(db, redisCache))
 
 	// 注册API路由（应用鉴权和幂等中间件）
-	apiHandler := api
+	api.Register(mux)
 
 	// 应用中间件链路
 	// 1. RequestID - 请求追踪
@@ -163,7 +169,7 @@ func main() {
 	// 7. ScopeRoleAuthz - 权限校验
 	// 8. Idempotent - 幂等处理
 
-	handler := apiHandler
+	handler := http.Handler(mux)
 	handler = middleware.RequestID(handler)
 	handler = middleware.Recovery(handler)
 	handler = middleware.Logging(handler)
@@ -293,7 +299,7 @@ func handleReadiness(db *repository.DB, redisCache *cache.RedisCache) http.Handl
 
 // InMemoryAccountStoreAdapter 内存账号存储适配器
 type InMemoryAccountStoreAdapter struct {
-	store *InMemoryAccountStore
+	store *storage.InMemoryAccountStore
 }
 
 func NewInMemoryAccountStoreAdapter() *InMemoryAccountStoreAdapter {
@@ -318,7 +324,7 @@ func (a *InMemoryAccountStoreAdapter) List(ctx context.Context, supplierID int64
 
 // InMemoryPackageStoreAdapter 内存套餐存储适配器
 type InMemoryPackageStoreAdapter struct {
-	store *InMemoryPackageStore
+	store *storage.InMemoryPackageStore
 }
 
 func NewInMemoryPackageStoreAdapter() *InMemoryPackageStoreAdapter {
@@ -343,7 +349,7 @@ func (a *InMemoryPackageStoreAdapter) List(ctx context.Context, supplierID int64
 
 // InMemorySettlementStoreAdapter 内存结算存储适配器
 type InMemorySettlementStoreAdapter struct {
-	store *InMemorySettlementStore
+	store *storage.InMemorySettlementStore
 }
 
 func NewInMemorySettlementStoreAdapter() *InMemorySettlementStoreAdapter {
@@ -372,7 +378,7 @@ func (a *InMemorySettlementStoreAdapter) GetWithdrawableBalance(ctx context.Cont
 
 // InMemoryEarningStoreAdapter 内存收益存储适配器
 type InMemoryEarningStoreAdapter struct {
-	store *InMemoryEarningStore
+	store *storage.InMemoryEarningStore
 }
 
 func NewInMemoryEarningStoreAdapter() *InMemoryEarningStoreAdapter {
@@ -453,7 +459,8 @@ func (s *DBSettlementStore) List(ctx context.Context, supplierID int64) ([]*doma
 }
 
 func (s *DBSettlementStore) GetWithdrawableBalance(ctx context.Context, supplierID int64) (float64, error) {
-	return s.repo.GetProcessing(ctx, nil, supplierID)
+	// TODO: 实现真实查询 - 通过 account service 获取
+	return 0.0, nil
 }
 
 // DBEarningStore DB-backed收益存储

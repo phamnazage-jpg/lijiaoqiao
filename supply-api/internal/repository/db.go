@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"lijiaoqiao/supply-api/internal/config"
 )
@@ -69,7 +70,7 @@ type Transaction interface {
 }
 
 type txWrapper struct {
-	tx pgxpool.Tx
+	tx pgx.Tx
 }
 
 func (t *txWrapper) Commit(ctx context.Context) error {
