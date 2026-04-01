@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"lijiaoqiao/supply-api/internal/audit"
@@ -41,18 +42,51 @@ const (
 
 // 账号
 type Account struct {
-	ID              int64        `json:"account_id"`
-	SupplierID      int64        `json:"supplier_id"`
-	Provider        Provider     `json:"provider"`
-	AccountType     AccountType  `json:"account_type"`
-	CredentialHash  string       `json:"-"` // 不暴露
-	Alias           string       `json:"account_alias,omitempty"`
+	ID              int64         `json:"account_id"`
+	SupplierID      int64         `json:"supplier_id"`
+	Provider        Provider      `json:"provider"`
+	AccountType     AccountType   `json:"account_type"`
+	CredentialHash  string        `json:"-"` // 不暴露
+	KeyID           string        `json:"key_id,omitempty"` // 不暴露
+	Alias           string        `json:"account_alias,omitempty"`
 	Status          AccountStatus `json:"status"`
-	AvailableQuota  float64      `json:"available_quota,omitempty"`
-	RiskScore       int          `json:"risk_score,omitempty"`
-	Version         int          `json:"version"`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
+	RiskLevel       string        `json:"risk_level"`
+	TotalQuota      float64       `json:"total_quota,omitempty"`
+	AvailableQuota  float64       `json:"available_quota,omitempty"`
+	FrozenQuota     float64       `json:"frozen_quota,omitempty"`
+	IsVerified      bool          `json:"is_verified"`
+	VerifiedAt      *time.Time    `json:"verified_at,omitempty"`
+	LastCheckAt     *time.Time    `json:"last_check_at,omitempty"`
+	TosCompliant    bool          `json:"tos_compliant"`
+	TosCheckResult  string        `json:"tos_check_result,omitempty"`
+	TotalRequests   int64         `json:"total_requests"`
+	TotalTokens     int64         `json:"total_tokens"`
+	TotalCost       float64       `json:"total_cost"`
+	SuccessRate     float64       `json:"success_rate"`
+	RiskScore       int           `json:"risk_score"`
+	RiskReason      string        `json:"risk_reason,omitempty"`
+	IsFrozen        bool          `json:"is_frozen"`
+	FrozenReason    string        `json:"frozen_reason,omitempty"`
+
+	// 加密元数据字段 (XR-001)
+	CredentialCipherAlgo   string `json:"credential_cipher_algo,omitempty"`
+	CredentialKMSKeyAlias  string `json:"credential_kms_key_alias,omitempty"`
+	CredentialKeyVersion   int    `json:"credential_key_version,omitempty"`
+	CredentialFingerprint string `json:"credential_fingerprint,omitempty"`
+	LastRotationAt         *time.Time `json:"last_rotation_at,omitempty"`
+
+	// 单位与币种 (XR-001)
+	QuotaUnit    string `json:"quota_unit"`
+	CurrencyCode string `json:"currency_code"`
+
+	// 审计字段 (XR-001)
+	Version      int        `json:"version"`
+	CreatedIP    *netip.Addr `json:"created_ip,omitempty"`
+	UpdatedIP    *netip.Addr `json:"updated_ip,omitempty"`
+	AuditTraceID string     `json:"audit_trace_id,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // 验证结果

@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"time"
 
 	"lijiaoqiao/supply-api/internal/audit"
@@ -29,18 +30,40 @@ const (
 
 // 结算单
 type Settlement struct {
-	ID            int64           `json:"settlement_id"`
-	SupplierID    int64           `json:"supplier_id"`
-	SettlementNo string          `json:"settlement_no"`
-	Status        SettlementStatus `json:"status"`
-	TotalAmount   float64         `json:"total_amount"`
-	FeeAmount     float64         `json:"fee_amount"`
-	NetAmount     float64         `json:"net_amount"`
-	PaymentMethod PaymentMethod   `json:"payment_method"`
-	PaymentAccount string        `json:"payment_account,omitempty"`
-	Version       int             `json:"version"`
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
+	ID                 int64            `json:"settlement_id"`
+	SupplierID         int64           `json:"supplier_id"`
+	SettlementNo       string          `json:"settlement_no"`
+	Status             SettlementStatus `json:"status"`
+	TotalAmount        float64         `json:"total_amount"`
+	FeeAmount          float64         `json:"fee_amount"`
+	NetAmount          float64         `json:"net_amount"`
+	PaymentMethod      PaymentMethod   `json:"payment_method"`
+	PaymentAccount     string          `json:"payment_account,omitempty"`
+	PaymentTransactionID string        `json:"payment_transaction_id,omitempty"`
+	PaidAt            *time.Time      `json:"paid_at,omitempty"`
+
+	// 账期 (XR-001)
+	PeriodStart          time.Time `json:"period_start"`
+	PeriodEnd            time.Time `json:"period_end"`
+	TotalOrders          int       `json:"total_orders"`
+	TotalUsageRecords    int       `json:"total_usage_records"`
+
+	// 单位与币种 (XR-001)
+	CurrencyCode string `json:"currency_code"`
+	AmountUnit   string `json:"amount_unit"`
+
+	// 幂等字段 (XR-001)
+	RequestID      string `json:"request_id,omitempty"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+
+	// 审计字段 (XR-001)
+	AuditTraceID string `json:"audit_trace_id,omitempty"`
+	Version      int    `json:"version"`
+	CreatedIP    *netip.Addr `json:"created_ip,omitempty"`
+	UpdatedIP    *netip.Addr `json:"updated_ip,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // 收益记录

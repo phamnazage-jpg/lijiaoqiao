@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"time"
 
 	"lijiaoqiao/supply-api/internal/audit"
@@ -21,21 +22,42 @@ const (
 
 // 套餐
 type Package struct {
-	ID               int64        `json:"package_id"`
-	SupplierID      int64        `json:"supply_account_id"`
-	AccountID       int64        `json:"account_id,omitempty"`
-	Model           string       `json:"model"`
-	TotalQuota      float64      `json:"total_quota"`
-	AvailableQuota  float64      `json:"available_quota"`
+	ID               int64         `json:"package_id"`
+	SupplierID      int64         `json:"supply_account_id"`
+	AccountID       int64         `json:"account_id,omitempty"`
+	Platform        string        `json:"platform,omitempty"`
+	Model           string        `json:"model"`
+	TotalQuota      float64       `json:"total_quota"`
+	AvailableQuota  float64       `json:"available_quota"`
+	SoldQuota       float64       `json:"sold_quota"`
+	ReservedQuota   float64       `json:"reserved_quota"`
 	PricePer1MInput float64      `json:"price_per_1m_input"`
 	PricePer1MOutput float64     `json:"price_per_1m_output"`
+	MinPurchase     float64      `json:"min_purchase,omitempty"`
+	StartAt         time.Time    `json:"start_at,omitempty"`
+	EndAt           time.Time    `json:"end_at,omitempty"`
 	ValidDays       int          `json:"valid_days"`
 	MaxConcurrent   int          `json:"max_concurrent,omitempty"`
 	RateLimitRPM    int          `json:"rate_limit_rpm,omitempty"`
 	Status          PackageStatus `json:"status"`
-	Version         int          `json:"version"`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
+	TotalOrders     int          `json:"total_orders"`
+	TotalRevenue    float64      `json:"total_revenue"`
+	Rating          float64      `json:"rating"`
+	RatingCount     int          `json:"rating_count"`
+
+	// 单位与币种 (XR-001)
+	QuotaUnit    string `json:"quota_unit"`
+	PriceUnit    string `json:"price_unit"`
+	CurrencyCode string `json:"currency_code"`
+
+	// 审计字段 (XR-001)
+	Version      int        `json:"version"`
+	CreatedIP    *netip.Addr `json:"created_ip,omitempty"`
+	UpdatedIP    *netip.Addr `json:"updated_ip,omitempty"`
+	AuditTraceID string     `json:"audit_trace_id,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // 套餐服务接口
