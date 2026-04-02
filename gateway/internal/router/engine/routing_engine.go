@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"lijiaoqiao/gateway/internal/router/strategy"
 )
@@ -18,6 +19,7 @@ type RoutingMetrics interface {
 
 // RoutingEngine 路由引擎
 type RoutingEngine struct {
+	mu        sync.RWMutex
 	strategies map[string]strategy.StrategyTemplate
 	metrics    RoutingMetrics
 }
@@ -32,6 +34,8 @@ func NewRoutingEngine() *RoutingEngine {
 
 // RegisterStrategy 注册路由策略
 func (e *RoutingEngine) RegisterStrategy(name string, template strategy.StrategyTemplate) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.strategies[name] = template
 }
 
@@ -54,8 +58,11 @@ func (e *RoutingEngine) SelectProvider(ctx context.Context, req *strategy.Routin
 		return nil, err
 	}
 
-	// 记录指标
-	if e.metrics != nil && decision != nil {
+	if decision == nil {
+		return nil, ErrStrategyNotFound
+	}
+
+	if e.metrics != nil {
 		e.metrics.RecordSelection(decision.Provider, decision.Strategy, decision)
 	}
 
