@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"lijiaoqiao/gateway/internal/adapter"
-	"lijiaoqiao/gateway/pkg/error"
+	gwerror "lijiaoqiao/gateway/pkg/error"
 )
 
 // LoadBalancerStrategy 负载均衡策略
@@ -69,14 +69,14 @@ func (r *Router) SelectProvider(ctx context.Context, model string) (adapter.Prov
 	defer r.mu.RUnlock()
 
 	var candidates []string
-	for name, provider := range r.providers {
+	for name := range r.providers {
 		if r.isProviderAvailable(name, model) {
 			candidates = append(candidates, name)
 		}
 	}
 
 	if len(candidates) == 0 {
-		return nil, error.NewGatewayError(error.ROUTER_NO_PROVIDER_AVAILABLE, "no provider available for model: "+model)
+		return nil, gwerror.NewGatewayError(gwerror.ROUTER_NO_PROVIDER_AVAILABLE, "no provider available for model: "+model)
 	}
 
 	// 根据策略选择
@@ -130,7 +130,7 @@ func (r *Router) selectByLatency(candidates []string) (adapter.ProviderAdapter, 
 	}
 
 	if bestProvider == nil {
-		return nil, error.NewGatewayError(error.ROUTER_NO_PROVIDER_AVAILABLE, "no available provider")
+		return nil, gwerror.NewGatewayError(gwerror.ROUTER_NO_PROVIDER_AVAILABLE, "no available provider")
 	}
 
 	return bestProvider, nil
@@ -168,7 +168,7 @@ func (r *Router) selectByAvailability(candidates []string) (adapter.ProviderAdap
 	}
 
 	if bestProvider == nil {
-		return nil, error.NewGatewayError(error.ROUTER_NO_PROVIDER_AVAILABLE, "no available provider")
+		return nil, gwerror.NewGatewayError(gwerror.ROUTER_NO_PROVIDER_AVAILABLE, "no available provider")
 	}
 
 	return bestProvider, nil

@@ -1,0 +1,439 @@
+package middleware
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"lijiaoqiao/supply-api/internal/middleware"
+)
+
+// TestScopeAuth_CheckScope_SuperAdminHasAllScopes 测试超级管理员拥有所有Scope
+func TestScopeAuth_CheckScope_SuperAdminHasAllScopes(t *testing.T) {
+	// arrange
+	// 创建超级管理员token claims
+	claims := &IAMTokenClaims{
+		SubjectID: "user:1",
+		Role:      "super_admin",
+		Scope:     []string{"*"}, // 通配符Scope代表所有权限
+		TenantID:  0,
+	}
+
+	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+
+	// act
+	hasScope := CheckScope(ctx, "platform:read")
+	hasScope2 := CheckScope(ctx, "supply:account:write")
+	hasScope3 := CheckScope(ctx, "consumer:apikey:create")
+
+	// assert
+	assert.True(t, hasScope, "super_admin should have platform:read")
+	assert.True(t, hasScope2, "super_admin should have supply:account:write")
+	assert.True(t, hasScope3, "super_admin should have consumer:apikey:create")
+}
+
+// TestScopeAuth_CheckScope_ViewerHasReadOnly 测试Viewer只有只读权限
+func TestScopeAuth_CheckScope_ViewerHasReadOnly(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:2",
+		Role:      "viewer",
+		Scope:     []string{"platform:read", "tenant:read", "billing:read"},
+		TenantID:  1,
+	}
+
+	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+
+	// act & assert
+	assert.True(t, CheckScope(ctx, "platform:read"), "viewer should have platform:read")
+	assert.True(t, CheckScope(ctx, "tenant:read"), "viewer should have tenant:read")
+	assert.True(t, CheckScope(ctx, "billing:read"), "viewer should have billing:read")
+
+	assert.False(t, CheckScope(ctx, "platform:write"), "viewer should NOT have platform:write")
+	assert.False(t, CheckScope(ctx, "tenant:write"), "viewer should NOT have tenant:write")
+	assert.False(t, CheckScope(ctx, "supply:account:write"), "viewer should NOT have supply:account:write")
+}
+
+// TestScopeAuth_CheckScope_Denied 测试Scope被拒绝
+func TestScopeAuth_CheckScope_Denied(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:3",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+
+	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+
+	// act & assert
+	assert.False(t, CheckScope(ctx, "platform:write"), "viewer should NOT have platform:write")
+	assert.False(t, CheckScope(ctx, "supply:account:write"), "viewer should NOT have supply:account:write")
+}
+
+// TestScopeAuth_CheckScope_MissingTokenClaims 测试缺少Token Claims
+func TestScopeAuth_CheckScope_MissingTokenClaims(t *testing.T) {
+	// arrange
+	ctx := context.Background() // 没有token claims
+
+	// act
+	hasScope := CheckScope(ctx, "platform:read")
+
+	// assert
+	assert.False(t, hasScope, "should return false when token claims are missing")
+}
+
+// TestScopeAuth_CheckScope_EmptyScope 测试空Scope要求
+func TestScopeAuth_CheckScope_EmptyScope(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:4",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+
+	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+
+	// act
+	hasEmptyScope := CheckScope(ctx, "")
+
+	// assert
+	assert.True(t, hasEmptyScope, "empty scope should always pass")
+}
+
+// TestScopeAuth_CheckMultipleScopes 测试检查多个Scope（需要全部满足）
+func TestScopeAuth_CheckMultipleScopes(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:5",
+		Role:      "operator",
+		Scope:     []string{"platform:read", "platform:write", "tenant:read", "tenant:write"},
+		TenantID:  1,
+	}
+
+	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+
+	// act & assert
+	assert.True(t, CheckAllScopes(ctx, []string{"platform:read", "platform:write"}), "operator should have both read and write")
+	assert.True(t, CheckAllScopes(ctx, []string{"tenant:read", "tenant:write"}), "operator should have both tenant scopes")
+	assert.False(t, CheckAllScopes(ctx, []string{"platform:read", "platform:admin"}), "operator should NOT have platform:admin")
+}
+
+// TestScopeAuth_CheckAnyScope 测试检查多个Scope（只需满足其一）
+func TestScopeAuth_CheckAnyScope(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:6",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+
+	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+
+	// act & assert
+	assert.True(t, CheckAnyScope(ctx, []string{"platform:read", "platform:write"}), "should pass with one matching scope")
+	assert.False(t, CheckAnyScope(ctx, []string{"platform:write", "platform:admin"}), "should fail when no scopes match")
+	assert.True(t, CheckAnyScope(ctx, []string{}), "empty scope list should pass")
+}
+
+// TestScopeAuth_GetIAMTokenClaims 测试从Context获取IAMTokenClaims
+func TestScopeAuth_GetIAMTokenClaims(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:7",
+		Role:      "org_admin",
+		Scope:     []string{"platform:read", "platform:write"},
+		TenantID:  1,
+	}
+
+	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+
+	// act
+	retrievedClaims := GetIAMTokenClaims(ctx)
+
+	// assert
+	assert.NotNil(t, retrievedClaims)
+	assert.Equal(t, claims.SubjectID, retrievedClaims.SubjectID)
+	assert.Equal(t, claims.Role, retrievedClaims.Role)
+	assert.Equal(t, claims.Scope, retrievedClaims.Scope)
+}
+
+// TestScopeAuth_GetIAMTokenClaims_Missing 测试获取不存在的IAMTokenClaims
+func TestScopeAuth_GetIAMTokenClaims_Missing(t *testing.T) {
+	// arrange
+	ctx := context.Background()
+
+	// act
+	retrievedClaims := GetIAMTokenClaims(ctx)
+
+	// assert
+	assert.Nil(t, retrievedClaims)
+}
+
+// TestScopeAuth_HasRole 测试用户角色检查
+func TestScopeAuth_HasRole(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:8",
+		Role:      "operator",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+
+	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+
+	// act & assert
+	assert.True(t, HasRole(ctx, "operator"))
+	assert.False(t, HasRole(ctx, "viewer"))
+	assert.False(t, HasRole(ctx, "admin"))
+}
+
+// TestScopeAuth_HasRole_MissingClaims 测试缺少Claims时的角色检查
+func TestScopeAuth_HasRole_MissingClaims(t *testing.T) {
+	// arrange
+	ctx := context.Background()
+
+	// act & assert
+	assert.False(t, HasRole(ctx, "operator"))
+}
+
+// TestScopeRoleAuthzMiddleware_WithScope 测试带Scope要求的中间件
+func TestScopeRoleAuthzMiddleware_WithScope(t *testing.T) {
+	// arrange
+	scopeAuth := NewScopeAuthMiddleware()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	// 创建一个带scope验证的handler
+	wrappedHandler := scopeAuth.RequireScope("platform:write")(handler)
+
+	// 创建一个带有token claims的请求
+	claims := &IAMTokenClaims{
+		SubjectID: "user:9",
+		Role:      "operator",
+		Scope:     []string{"platform:read", "platform:write"},
+		TenantID:  1,
+	}
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(context.WithValue(req.Context(), IAMTokenClaimsKey, *claims))
+
+	// act
+	rec := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(rec, req)
+
+	// assert
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// TestScopeRoleAuthzMiddleware_Denied 测试Scope不足时中间件拒绝
+func TestScopeRoleAuthzMiddleware_Denied(t *testing.T) {
+	// arrange
+	scopeAuth := NewScopeAuthMiddleware()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrappedHandler := scopeAuth.RequireScope("platform:admin")(handler)
+
+	claims := &IAMTokenClaims{
+		SubjectID: "user:10",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"}, // viewer没有platform:admin
+		TenantID:  1,
+	}
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(context.WithValue(req.Context(), IAMTokenClaimsKey, *claims))
+
+	// act
+	rec := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(rec, req)
+
+	// assert
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TestScopeRoleAuthzMiddleware_MissingClaims 测试缺少Claims时中间件拒绝
+func TestScopeRoleAuthzMiddleware_MissingClaims(t *testing.T) {
+	// arrange
+	scopeAuth := NewScopeAuthMiddleware()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrappedHandler := scopeAuth.RequireScope("platform:read")(handler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	// 不设置token claims
+
+	// act
+	rec := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(rec, req)
+
+	// assert
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+// TestScopeRoleAuthzMiddleware_RequireAllScopes 测试要求所有Scope的中间件
+func TestScopeRoleAuthzMiddleware_RequireAllScopes(t *testing.T) {
+	// arrange
+	scopeAuth := NewScopeAuthMiddleware()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrappedHandler := scopeAuth.RequireAllScopes([]string{"platform:read", "tenant:read"})(handler)
+
+	claims := &IAMTokenClaims{
+		SubjectID: "user:11",
+		Role:      "operator",
+		Scope:     []string{"platform:read", "platform:write", "tenant:read"},
+		TenantID:  1,
+	}
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(context.WithValue(req.Context(), IAMTokenClaimsKey, *claims))
+
+	// act
+	rec := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(rec, req)
+
+	// assert
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// TestScopeRoleAuthzMiddleware_RequireAllScopes_Denied 测试要求所有Scope但不足时拒绝
+func TestScopeRoleAuthzMiddleware_RequireAllScopes_Denied(t *testing.T) {
+	// arrange
+	scopeAuth := NewScopeAuthMiddleware()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrappedHandler := scopeAuth.RequireAllScopes([]string{"platform:read", "platform:admin"})(handler)
+
+	claims := &IAMTokenClaims{
+		SubjectID: "user:12",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"}, // viewer没有platform:admin
+		TenantID:  1,
+	}
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(context.WithValue(req.Context(), IAMTokenClaimsKey, *claims))
+
+	// act
+	rec := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(rec, req)
+
+	// assert
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TestScopeAuth_HasRoleLevel 测试角色层级检查
+func TestScopeAuth_HasRoleLevel(t *testing.T) {
+	// arrange
+	testCases := []struct {
+		role      string
+		minLevel  int
+		expected  bool
+	}{
+		{"super_admin", 50, true},
+		{"super_admin", 100, true},
+		{"org_admin", 50, true},
+		{"org_admin", 60, false},
+		{"operator", 30, true},
+		{"operator", 40, false},
+		{"viewer", 10, true},
+		{"viewer", 20, false},
+	}
+
+	for _, tc := range testCases {
+		claims := &IAMTokenClaims{
+			SubjectID: "user:test",
+			Role:      tc.role,
+			Scope:     []string{},
+			TenantID:  1,
+		}
+		ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+
+		// act
+		result := HasRoleLevel(ctx, tc.minLevel)
+
+		// assert
+		assert.Equal(t, tc.expected, result, "role=%s, minLevel=%d", tc.role, tc.minLevel)
+	}
+}
+
+// TestGetRoleLevel 测试获取角色层级
+func TestGetRoleLevel(t *testing.T) {
+	testCases := []struct {
+		role     string
+		expected int
+	}{
+		{"super_admin", 100},
+		{"org_admin", 50},
+		{"supply_admin", 40},
+		{"operator", 30},
+		{"developer", 20},
+		{"viewer", 10},
+		{"unknown_role", 0},
+	}
+
+	for _, tc := range testCases {
+		// act
+		level := GetRoleLevel(tc.role)
+
+		// assert
+		assert.Equal(t, tc.expected, level, "role=%s", tc.role)
+	}
+}
+
+// TestScopeAuth_WithIAMClaims 测试设置IAM Claims到Context
+func TestScopeAuth_WithIAMClaims(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:13",
+		Role:      "org_admin",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+
+	// act
+	ctx := WithIAMClaims(context.Background(), claims)
+	retrievedClaims := GetIAMTokenClaims(ctx)
+
+	// assert
+	assert.NotNil(t, retrievedClaims)
+	assert.Equal(t, claims.SubjectID, retrievedClaims.SubjectID)
+	assert.Equal(t, claims.Role, retrievedClaims.Role)
+}
+
+// TestGetClaimsFromLegacy 测试从原有TokenClaims转换
+func TestGetClaimsFromLegacy(t *testing.T) {
+	// arrange
+	legacyClaims := &middleware.TokenClaims{
+		SubjectID: "user:14",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+
+	// act
+	iamClaims := GetClaimsFromLegacy(legacyClaims)
+
+	// assert
+	assert.NotNil(t, iamClaims)
+	assert.Equal(t, legacyClaims.SubjectID, iamClaims.SubjectID)
+	assert.Equal(t, legacyClaims.Role, iamClaims.Role)
+	assert.Equal(t, legacyClaims.Scope, iamClaims.Scope)
+	assert.Equal(t, legacyClaims.TenantID, iamClaims.TenantID)
+}
