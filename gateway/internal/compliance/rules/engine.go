@@ -1,7 +1,9 @@
 package rules
 
 import (
+	"fmt"
 	"regexp"
+	"sync"
 )
 
 // MatchResult 匹配结果
@@ -22,8 +24,9 @@ type MatcherResult struct {
 
 // RuleEngine 规则引擎
 type RuleEngine struct {
-	loader     *RuleLoader
+	loader          *RuleLoader
 	compiledPatterns map[string][]*regexp.Regexp
+	patternMu        sync.RWMutex
 }
 
 // NewRuleEngine 创建新的规则引擎
@@ -54,7 +57,7 @@ func (e *RuleEngine) Match(rule Rule, content string) MatchResult {
 		case "regex_match":
 			matcherResult.IsMatch = e.matchRegex(matcher.Pattern, content)
 			if matcherResult.IsMatch {
-				matcherResult.MatchValue = e.extractMatch(matcher.Pattern, content)
+				matcherResult.MatchValue, _ = e.extractMatch(matcher.Pattern, content)
 			}
 		default:
 			// 未知匹配器类型，默认不匹配
@@ -71,32 +74,64 @@ func (e *RuleEngine) Match(rule Rule, content string) MatchResult {
 
 // matchRegex 执行正则表达式匹配
 func (e *RuleEngine) matchRegex(pattern string, content string) bool {
-	// 编译并缓存正则表达式
+	// 先尝试读取缓存（使用读锁）
+	e.patternMu.RLock()
 	regex, ok := e.compiledPatterns[pattern]
-	if !ok {
-		var err error
-		regex = make([]*regexp.Regexp, 1)
-		regex[0], err = regexp.Compile(pattern)
-		if err != nil {
-			return false
-		}
-		e.compiledPatterns[pattern] = regex
+	e.patternMu.RUnlock()
+	if ok {
+		return regex[0].MatchString(content)
 	}
+
+	// 未命中，需要编译（使用写锁）
+	e.patternMu.Lock()
+	defer e.patternMu.Unlock()
+
+	// 双重检查
+	regex, ok = e.compiledPatterns[pattern]
+	if ok {
+		return regex[0].MatchString(content)
+	}
+
+	var err error
+	regex = make([]*regexp.Regexp, 1)
+	regex[0], err = regexp.Compile(pattern)
+	if err != nil {
+		return false
+	}
+	e.compiledPatterns[pattern] = regex
 
 	return regex[0].MatchString(content)
 }
 
 // extractMatch 提取匹配值
-func (e *RuleEngine) extractMatch(pattern string, content string) string {
+func (e *RuleEngine) extractMatch(pattern string, content string) (string, error) {
+	// 先尝试读取缓存（使用读锁）
+	e.patternMu.RLock()
 	regex, ok := e.compiledPatterns[pattern]
-	if !ok {
-		regex = make([]*regexp.Regexp, 1)
-		regex[0], _ = regexp.Compile(pattern)
-		e.compiledPatterns[pattern] = regex
+	e.patternMu.RUnlock()
+	if ok {
+		return regex[0].FindString(content), nil
 	}
 
-	matches := regex[0].FindString(content)
-	return matches
+	// 未命中，需要编译（使用写锁）
+	e.patternMu.Lock()
+	defer e.patternMu.Unlock()
+
+	// 双重检查
+	regex, ok = e.compiledPatterns[pattern]
+	if ok {
+		return regex[0].FindString(content), nil
+	}
+
+	var err error
+	regex = make([]*regexp.Regexp, 1)
+	regex[0], err = regexp.Compile(pattern)
+	if err != nil {
+		return "", fmt.Errorf("invalid regex pattern '%s': %w", pattern, err)
+	}
+	e.compiledPatterns[pattern] = regex
+
+	return regex[0].FindString(content), nil
 }
 
 // MatchFromConfig 从规则配置执行匹配
