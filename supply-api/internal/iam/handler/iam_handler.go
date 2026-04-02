@@ -434,11 +434,8 @@ func extractRoleCode(path string) string {
 func extractUserID(path string) string {
 	// /api/v1/iam/users/123/roles -> 123
 	parts := splitPath(path)
-	if len(parts) >= 4 {
-		return parts[3]
-	}
- if len(parts) >= 6 {
-		return parts[3]
+	if len(parts) >= 5 {
+		return parts[4]
 	}
 	return ""
 }
@@ -447,8 +444,8 @@ func extractUserID(path string) string {
 func extractRoleCodeFromUserPath(path string) string {
 	// /api/v1/iam/users/123/roles/developer -> developer
 	parts := splitPath(path)
-	if len(parts) >= 6 {
-		return parts[5]
+	if len(parts) >= 7 {
+		return parts[6]
 	}
 	return ""
 }
