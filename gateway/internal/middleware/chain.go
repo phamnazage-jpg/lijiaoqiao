@@ -33,7 +33,7 @@ type Principal struct {
 // BuildTokenAuthChain 构建认证中间件链
 func BuildTokenAuthChain(cfg AuthMiddlewareConfig, next http.Handler) http.Handler {
 	handler := tokenAuthMiddleware(cfg)(next)
-	handler = queryKeyRejectMiddleware(handler, cfg.Auditor, cfg.Now)
+	handler = queryKeyRejectMiddleware(handler, cfg.Auditor, cfg.Now, cfg.TrustedProxies)
 	handler = requestIDMiddleware(handler, cfg.Now)
 	return handler
 }
@@ -54,7 +54,7 @@ func requestIDMiddleware(next http.Handler, now func() time.Time) http.Handler {
 }
 
 // queryKeyRejectMiddleware 拒绝query key入站
-func queryKeyRejectMiddleware(next http.Handler, auditor AuditEmitter, now func() time.Time) http.Handler {
+func queryKeyRejectMiddleware(next http.Handler, auditor AuditEmitter, now func() time.Time, trustedProxies []string) http.Handler {
 	if next == nil {
 		return http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	}
@@ -69,7 +69,7 @@ func queryKeyRejectMiddleware(next http.Handler, auditor AuditEmitter, now func(
 				RequestID:  requestID,
 				Route:      r.URL.Path,
 				ResultCode: CodeQueryKeyNotAllowed,
-				ClientIP:   extractClientIP(r),
+				ClientIP:   extractClientIP(r, trustedProxies),
 				CreatedAt:  now(),
 			})
 			writeError(w, http.StatusUnauthorized, requestID, CodeQueryKeyNotAllowed, "query key not allowed")
@@ -105,7 +105,7 @@ func tokenAuthMiddleware(cfg AuthMiddlewareConfig) func(http.Handler) http.Handl
 					RequestID:  requestID,
 					Route:      r.URL.Path,
 					ResultCode: CodeAuthMissingBearer,
-					ClientIP:   extractClientIP(r),
+					ClientIP:   extractClientIP(r, cfg.TrustedProxies),
 					CreatedAt:  cfg.Now(),
 				})
 				writeError(w, http.StatusUnauthorized, requestID, CodeAuthMissingBearer, "missing bearer token")
@@ -119,7 +119,7 @@ func tokenAuthMiddleware(cfg AuthMiddlewareConfig) func(http.Handler) http.Handl
 					RequestID:  requestID,
 					Route:      r.URL.Path,
 					ResultCode: CodeAuthInvalidToken,
-					ClientIP:   extractClientIP(r),
+					ClientIP:   extractClientIP(r, cfg.TrustedProxies),
 					CreatedAt:  cfg.Now(),
 				})
 				writeError(w, http.StatusUnauthorized, requestID, CodeAuthInvalidToken, "invalid bearer token")
@@ -135,7 +135,7 @@ func tokenAuthMiddleware(cfg AuthMiddlewareConfig) func(http.Handler) http.Handl
 					SubjectID:  claims.SubjectID,
 					Route:      r.URL.Path,
 					ResultCode: CodeAuthTokenInactive,
-					ClientIP:   extractClientIP(r),
+					ClientIP:   extractClientIP(r, cfg.TrustedProxies),
 					CreatedAt:  cfg.Now(),
 				})
 				writeError(w, http.StatusUnauthorized, requestID, CodeAuthTokenInactive, "token is inactive")
@@ -150,7 +150,7 @@ func tokenAuthMiddleware(cfg AuthMiddlewareConfig) func(http.Handler) http.Handl
 					SubjectID:  claims.SubjectID,
 					Route:      r.URL.Path,
 					ResultCode: CodeAuthScopeDenied,
-					ClientIP:   extractClientIP(r),
+					ClientIP:   extractClientIP(r, cfg.TrustedProxies),
 					CreatedAt:  cfg.Now(),
 				})
 				writeError(w, http.StatusForbidden, requestID, CodeAuthScopeDenied, "scope denied")
@@ -174,7 +174,7 @@ func tokenAuthMiddleware(cfg AuthMiddlewareConfig) func(http.Handler) http.Handl
 				SubjectID:  claims.SubjectID,
 				Route:      r.URL.Path,
 				ResultCode: "OK",
-				ClientIP:   extractClientIP(r),
+				ClientIP:   extractClientIP(r, cfg.TrustedProxies),
 				CreatedAt:  cfg.Now(),
 			})
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -297,15 +297,31 @@ func writeError(w http.ResponseWriter, status int, requestID, code, message stri
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-func extractClientIP(r *http.Request) string {
-	xForwardedFor := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
-	if xForwardedFor != "" {
-		parts := strings.Split(xForwardedFor, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+func extractClientIP(r *http.Request, trustedProxies []string) string {
+	// 检查请求是否来自可信代理
+	isFromTrustedProxy := false
+	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
-		return host
+		for _, proxy := range trustedProxies {
+			if remoteHost == proxy {
+				isFromTrustedProxy = true
+				break
+			}
+		}
+	}
+
+	// 只有来自可信代理的请求才使用X-Forwarded-For
+	if isFromTrustedProxy {
+		xForwardedFor := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+		if xForwardedFor != "" {
+			parts := strings.Split(xForwardedFor, ",")
+			return strings.TrimSpace(parts[0])
+		}
+	}
+
+	// 否则使用RemoteAddr
+	if err == nil {
+		return remoteHost
 	}
 	return r.RemoteAddr
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -89,6 +90,8 @@ type DefaultIAMService struct {
 	userRoleStore map[int64][]*UserRole
 	// 角色Scope存储: roleCode -> []scopeCode
 	roleScopeStore map[string][]string
+	// 并发控制
+	mu sync.RWMutex
 }
 
 // NewDefaultIAMService 创建默认IAM服务
@@ -102,6 +105,9 @@ func NewDefaultIAMService() *DefaultIAMService {
 
 // CreateRole 创建角色
 func (s *DefaultIAMService) CreateRole(ctx context.Context, req *CreateRoleRequest) (*Role, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// 检查是否重复
 	if _, exists := s.roleStore[req.Code]; exists {
 		return nil, ErrDuplicateRoleCode
@@ -138,6 +144,9 @@ func (s *DefaultIAMService) CreateRole(ctx context.Context, req *CreateRoleReque
 
 // GetRole 获取角色
 func (s *DefaultIAMService) GetRole(ctx context.Context, roleCode string) (*Role, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	role, exists := s.roleStore[roleCode]
 	if !exists {
 		return nil, ErrRoleNotFound
@@ -147,6 +156,9 @@ func (s *DefaultIAMService) GetRole(ctx context.Context, roleCode string) (*Role
 
 // UpdateRole 更新角色
 func (s *DefaultIAMService) UpdateRole(ctx context.Context, req *UpdateRoleRequest) (*Role, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	role, exists := s.roleStore[req.Code]
 	if !exists {
 		return nil, ErrRoleNotFound
@@ -175,6 +187,9 @@ func (s *DefaultIAMService) UpdateRole(ctx context.Context, req *UpdateRoleReque
 
 // DeleteRole 删除角色（软删除）
 func (s *DefaultIAMService) DeleteRole(ctx context.Context, roleCode string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	role, exists := s.roleStore[roleCode]
 	if !exists {
 		return ErrRoleNotFound
@@ -187,6 +202,9 @@ func (s *DefaultIAMService) DeleteRole(ctx context.Context, roleCode string) err
 
 // ListRoles 列出角色
 func (s *DefaultIAMService) ListRoles(ctx context.Context, roleType string) ([]*Role, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	var roles []*Role
 	for _, role := range s.roleStore {
 		if roleType == "" || role.Type == roleType {
@@ -198,6 +216,9 @@ func (s *DefaultIAMService) ListRoles(ctx context.Context, roleType string) ([]*
 
 // AssignRole 分配角色
 func (s *DefaultIAMService) AssignRole(ctx context.Context, req *AssignRoleRequest) (*UserRole, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// 检查角色是否存在
 	if _, exists := s.roleStore[req.RoleCode]; !exists {
 		return nil, ErrRoleNotFound
@@ -226,6 +247,9 @@ func (s *DefaultIAMService) AssignRole(ctx context.Context, req *AssignRoleReque
 
 // RevokeRole 撤销角色
 func (s *DefaultIAMService) RevokeRole(ctx context.Context, userID int64, roleCode string, tenantID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	for _, ur := range s.userRoleStore[userID] {
 		if ur.RoleCode == roleCode && ur.TenantID == tenantID {
 			ur.IsActive = false
@@ -237,6 +261,9 @@ func (s *DefaultIAMService) RevokeRole(ctx context.Context, userID int64, roleCo
 
 // GetUserRoles 获取用户角色
 func (s *DefaultIAMService) GetUserRoles(ctx context.Context, userID int64) ([]*UserRole, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	var userRoles []*UserRole
 	for _, ur := range s.userRoleStore[userID] {
 		if ur.IsActive {
@@ -248,7 +275,10 @@ func (s *DefaultIAMService) GetUserRoles(ctx context.Context, userID int64) ([]*
 
 // CheckScope 检查用户是否有指定Scope
 func (s *DefaultIAMService) CheckScope(ctx context.Context, userID int64, requiredScope string) (bool, error) {
-	scopes, err := s.GetUserScopes(ctx, userID)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	scopes, err := s.getUserScopesLocked(userID)
 	if err != nil {
 		return false, err
 	}
@@ -263,6 +293,14 @@ func (s *DefaultIAMService) CheckScope(ctx context.Context, userID int64, requir
 
 // GetUserScopes 获取用户所有Scope
 func (s *DefaultIAMService) GetUserScopes(ctx context.Context, userID int64) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.getUserScopesLocked(userID)
+}
+
+// getUserScopesLocked 获取用户所有Scope（内部使用，需要持有锁）
+func (s *DefaultIAMService) getUserScopesLocked(userID int64) ([]string, error) {
 	var allScopes []string
 	seen := make(map[string]bool)
 

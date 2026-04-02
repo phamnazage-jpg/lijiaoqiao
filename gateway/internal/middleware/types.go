@@ -87,4 +87,7 @@ type AuthMiddlewareConfig struct {
 	ProtectedPrefixes []string
 	ExcludedPrefixes  []string
 	Now               func() time.Time
+	// TrustedProxies 可信的代理IP列表，用于IP伪造防护
+	// 只有来自这些IP的请求才会使用X-Forwarded-For头
+	TrustedProxies []string
 }

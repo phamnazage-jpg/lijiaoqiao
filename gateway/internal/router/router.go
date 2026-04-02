@@ -3,12 +3,16 @@ package router
 import (
 	"context"
 	"math"
+	"math/rand"
 	"sync"
 	"time"
 
 	"lijiaoqiao/gateway/internal/adapter"
 	gwerror "lijiaoqiao/gateway/pkg/error"
 )
+
+// 全局随机数生成器（线程安全）
+var globalRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 // LoadBalancerStrategy 负载均衡策略
 type LoadBalancerStrategy string
@@ -142,7 +146,7 @@ func (r *Router) selectByWeight(candidates []string) (adapter.ProviderAdapter, e
 		totalWeight += r.health[name].Weight
 	}
 
-	randVal := float64(time.Now().UnixNano()) / float64(math.MaxInt64) * totalWeight
+	randVal := globalRand.Float64() * totalWeight
 	var cumulative float64
 
 	for _, name := range candidates {
@@ -215,11 +219,17 @@ func (r *Router) RecordResult(ctx context.Context, providerName string, success 
 
 	// 更新失败率
 	if success {
-		if health.FailureRate > 0 {
-			health.FailureRate = health.FailureRate * 0.9 // 下降
+		// 成功时快速恢复：使用0.5的下降因子加速恢复
+		health.FailureRate = health.FailureRate * 0.5
+		if health.FailureRate < 0.01 {
+			health.FailureRate = 0
 		}
 	} else {
-		health.FailureRate = health.FailureRate*0.9 + 0.1 // 上升
+		// 失败时逐步上升
+		health.FailureRate = health.FailureRate*0.9 + 0.1
+		if health.FailureRate > 1 {
+			health.FailureRate = 1
+		}
 	}
 
 	// 检查是否应该标记为不可用

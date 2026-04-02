@@ -3,10 +3,12 @@ package ratelimit
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
-	"lijiaoqiao/gateway/pkg/error"
+	gwerror "lijiaoqiao/gateway/pkg/error"
 )
 
 // Algorithm 限流算法
@@ -278,7 +280,7 @@ func (l *SlidingWindowLimiter) cleanup() {
 					validRequests = append(validRequests, t)
 				}
 			}
-			if len(validRequests) == 0 && now.Sub(window.requests[len(window.requests)-1]) > l.windowSize*2 {
+			if len(validRequests) == 0 && len(window.requests) > 0 && now.Sub(window.requests[len(window.requests)-1]) > l.windowSize*2 {
 				delete(l.windows, key)
 			} else {
 				window.requests = validRequests
@@ -301,14 +303,14 @@ func NewMiddleware(limiter Limiter) *Middleware {
 func (m *Middleware) Limit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// 使用API Key作为限流key
-		key := r.Header.Get("Authorization")
+		key := extractRateLimitKey(r)
 		if key == "" {
 			key = r.RemoteAddr
 		}
 
 		allowed, err := m.limiter.Allow(r.Context(), key)
 		if err != nil {
-			writeError(w, error.NewGatewayError(error.COMMON_INTERNAL_ERROR, "rate limiter error"))
+			writeError(w, gwerror.NewGatewayError(gwerror.COMMON_INTERNAL_ERROR, "rate limiter error"))
 			return
 		}
 
@@ -318,7 +320,7 @@ func (m *Middleware) Limit(next http.HandlerFunc) http.HandlerFunc {
 			w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", limit.Remaining))
 			w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", limit.ResetAt.Unix()))
 
-			writeError(w, error.NewGatewayError(error.RATE_LIMIT_EXCEEDED, "rate limit exceeded"))
+			writeError(w, gwerror.NewGatewayError(gwerror.RATE_LIMIT_EXCEEDED, "rate limit exceeded"))
 			return
 		}
 
@@ -326,9 +328,27 @@ func (m *Middleware) Limit(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-import "net/http"
+// extractRateLimitKey 从请求中提取限流key
+func extractRateLimitKey(r *http.Request) string {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return ""
+	}
 
-func writeError(w http.ResponseWriter, err *error.GatewayError) {
+	// 如果是Bearer token，提取token部分
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		token = strings.TrimSpace(token)
+		if token != "" {
+			return token
+		}
+	}
+
+	// 否则返回原始header（不应该发生）
+	return authHeader
+}
+
+func writeError(w http.ResponseWriter, err *gwerror.GatewayError) {
 	info := err.GetErrorInfo()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(info.HTTPStatus)
