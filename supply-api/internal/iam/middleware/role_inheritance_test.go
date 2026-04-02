@@ -21,7 +21,7 @@ func TestRoleInheritance_OperatorInheritsViewer(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *operatorClaims)
+	ctx := WithIAMClaims(context.Background(), operatorClaims)
 
 	// act & assert - operator 应该拥有 viewer 的所有 scope
 	for _, viewerScope := range viewerScopes {
@@ -58,7 +58,7 @@ func TestRoleInheritance_ExplicitOverride(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *orgAdminClaims)
+	ctx := WithIAMClaims(context.Background(), orgAdminClaims)
 
 	// act & assert - org_admin 应该拥有所有子角色的 scope
 	assert.True(t, CheckScope(ctx, "platform:read"))   // viewer
@@ -83,7 +83,7 @@ func TestRoleInheritance_ViewerDoesNotInherit(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *viewerClaims)
+	ctx := WithIAMClaims(context.Background(), viewerClaims)
 
 	// act & assert - viewer 是基础角色，不继承任何角色
 	assert.True(t, CheckScope(ctx, "platform:read"))
@@ -100,24 +100,26 @@ func TestRoleInheritance_SupplyChain(t *testing.T) {
 	supplyAdminScopes := []string{"supply:account:read", "supply:account:write", "supply:package:read", "supply:package:write", "supply:package:publish", "supply:package:offline", "supply:settlement:withdraw"}
 
 	// supply_viewer 测试
-	viewerCtx := context.WithValue(context.Background(), IAMTokenClaimsKey, IAMTokenClaims{
+	viewerClaims := &IAMTokenClaims{
 		SubjectID: "user:4",
 		Role:      "supply_viewer",
 		Scope:     supplyViewerScopes,
 		TenantID:  1,
-	})
+	}
+	viewerCtx := WithIAMClaims(context.Background(), viewerClaims)
 
 	// act & assert
 	assert.True(t, CheckScope(viewerCtx, "supply:account:read"))
 	assert.False(t, CheckScope(viewerCtx, "supply:account:write"))
 
 	// supply_operator 测试
-	operatorCtx := context.WithValue(context.Background(), IAMTokenClaimsKey, IAMTokenClaims{
+	operatorClaims := &IAMTokenClaims{
 		SubjectID: "user:5",
 		Role:      "supply_operator",
 		Scope:     supplyOperatorScopes,
 		TenantID:  1,
-	})
+	}
+	operatorCtx := WithIAMClaims(context.Background(), operatorClaims)
 
 	// act & assert - operator 继承 viewer
 	assert.True(t, CheckScope(operatorCtx, "supply:account:read"))
@@ -125,12 +127,13 @@ func TestRoleInheritance_SupplyChain(t *testing.T) {
 	assert.False(t, CheckScope(operatorCtx, "supply:settlement:withdraw")) // operator 没有 withdraw
 
 	// supply_admin 测试
-	adminCtx := context.WithValue(context.Background(), IAMTokenClaimsKey, IAMTokenClaims{
+	adminClaims := &IAMTokenClaims{
 		SubjectID: "user:6",
 		Role:      "supply_admin",
 		Scope:     supplyAdminScopes,
 		TenantID:  1,
-	})
+	}
+	adminCtx := WithIAMClaims(context.Background(), adminClaims)
 
 	// act & assert - admin 继承所有
 	assert.True(t, CheckScope(adminCtx, "supply:account:read"))
@@ -146,12 +149,13 @@ func TestRoleInheritance_ConsumerChain(t *testing.T) {
 	consumerAdminScopes := []string{"consumer:account:read", "consumer:account:write", "consumer:apikey:read", "consumer:apikey:create", "consumer:apikey:revoke", "consumer:usage:read"}
 
 	// consumer_viewer 测试
-	viewerCtx := context.WithValue(context.Background(), IAMTokenClaimsKey, IAMTokenClaims{
+	viewerClaims := &IAMTokenClaims{
 		SubjectID: "user:7",
 		Role:      "consumer_viewer",
 		Scope:     consumerViewerScopes,
 		TenantID:  1,
-	})
+	}
+	viewerCtx := WithIAMClaims(context.Background(), viewerClaims)
 
 	// act & assert
 	assert.True(t, CheckScope(viewerCtx, "consumer:account:read"))
@@ -159,24 +163,26 @@ func TestRoleInheritance_ConsumerChain(t *testing.T) {
 	assert.False(t, CheckScope(viewerCtx, "consumer:apikey:create"))
 
 	// consumer_operator 测试
-	operatorCtx := context.WithValue(context.Background(), IAMTokenClaimsKey, IAMTokenClaims{
+	operatorClaims := &IAMTokenClaims{
 		SubjectID: "user:8",
 		Role:      "consumer_operator",
 		Scope:     consumerOperatorScopes,
 		TenantID:  1,
-	})
+	}
+	operatorCtx := WithIAMClaims(context.Background(), operatorClaims)
 
 	// act & assert - operator 继承 viewer
 	assert.True(t, CheckScope(operatorCtx, "consumer:apikey:create"))
 	assert.True(t, CheckScope(operatorCtx, "consumer:apikey:revoke"))
 
 	// consumer_admin 测试
-	adminCtx := context.WithValue(context.Background(), IAMTokenClaimsKey, IAMTokenClaims{
+	adminClaims := &IAMTokenClaims{
 		SubjectID: "user:9",
 		Role:      "consumer_admin",
 		Scope:     consumerAdminScopes,
 		TenantID:  1,
-	})
+	}
+	adminCtx := WithIAMClaims(context.Background(), adminClaims)
 
 	// act & assert - admin 继承所有
 	assert.True(t, CheckScope(adminCtx, "consumer:account:read"))
@@ -203,7 +209,7 @@ func TestRoleInheritance_MultipleRoles(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *combinedClaims)
+	ctx := WithIAMClaims(context.Background(), combinedClaims)
 
 	// act & assert
 	assert.True(t, CheckScope(ctx, "platform:read"))     // viewer
@@ -222,7 +228,7 @@ func TestRoleInheritance_SuperAdmin(t *testing.T) {
 		TenantID:  0,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *superAdminClaims)
+	ctx := WithIAMClaims(context.Background(), superAdminClaims)
 
 	// act & assert - super_admin 拥有所有 scope
 	assert.True(t, CheckScope(ctx, "platform:read"))
@@ -244,7 +250,7 @@ func TestRoleInheritance_DeveloperInheritsViewer(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *developerClaims)
+	ctx := WithIAMClaims(context.Background(), developerClaims)
 
 	// act & assert - developer 继承 viewer 的所有 scope
 	assert.True(t, CheckScope(ctx, "platform:read"))
@@ -266,7 +272,7 @@ func TestRoleInheritance_FinopsInheritsViewer(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *finopsClaims)
+	ctx := WithIAMClaims(context.Background(), finopsClaims)
 
 	// act & assert - finops 继承 viewer 的所有 scope
 	assert.True(t, CheckScope(ctx, "platform:read"))
@@ -288,7 +294,7 @@ func TestRoleInheritance_DeveloperDoesNotInheritOperator(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *developerClaims)
+	ctx := WithIAMClaims(context.Background(), developerClaims)
 
 	// act & assert - developer 不继承 operator 的 scope
 	assert.False(t, CheckScope(ctx, "platform:write"))  // operator 有，developer 没有
