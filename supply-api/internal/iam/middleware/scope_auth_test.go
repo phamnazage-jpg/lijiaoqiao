@@ -21,7 +21,7 @@ func TestScopeAuth_CheckScope_SuperAdminHasAllScopes(t *testing.T) {
 		TenantID:  0,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+	ctx := WithIAMClaims(context.Background(), claims)
 
 	// act
 	hasScope := CheckScope(ctx, "platform:read")
@@ -44,7 +44,7 @@ func TestScopeAuth_CheckScope_ViewerHasReadOnly(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+	ctx := WithIAMClaims(context.Background(), claims)
 
 	// act & assert
 	assert.True(t, CheckScope(ctx, "platform:read"), "viewer should have platform:read")
@@ -66,7 +66,7 @@ func TestScopeAuth_CheckScope_Denied(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+	ctx := WithIAMClaims(context.Background(), claims)
 
 	// act & assert
 	assert.False(t, CheckScope(ctx, "platform:write"), "viewer should NOT have platform:write")
@@ -95,13 +95,13 @@ func TestScopeAuth_CheckScope_EmptyScope(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+	ctx := WithIAMClaims(context.Background(), claims)
 
 	// act
 	hasEmptyScope := CheckScope(ctx, "")
 
-	// assert
-	assert.True(t, hasEmptyScope, "empty scope should always pass")
+	// assert - 空scope应该拒绝访问（安全修复）
+	assert.False(t, hasEmptyScope, "empty scope should DENY access (security fix)")
 }
 
 // TestScopeAuth_CheckMultipleScopes 测试检查多个Scope（需要全部满足）
@@ -114,7 +114,7 @@ func TestScopeAuth_CheckMultipleScopes(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+	ctx := WithIAMClaims(context.Background(), claims)
 
 	// act & assert
 	assert.True(t, CheckAllScopes(ctx, []string{"platform:read", "platform:write"}), "operator should have both read and write")
@@ -132,7 +132,7 @@ func TestScopeAuth_CheckAnyScope(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+	ctx := WithIAMClaims(context.Background(), claims)
 
 	// act & assert
 	assert.True(t, CheckAnyScope(ctx, []string{"platform:read", "platform:write"}), "should pass with one matching scope")
@@ -150,7 +150,7 @@ func TestScopeAuth_GetIAMTokenClaims(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+	ctx := WithIAMClaims(context.Background(), claims)
 
 	// act
 	retrievedClaims := GetIAMTokenClaims(ctx)
@@ -184,7 +184,7 @@ func TestScopeAuth_HasRole(t *testing.T) {
 		TenantID:  1,
 	}
 
-	ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+	ctx := WithIAMClaims(context.Background(), claims)
 
 	// act & assert
 	assert.True(t, HasRole(ctx, "operator"))
@@ -222,7 +222,7 @@ func TestScopeRoleAuthzMiddleware_WithScope(t *testing.T) {
 		TenantID:  1,
 	}
 	req := httptest.NewRequest("GET", "/test", nil)
-	req = req.WithContext(context.WithValue(req.Context(), IAMTokenClaimsKey, *claims))
+	req = req.WithContext(WithIAMClaims(req.Context(), claims))
 
 	// act
 	rec := httptest.NewRecorder()
@@ -250,7 +250,7 @@ func TestScopeRoleAuthzMiddleware_Denied(t *testing.T) {
 		TenantID:  1,
 	}
 	req := httptest.NewRequest("GET", "/test", nil)
-	req = req.WithContext(context.WithValue(req.Context(), IAMTokenClaimsKey, *claims))
+	req = req.WithContext(WithIAMClaims(req.Context(), claims))
 
 	// act
 	rec := httptest.NewRecorder()
@@ -300,7 +300,7 @@ func TestScopeRoleAuthzMiddleware_RequireAllScopes(t *testing.T) {
 		TenantID:  1,
 	}
 	req := httptest.NewRequest("GET", "/test", nil)
-	req = req.WithContext(context.WithValue(req.Context(), IAMTokenClaimsKey, *claims))
+	req = req.WithContext(WithIAMClaims(req.Context(), claims))
 
 	// act
 	rec := httptest.NewRecorder()
@@ -328,7 +328,7 @@ func TestScopeRoleAuthzMiddleware_RequireAllScopes_Denied(t *testing.T) {
 		TenantID:  1,
 	}
 	req := httptest.NewRequest("GET", "/test", nil)
-	req = req.WithContext(context.WithValue(req.Context(), IAMTokenClaimsKey, *claims))
+	req = req.WithContext(WithIAMClaims(req.Context(), claims))
 
 	// act
 	rec := httptest.NewRecorder()
@@ -363,7 +363,7 @@ func TestScopeAuth_HasRoleLevel(t *testing.T) {
 			Scope:     []string{},
 			TenantID:  1,
 		}
-		ctx := context.WithValue(context.Background(), IAMTokenClaimsKey, *claims)
+		ctx := WithIAMClaims(context.Background(), claims)
 
 		// act
 		result := HasRoleLevel(ctx, tc.minLevel)
@@ -436,4 +436,136 @@ func TestGetClaimsFromLegacy(t *testing.T) {
 	assert.Equal(t, legacyClaims.Role, iamClaims.Role)
 	assert.Equal(t, legacyClaims.Scope, iamClaims.Scope)
 	assert.Equal(t, legacyClaims.TenantID, iamClaims.TenantID)
+}
+
+// P0-01: 测试WithIAMClaims存储指针，返回有效指针而非悬空指针
+// 问题：GetIAMTokenClaims返回指向栈帧的指针，函数返回后指针无效
+// 修复：改为存储和获取指针，返回有效堆内存指针
+func TestP0_01_WithIAMClaims_ReturnsValidPointer(t *testing.T) {
+	// arrange - 创建一个claims并存储到context
+	originalClaims := &IAMTokenClaims{
+		SubjectID: "user:p0test1",
+		Role:      "operator",
+		Scope:     []string{"platform:read"},
+		TenantID:  100,
+	}
+
+	ctx := WithIAMClaims(context.Background(), originalClaims)
+
+	// act - 从context获取claims（获取的应该是有效指针）
+	retrievedClaims := GetIAMTokenClaims(ctx)
+
+	// assert - 返回的应该是有效指针，指向与原始claims相同的内存
+	assert.NotNil(t, retrievedClaims, "retrieved claims should not be nil")
+	assert.Equal(t, originalClaims, retrievedClaims, "should return same pointer as stored")
+	assert.Equal(t, "user:p0test1", retrievedClaims.SubjectID, "SubjectID should match")
+	assert.Equal(t, "operator", retrievedClaims.Role, "Role should match")
+
+	// 验证修改原始对象后，retrievedClaims能看到变化（因为共享指针）
+	originalClaims.Role = "super_admin"
+	assert.Equal(t, "super_admin", retrievedClaims.Role, "retrieved claims should see modification")
+}
+
+// P0-01: 测试GetIAMTokenClaims在context返回后仍然有效
+func TestP0_01_GetIAMTokenClaims_PointerValidAfterReturn(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:ptrtest",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+
+	// act - 存储到context
+	ctx := WithIAMClaims(context.Background(), claims)
+
+	// 在函数外获取claims（模拟中间件在请求处理中访问）
+	retrievedClaims := GetIAMTokenClaims(ctx)
+
+	// assert - 应该返回有效指针而不是nil或无效指针
+	assert.NotNil(t, retrievedClaims)
+	assert.Equal(t, claims, retrievedClaims, "should return exact same pointer")
+	assert.Equal(t, "user:ptrtest", retrievedClaims.SubjectID)
+}
+
+// P0-02: 测试writeAuthError写入响应体
+func TestP0_02_writeAuthError_WritesResponseBody(t *testing.T) {
+	// arrange
+	rec := httptest.NewRecorder()
+
+	// act - 调用writeAuthError
+	writeAuthError(rec, http.StatusUnauthorized, "AUTH_CONTEXT_MISSING", "authentication context is missing")
+
+	// assert - 响应体应该包含错误信息
+	body := rec.Body.String()
+	assert.NotEmpty(t, body, "response body should not be empty")
+
+	// 验证响应体包含错误码和消息
+	assert.Contains(t, body, "AUTH_CONTEXT_MISSING", "body should contain error code")
+	assert.Contains(t, body, "authentication context is missing", "body should contain error message")
+	assert.Equal(t, http.StatusUnauthorized, rec.Code, "status code should match")
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"), "content type should be JSON")
+}
+
+// P0-02: 测试writeAuthError在Forbidden状态下也写入响应体
+func TestP0_02_writeAuthError_ForbiddenWritesBody(t *testing.T) {
+	// arrange
+	rec := httptest.NewRecorder()
+
+	// act
+	writeAuthError(rec, http.StatusForbidden, "AUTH_SCOPE_DENIED", "required scope is not granted")
+
+	// assert
+	body := rec.Body.String()
+	assert.NotEmpty(t, body, "response body should not be empty for Forbidden status")
+	assert.Contains(t, body, "AUTH_SCOPE_DENIED")
+	assert.Contains(t, body, "required scope is not granted")
+}
+
+// HIGH-01: CheckScope空scope应该拒绝访问（而不应该绕过权限检查）
+func TestHIGH01_CheckScope_EmptyScopeShouldDenyAccess(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:high01",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+
+	ctx := WithIAMClaims(context.Background(), claims)
+
+	// act - 空scope要求应该拒绝访问（安全修复）
+	hasEmptyScope := CheckScope(ctx, "")
+
+	// assert - 空scope应该返回false，拒绝访问
+	assert.False(t, hasEmptyScope, "empty scope should DENY access (security fix)")
+}
+
+// MED-01: RequireAnyScope当requiredScopes为空时应该拒绝访问
+func TestMED01_RequireAnyScope_EmptyScopesShouldDenyAccess(t *testing.T) {
+	// arrange
+	scopeAuth := NewScopeAuthMiddleware()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// 传入空的requiredScopes
+	wrappedHandler := scopeAuth.RequireAnyScope([]string{})(handler)
+
+	claims := &IAMTokenClaims{
+		SubjectID: "user:med01",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(WithIAMClaims(req.Context(), claims))
+
+	// act
+	rec := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(rec, req)
+
+	// assert - 空scope列表应该拒绝访问（安全修复）
+	assert.Equal(t, http.StatusForbidden, rec.Code, "empty required scopes should DENY access (security fix)")
 }

@@ -34,9 +34,15 @@ type AuthConfig struct {
 
 // AuthMiddleware 鉴权中间件
 type AuthMiddleware struct {
-	config       AuthConfig
-	tokenCache   *TokenCache
-	auditEmitter AuditEmitter
+	config          AuthConfig
+	tokenCache      *TokenCache
+	tokenBackend    TokenStatusBackend
+	auditEmitter    AuditEmitter
+}
+
+// TokenStatusBackend Token状态后端查询接口
+type TokenStatusBackend interface {
+	CheckTokenStatus(ctx context.Context, tokenID string) (string, error)
 }
 
 // AuditEmitter 审计事件发射器
@@ -57,13 +63,14 @@ type AuditEvent struct {
 }
 
 // NewAuthMiddleware 创建鉴权中间件
-func NewAuthMiddleware(config AuthConfig, tokenCache *TokenCache, auditEmitter AuditEmitter) *AuthMiddleware {
+func NewAuthMiddleware(config AuthConfig, tokenCache *TokenCache, tokenBackend TokenStatusBackend, auditEmitter AuditEmitter) *AuthMiddleware {
 	if config.CacheTTL == 0 {
 		config.CacheTTL = 30 * time.Second
 	}
 	return &AuthMiddleware{
 		config:       config,
 		tokenCache:   tokenCache,
+		tokenBackend: tokenBackend,
 		auditEmitter: auditEmitter,
 	}
 }
@@ -298,7 +305,8 @@ func (m *AuthMiddleware) ScopeRoleAuthzMiddleware(requiredScope string) func(htt
 // verifyToken 校验JWT token
 func (m *AuthMiddleware) verifyToken(tokenString string) (*TokenClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		// 严格验证算法：只接受HS256
+		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(m.config.SecretKey), nil
@@ -339,8 +347,13 @@ func (m *AuthMiddleware) checkTokenStatus(tokenID string) (string, error) {
 		}
 	}
 
-	// 缓存未命中，返回active（实际应该查询数据库）
-	return "active", nil
+	// 缓存未命中，查询后端验证token状态
+	if m.tokenBackend != nil {
+		return m.tokenBackend.CheckTokenStatus(context.Background(), tokenID)
+	}
+
+	// 没有后端实现时，应该拒绝访问而不是默认active
+	return "", errors.New("token status unknown: backend not configured")
 }
 
 // GetTokenClaims 从context获取token claims

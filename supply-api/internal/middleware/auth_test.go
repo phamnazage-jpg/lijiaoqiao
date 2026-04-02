@@ -320,6 +320,107 @@ func TestTokenCache(t *testing.T) {
 	})
 }
 
+// HIGH-02: JWT算法验证不严格 - 应该拒绝非HS256的算法
+func TestHIGH02_JWT_RejectNonHS256Algorithm(t *testing.T) {
+	secretKey := "test-secret-key-12345678901234567890"
+	issuer := "test-issuer"
+
+	tests := []struct {
+		name          string
+		signingMethod jwt.SigningMethod
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "HS256 should be accepted",
+			signingMethod: jwt.SigningMethodHS256,
+			expectError:   false,
+		},
+		{
+			name:          "HS384 should be rejected",
+			signingMethod: jwt.SigningMethodHS384,
+			expectError:   true,
+			errorContains: "unexpected signing method",
+		},
+		{
+			name:          "HS512 should be rejected",
+			signingMethod: jwt.SigningMethodHS512,
+			expectError:   true,
+			errorContains: "unexpected signing method",
+		},
+		{
+			name:          "none algorithm should be rejected",
+			signingMethod: jwt.SigningMethodNone,
+			expectError:   true,
+			errorContains: "malformed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			claims := TokenClaims{
+				RegisteredClaims: jwt.RegisteredClaims{
+					Issuer:    issuer,
+					Subject:   "subject:1",
+					ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+					IssuedAt:  jwt.NewNumericDate(time.Now()),
+				},
+				SubjectID: "subject:1",
+				Role:      "owner",
+				Scope:     []string{"read", "write"},
+				TenantID:  1,
+			}
+
+			token := jwt.NewWithClaims(tt.signingMethod, claims)
+			tokenString, _ := token.SignedString([]byte(secretKey))
+
+			middleware := &AuthMiddleware{
+				config: AuthConfig{
+					SecretKey: secretKey,
+					Issuer:    issuer,
+				},
+			}
+
+			_, err := middleware.verifyToken(tokenString)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got nil")
+				} else if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("error = %v, want contains %v", err, tt.errorContains)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// MED-02: checkTokenStatus缓存未命中时应该查询后端而不是默认返回active
+func TestMED02_TokenCacheMiss_ShouldNotAssumeActive(t *testing.T) {
+	// arrange
+	middleware := &AuthMiddleware{
+		config: AuthConfig{
+			SecretKey: "test-secret-key-12345678901234567890",
+			Issuer:    "test-issuer",
+		},
+		tokenCache: NewTokenCache(), // 空的缓存
+		// 没有设置tokenBackend
+	}
+
+	// act - 查询一个不在缓存中的token
+	status, err := middleware.checkTokenStatus("nonexistent-token-id")
+
+	// assert - 缓存未命中且没有后端时应该返回错误（安全修复）
+	// 修复前bug：缓存未命中时默认返回"active"
+	// 修复后：缓存未命中且没有后端时返回错误
+	if err == nil {
+		t.Errorf("MED-02: cache miss without backend should return error, got status='%s'", status)
+	}
+}
+
 // Helper functions
 
 func createTestToken(secretKey, issuer, subject, role string, expiresAt time.Time) string {

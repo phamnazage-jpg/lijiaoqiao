@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"lijiaoqiao/supply-api/internal/middleware"
@@ -25,11 +26,28 @@ type IAMTokenClaims struct {
 	Permissions []string `json:"permissions"`    // 细粒度权限列表
 }
 
+// 角色层级定义
+var roleHierarchyLevels = map[string]int{
+	"super_admin":      100,
+	"org_admin":        50,
+	"supply_admin":     40,
+	"consumer_admin":    40,
+	"operator":         30,
+	"developer":        20,
+	"finops":           20,
+	"supply_operator":  30,
+	"supply_finops":    20,
+	"supply_viewer":    10,
+	"consumer_operator": 30,
+	"consumer_viewer":  10,
+	"viewer":           10,
+}
+
 // ScopeAuthMiddleware Scope权限验证中间件
 type ScopeAuthMiddleware struct {
 	// 路由-Scope映射
 	routeScopePolicies map[string][]string
-	// 角色层级
+	// 角色层级（已废弃，使用包级变量roleHierarchyLevels）
 	roleHierarchy map[string]int
 }
 
@@ -37,21 +55,7 @@ type ScopeAuthMiddleware struct {
 func NewScopeAuthMiddleware() *ScopeAuthMiddleware {
 	return &ScopeAuthMiddleware{
 		routeScopePolicies: make(map[string][]string),
-		roleHierarchy: map[string]int{
-			"super_admin":     100,
-			"org_admin":        50,
-			"supply_admin":     40,
-			"consumer_admin":   40,
-			"operator":         30,
-			"developer":         20,
-			"finops":           20,
-			"supply_operator":  30,
-			"supply_finops":    20,
-			"supply_viewer":    10,
-			"consumer_operator": 30,
-			"consumer_viewer":  10,
-			"viewer":           10,
-		},
+		roleHierarchy:      roleHierarchyLevels,
 	}
 }
 
@@ -67,9 +71,9 @@ func CheckScope(ctx context.Context, requiredScope string) bool {
 		return false
 	}
 
-	// 空scope直接通过
+	// 空scope应该拒绝访问
 	if requiredScope == "" {
-		return true
+		return false
 	}
 
 	return hasScope(claims.Scope, requiredScope)
@@ -138,23 +142,7 @@ func HasRoleLevel(ctx context.Context, minLevel int) bool {
 
 // GetRoleLevel 获取角色层级数值
 func GetRoleLevel(role string) int {
-	hierarchy := map[string]int{
-		"super_admin":     100,
-		"org_admin":        50,
-		"supply_admin":     40,
-		"consumer_admin":   40,
-		"operator":         30,
-		"developer":        20,
-		"finops":           20,
-		"supply_operator":  30,
-		"supply_finops":    20,
-		"supply_viewer":    10,
-		"consumer_operator": 30,
-		"consumer_viewer":  10,
-		"viewer":           10,
-	}
-
-	if level, ok := hierarchy[role]; ok {
+	if level, ok := roleHierarchyLevels[role]; ok {
 		return level
 	}
 	return 0
@@ -162,16 +150,16 @@ func GetRoleLevel(role string) int {
 
 // GetIAMTokenClaims 获取IAM Token Claims
 func GetIAMTokenClaims(ctx context.Context) *IAMTokenClaims {
-	if claims, ok := ctx.Value(IAMTokenClaimsKey).(IAMTokenClaims); ok {
-		return &claims
+	if claims, ok := ctx.Value(IAMTokenClaimsKey).(*IAMTokenClaims); ok {
+		return claims
 	}
 	return nil
 }
 
 // getIAMTokenClaims 内部获取IAM Token Claims
 func getIAMTokenClaims(ctx context.Context) *IAMTokenClaims {
-	if claims, ok := ctx.Value(IAMTokenClaimsKey).(IAMTokenClaims); ok {
-		return &claims
+	if claims, ok := ctx.Value(IAMTokenClaimsKey).(*IAMTokenClaims); ok {
+		return claims
 	}
 	return nil
 }
@@ -247,8 +235,8 @@ func (m *ScopeAuthMiddleware) RequireAnyScope(requiredScopes []string) func(http
 				return
 			}
 
-			// 空列表直接通过
-			if len(requiredScopes) > 0 && !hasAnyScope(claims.Scope, requiredScopes) {
+			// 空列表应该拒绝访问
+			if len(requiredScopes) == 0 || !hasAnyScope(claims.Scope, requiredScopes) {
 				writeAuthError(w, http.StatusForbidden, "AUTH_SCOPE_DENIED",
 					"none of the required scopes are granted")
 				return
@@ -328,12 +316,12 @@ func writeAuthError(w http.ResponseWriter, status int, code, message string) {
 			"message": message,
 		},
 	}
-	_ = resp
+	json.NewEncoder(w).Encode(resp)
 }
 
 // WithIAMClaims 设置IAM Claims到Context
 func WithIAMClaims(ctx context.Context, claims *IAMTokenClaims) context.Context {
-	return context.WithValue(ctx, IAMTokenClaimsKey, *claims)
+	return context.WithValue(ctx, IAMTokenClaimsKey, claims)
 }
 
 // GetClaimsFromLegacy 从原有middleware.TokenClaims转换为IAMTokenClaims

@@ -124,7 +124,7 @@ func main() {
 		CacheTTL:  cfg.Token.RevocationCacheTTL,
 		Enabled:   *env != "dev", // 开发模式禁用鉴权
 	}
-	authMiddleware := middleware.NewAuthMiddleware(authConfig, tokenCache, nil)
+	authMiddleware := middleware.NewAuthMiddleware(authConfig, tokenCache, nil, nil)
 
 	// 初始化幂等中间件
 	idempotencyMiddleware := middleware.NewIdempotencyMiddleware(nil, middleware.IdempotencyConfig{
