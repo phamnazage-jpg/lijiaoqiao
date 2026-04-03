@@ -64,7 +64,9 @@ func main() {
 	}
 
 	// 初始化审计存储
-	auditStore := audit.NewMemoryAuditStore() // TODO: 替换为DB-backed实现
+	// R-08: DatabaseAuditService 已创建 (audit/service/audit_service_db.go)
+	// 需接口适配后可替换为: auditStore := audit.NewDatabaseAuditService(auditRepo)
+	auditStore := audit.NewMemoryAuditStore()
 
 	// 初始化存储层
 	var accountStore domain.AccountStore
