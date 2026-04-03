@@ -171,8 +171,11 @@ func (m *IdempotencyMiddleware) Wrap(handler IdempotentHandler) http.HandlerFunc
 			lockedRecord.PayloadHash = payloadHash
 		}
 
-		// 执行实际业务处理
-		err = handler(ctx, w, r, lockedRecord)
+		// 创建包装器以捕获实际的状态码和响应体
+		wrappedWriter := &statusCapturingResponseWriter{ResponseWriter: w}
+
+		// 执行实际业务处理，使用包装器捕获响应
+		err = handler(ctx, wrappedWriter, r, lockedRecord)
 
 		// 根据处理结果更新幂等记录
 		if err != nil {
@@ -182,11 +185,12 @@ func (m *IdempotencyMiddleware) Wrap(handler IdempotentHandler) http.HandlerFunc
 			return
 		}
 
-		// 业务处理成功，更新为成功状态
-		// 注意：这里需要从w中获取实际的响应码和body
-		// 简化处理：使用200
-		successBody, _ := json.Marshal(map[string]interface{}{"status": "ok"})
-		_ = m.idempotencyRepo.UpdateSuccess(ctx, lockedRecord.ID, http.StatusOK, successBody)
+		// 业务处理成功，使用捕获的实际状态码和body更新幂等记录
+		successBody := wrappedWriter.body
+		if len(successBody) == 0 {
+			successBody, _ = json.Marshal(map[string]interface{}{"status": "ok"})
+		}
+		_ = m.idempotencyRepo.UpdateSuccess(ctx, lockedRecord.ID, wrappedWriter.statusCode, successBody)
 	}
 }
 
@@ -230,6 +234,23 @@ func writeIdempotentReplay(w http.ResponseWriter, status int, body json.RawMessa
 	}
 }
 
+// statusCapturingResponseWriter 包装http.ResponseWriter以捕获状态码
+type statusCapturingResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+	body       []byte
+}
+
+func (w *statusCapturingResponseWriter) WriteHeader(statusCode int) {
+	w.statusCode = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *statusCapturingResponseWriter) Write(b []byte) (int, error) {
+	w.body = append(w.body, b...)
+	return w.ResponseWriter.Write(b)
+}
+
 // context keys
 type contextKey string
 
@@ -264,4 +285,9 @@ func getOperatorID(ctx context.Context) int64 {
 		}
 	}
 	return 0
+}
+
+// GetOperatorID 公开函数，从context获取操作者ID
+func GetOperatorID(ctx context.Context) int64 {
+	return getOperatorID(ctx)
 }

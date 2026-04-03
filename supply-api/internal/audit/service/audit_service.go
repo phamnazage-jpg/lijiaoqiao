@@ -5,9 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"lijiaoqiao/supply-api/internal/audit/model"
 )
@@ -181,10 +182,9 @@ func (s *InMemoryAuditStore) GetByIdempotencyKey(ctx context.Context, key string
 	return nil, ErrEventNotFound
 }
 
-// generateEventID 生成事件ID
+// generateEventID 生成事件ID（使用UUID避免冲突）
 func generateEventID() string {
-	now := time.Now()
-	return now.Format("20060102150405.000000") + fmt.Sprintf("%03d", now.Nanosecond()%1000000/1000) + "-evt"
+	return uuid.New().String()
 }
 
 // AuditService 审计服务
@@ -229,12 +229,13 @@ func (s *AuditService) CreateEvent(ctx context.Context, event *model.AuditEvent)
 		event.EventID = generateEventID()
 	}
 
-	// 处理幂等性 - 使用互斥锁保护检查和插入之间的时间窗口
+	// 处理幂等性 - 整个检查和插入都在锁保护下，防止竞态条件
 	if event.IdempotencyKey != "" {
 		s.idempotencyMu.Lock()
+		defer s.idempotencyMu.Unlock()
+
 		existing, err := s.store.GetByIdempotencyKey(ctx, event.IdempotencyKey)
 		if err == nil && existing != nil {
-			s.idempotencyMu.Unlock()
 			// 检查payload是否相同
 			if isSamePayload(existing, event) {
 				// 重放同参 - 返回200
@@ -254,10 +255,21 @@ func (s *AuditService) CreateEvent(ctx context.Context, event *model.AuditEvent)
 				}, nil
 			}
 		}
-		s.idempotencyMu.Unlock()
+
+		// 首次创建 - 在锁保护下插入
+		err = s.store.Emit(ctx, event)
+		if err != nil {
+			return nil, err
+		}
+
+		return &CreateEventResult{
+			EventID:    event.EventID,
+			StatusCode: 201,
+			Status:     "created",
+		}, nil
 	}
 
-	// 首次创建 - 返回201
+	// 无幂等键的直接插入
 	err := s.store.Emit(ctx, event)
 	if err != nil {
 		return nil, err

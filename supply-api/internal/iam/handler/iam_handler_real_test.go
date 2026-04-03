@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"lijiaoqiao/supply-api/internal/iam/service"
+	"lijiaoqiao/supply-api/internal/middleware"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -695,6 +696,8 @@ func TestIAMHandler_CheckScope_HasScope(t *testing.T) {
 	})
 
 	req := httptest.NewRequest("GET", "/api/v1/iam/check-scope?scope=platform:read", nil)
+	ctx := middleware.WithOperatorID(context.Background(), 1)
+	req = req.WithContext(ctx)
 
 	// act
 	rec := httptest.NewRecorder()
@@ -728,6 +731,8 @@ func TestIAMHandler_CheckScope_NoScope(t *testing.T) {
 	})
 
 	req := httptest.NewRequest("GET", "/api/v1/iam/check-scope?scope=platform:write", nil)
+	ctx := middleware.WithOperatorID(context.Background(), 1)
+	req = req.WithContext(ctx)
 
 	// act
 	rec := httptest.NewRecorder()
@@ -1153,6 +1158,8 @@ func TestIAMHandler_handleCheckScope_GET(t *testing.T) {
 	handler := NewIAMHandler(svc)
 
 	req := httptest.NewRequest("GET", "/api/v1/iam/check-scope?scope=platform:read", nil)
+	ctx := middleware.WithOperatorID(context.Background(), 1)
+	req = req.WithContext(ctx)
 
 	// act
 	rec := httptest.NewRecorder()
@@ -1227,12 +1234,15 @@ func TestRequireScope(t *testing.T) {
 // getUserIDFromContext 测试
 
 func TestGetUserIDFromContext(t *testing.T) {
-	// act
+	// act - 没有设置时返回0
 	ctx := context.Background()
 	userID := getUserIDFromContext(ctx)
+	assert.Equal(t, int64(0), userID)
 
-	// assert - 默认返回1
-	assert.Equal(t, int64(1), userID)
+	// act - 设置operatorID时返回正确的值
+	ctx = middleware.WithOperatorID(context.Background(), 123)
+	userID = getUserIDFromContext(ctx)
+	assert.Equal(t, int64(123), userID)
 }
 
 // toRoleResponse 测试

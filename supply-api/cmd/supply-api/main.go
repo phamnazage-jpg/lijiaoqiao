@@ -65,7 +65,8 @@ func main() {
 
 	// 初始化审计存储
 	// R-08: DatabaseAuditService 已创建 (audit/service/audit_service_db.go)
-	// 需接口适配后可替换为: auditStore := audit.NewDatabaseAuditService(auditRepo)
+	// 注意：由于domain层使用audit.AuditStore接口(旧)，而DatabaseAuditService实现的是AuditStoreInterface(新)
+	// 需要接口适配。暂保持内存存储，后续统一架构时处理。
 	auditStore := audit.NewMemoryAuditStore()
 
 	// 初始化存储层

@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"lijiaoqiao/supply-api/internal/iam/model"
 	"lijiaoqiao/supply-api/internal/iam/service"
+	"lijiaoqiao/supply-api/internal/middleware"
 )
 
 // IAMHandler IAM HTTP处理器
@@ -287,15 +289,14 @@ func (h *IAMHandler) DeleteRole(w http.ResponseWriter, r *http.Request, roleCode
 
 // ListScopes 处理列出所有Scope请求
 func (h *IAMHandler) ListScopes(w http.ResponseWriter, r *http.Request) {
-	// 从预定义Scope列表获取
-	scopes := []map[string]interface{}{
-		{"scope_code": "platform:read", "scope_name": "读取平台配置", "scope_type": "platform"},
-		{"scope_code": "platform:write", "scope_name": "修改平台配置", "scope_type": "platform"},
-		{"scope_code": "platform:admin", "scope_name": "平台级管理", "scope_type": "platform"},
-		{"scope_code": "tenant:read", "scope_name": "读取租户信息", "scope_type": "platform"},
-		{"scope_code": "supply:account:read", "scope_name": "读取供应账号", "scope_type": "supply"},
-		{"scope_code": "consumer:apikey:create", "scope_name": "创建API Key", "scope_type": "consumer"},
-		{"scope_code": "router:invoke", "scope_name": "调用模型", "scope_type": "router"},
+	// 从预定义Scope列表获取（完整的scope定义在model/scope.go的PredefinedScopes中）
+	scopes := make([]map[string]interface{}, 0, len(model.PredefinedScopes))
+	for _, scope := range model.PredefinedScopes {
+		scopes = append(scopes, map[string]interface{}{
+			"scope_code": scope.Code,
+			"scope_name": scope.Name,
+			"scope_type": scope.Type,
+		})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -376,8 +377,11 @@ func (h *IAMHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 从context获取userID（实际应用中应从认证中间件获取）
-	userID := int64(1) // 模拟
+	userID := getUserIDFromContext(r.Context())
+	if userID == 0 {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "user not authenticated")
+		return
+	}
 
 	hasScope, err := h.iamService.CheckScope(r.Context(), userID, scope)
 	if err != nil {
@@ -497,8 +501,7 @@ func RequireScope(scope string, iamService service.IAMServiceInterface) func(htt
 	}
 }
 
-// getUserIDFromContext 从context获取userID（实际应用中应从认证中间件获取）
+// getUserIDFromContext 从context获取userID
 func getUserIDFromContext(ctx context.Context) int64 {
-	// TODO: 从认证中间件获取真实的userID
-	return 1
+	return middleware.GetOperatorID(ctx)
 }
