@@ -1,9 +1,19 @@
 package config
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
 	"os"
 	"time"
 )
+
+// Encryption key should be provided via environment variable or secure key management
+// In production, use a proper key management system (KMS)
+// Must be 16, 24, or 32 bytes for AES-128, AES-192, or AES-256
+var encryptionKey = []byte(getEnv("PASSWORD_ENCRYPTION_KEY", "default-key-32-bytes-long!!!!!!!"))
 
 // Config 网关配置
 type Config struct {
@@ -27,21 +37,49 @@ type ServerConfig struct {
 
 // DatabaseConfig 数据库配置
 type DatabaseConfig struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
-	Database string
-	MaxConns int
+	Host               string
+	Port               int
+	User               string
+	Password           string // 兼容旧版本，仍可直接使用明文密码（不推荐）
+	EncryptedPassword  string // 加密后的密码，优先级高于Password字段
+	Database           string
+	MaxConns           int
+}
+
+// GetPassword 返回解密后的数据库密码
+// 优先使用EncryptedPassword，如果为空则返回Password字段（兼容旧版本）
+func (c *DatabaseConfig) GetPassword() string {
+	if c.EncryptedPassword != "" {
+		decrypted, err := decryptPassword(c.EncryptedPassword)
+		if err != nil {
+			// 解密失败时返回原始加密字符串，让后续逻辑处理错误
+			return c.EncryptedPassword
+		}
+		return decrypted
+	}
+	return c.Password
 }
 
 // RedisConfig Redis配置
 type RedisConfig struct {
-	Host     string
-	Port     int
-	Password string
-	DB       int
-	PoolSize int
+	Host               string
+	Port               int
+	Password           string // 兼容旧版本
+	EncryptedPassword  string // 加密后的密码
+	DB                 int
+	PoolSize           int
+}
+
+// GetPassword 返回解密后的Redis密码
+func (c *RedisConfig) GetPassword() string {
+	if c.EncryptedPassword != "" {
+		decrypted, err := decryptPassword(c.EncryptedPassword)
+		if err != nil {
+			return c.EncryptedPassword
+		}
+		return decrypted
+	}
+	return c.Password
 }
 
 // RouterConfig 路由配置
@@ -159,4 +197,72 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// encryptPassword 使用AES-GCM加密密码
+func encryptPassword(plaintext string) (string, error) {
+	if plaintext == "" {
+		return "", nil
+	}
+
+	block, err := aes.NewCipher(encryptionKey)
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// decryptPassword 解密密码
+func decryptPassword(encrypted string) (string, error) {
+	if encrypted == "" {
+		return "", nil
+	}
+
+	// 检查是否是旧格式（未加密的明文）
+	if len(encrypted) < 4 || encrypted[:4] != "enc:" {
+		// 尝试作为新格式解密
+		ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
+		if err != nil {
+			// 如果不是有效的base64，可能是旧格式明文，直接返回
+			return encrypted, nil
+		}
+
+		block, err := aes.NewCipher(encryptionKey)
+		if err != nil {
+			return "", err
+		}
+
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			return "", err
+		}
+
+		nonceSize := gcm.NonceSize()
+		if len(ciphertext) < nonceSize {
+			return "", errors.New("ciphertext too short")
+		}
+
+		nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+		plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+		if err != nil {
+			return "", err
+		}
+
+		return string(plaintext), nil
+	}
+
+	// 旧格式：直接返回"enc:"后的部分
+	return encrypted[4:], nil
 }

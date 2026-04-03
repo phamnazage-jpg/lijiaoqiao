@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -38,6 +39,7 @@ type AuthMiddleware struct {
 	tokenCache      *TokenCache
 	tokenBackend    TokenStatusBackend
 	auditEmitter    AuditEmitter
+	bruteForce      *BruteForceProtection // 暴力破解保护
 }
 
 // TokenStatusBackend Token状态后端查询接口
@@ -75,6 +77,79 @@ func NewAuthMiddleware(config AuthConfig, tokenCache *TokenCache, tokenBackend T
 	}
 }
 
+// BruteForceProtection 暴力破解保护
+// MED-12: 防止暴力破解攻击，限制登录尝试次数
+type BruteForceProtection struct {
+	maxAttempts     int
+	lockoutDuration time.Duration
+	attempts        map[string]*attemptRecord
+	mu              sync.Mutex
+}
+
+type attemptRecord struct {
+	count       int
+	lockedUntil time.Time
+}
+
+// NewBruteForceProtection 创建暴力破解保护
+// maxAttempts: 最大失败尝试次数
+// lockoutDuration: 锁定时长
+func NewBruteForceProtection(maxAttempts int, lockoutDuration time.Duration) *BruteForceProtection {
+	return &BruteForceProtection{
+		maxAttempts:     maxAttempts,
+		lockoutDuration: lockoutDuration,
+		attempts:        make(map[string]*attemptRecord),
+	}
+}
+
+// RecordFailedAttempt 记录失败尝试
+func (b *BruteForceProtection) RecordFailedAttempt(ip string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	record, exists := b.attempts[ip]
+	if !exists {
+		record = &attemptRecord{}
+		b.attempts[ip] = record
+	}
+
+	record.count++
+	if record.count >= b.maxAttempts {
+		record.lockedUntil = time.Now().Add(b.lockoutDuration)
+	}
+}
+
+// IsLocked 检查IP是否被锁定
+func (b *BruteForceProtection) IsLocked(ip string) (bool, time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	record, exists := b.attempts[ip]
+	if !exists {
+		return false, 0
+	}
+
+	if record.count >= b.maxAttempts && record.lockedUntil.After(time.Now()) {
+		remaining := time.Until(record.lockedUntil)
+		return true, remaining
+	}
+
+	// 如果锁定已过期，重置计数
+	if record.lockedUntil.Before(time.Now()) {
+		record.count = 0
+		record.lockedUntil = time.Time{}
+	}
+
+	return false, 0
+}
+
+// Reset 重置IP的尝试记录
+func (b *BruteForceProtection) Reset(ip string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.attempts, ip)
+}
+
 // QueryKeyRejectMiddleware 拒绝外部query key入站
 // 对应M-016指标
 func (m *AuthMiddleware) QueryKeyRejectMiddleware(next http.Handler) http.Handler {
@@ -92,7 +167,7 @@ func (m *AuthMiddleware) QueryKeyRejectMiddleware(next http.Handler) http.Handle
 					m.auditEmitter.Emit(r.Context(), AuditEvent{
 						EventName:  "token.query_key.rejected",
 						RequestID:  getRequestID(r),
-						Route:      r.URL.Path,
+						Route:      sanitizeRoute(r.URL.Path),
 						ResultCode: "QUERY_KEY_NOT_ALLOWED",
 						ClientIP:   getClientIP(r),
 						CreatedAt:  time.Now(),
@@ -115,7 +190,7 @@ func (m *AuthMiddleware) QueryKeyRejectMiddleware(next http.Handler) http.Handle
 						m.auditEmitter.Emit(r.Context(), AuditEvent{
 							EventName:  "token.query_key.rejected",
 							RequestID:  getRequestID(r),
-							Route:      r.URL.Path,
+							Route:      sanitizeRoute(r.URL.Path),
 							ResultCode: "QUERY_KEY_NOT_ALLOWED",
 							ClientIP:   getClientIP(r),
 							CreatedAt:  time.Now(),
@@ -143,7 +218,7 @@ func (m *AuthMiddleware) BearerExtractMiddleware(next http.Handler) http.Handler
 				m.auditEmitter.Emit(r.Context(), AuditEvent{
 					EventName:  "token.authn.fail",
 					RequestID:  getRequestID(r),
-					Route:      r.URL.Path,
+					Route:      sanitizeRoute(r.URL.Path),
 					ResultCode: "AUTH_MISSING_BEARER",
 					ClientIP:   getClientIP(r),
 					CreatedAt:  time.Now(),
@@ -175,17 +250,33 @@ func (m *AuthMiddleware) BearerExtractMiddleware(next http.Handler) http.Handler
 }
 
 // TokenVerifyMiddleware 校验JWT Token
+// MED-12: 添加暴力破解保护
 func (m *AuthMiddleware) TokenVerifyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// MED-12: 检查暴力破解保护
+		if m.bruteForce != nil {
+			clientIP := getClientIP(r)
+			if locked, remaining := m.bruteForce.IsLocked(clientIP); locked {
+				writeAuthError(w, http.StatusTooManyRequests, "AUTH_ACCOUNT_LOCKED",
+					fmt.Sprintf("too many failed attempts, try again in %v", remaining))
+				return
+			}
+		}
+
 		tokenString := r.Context().Value(bearerTokenKey).(string)
 
 		claims, err := m.verifyToken(tokenString)
 		if err != nil {
+			// MED-12: 记录失败尝试
+			if m.bruteForce != nil {
+				m.bruteForce.RecordFailedAttempt(getClientIP(r))
+			}
+
 			if m.auditEmitter != nil {
 				m.auditEmitter.Emit(r.Context(), AuditEvent{
 					EventName:  "token.authn.fail",
 					RequestID:  getRequestID(r),
-					Route:      r.URL.Path,
+					Route:      sanitizeRoute(r.URL.Path),
 					ResultCode: "AUTH_INVALID_TOKEN",
 					ClientIP:   getClientIP(r),
 					CreatedAt:  time.Now(),
@@ -206,7 +297,7 @@ func (m *AuthMiddleware) TokenVerifyMiddleware(next http.Handler) http.Handler {
 					RequestID:  getRequestID(r),
 					TokenID:    claims.ID,
 					SubjectID:  claims.SubjectID,
-					Route:      r.URL.Path,
+					Route:      sanitizeRoute(r.URL.Path),
 					ResultCode: "AUTH_TOKEN_INACTIVE",
 					ClientIP:   getClientIP(r),
 					CreatedAt:  time.Now(),
@@ -229,7 +320,7 @@ func (m *AuthMiddleware) TokenVerifyMiddleware(next http.Handler) http.Handler {
 				RequestID:  getRequestID(r),
 				TokenID:    claims.ID,
 				SubjectID:  claims.SubjectID,
-				Route:      r.URL.Path,
+				Route:      sanitizeRoute(r.URL.Path),
 				ResultCode: "OK",
 				ClientIP:   getClientIP(r),
 				CreatedAt:  time.Now(),
@@ -259,7 +350,7 @@ func (m *AuthMiddleware) ScopeRoleAuthzMiddleware(requiredScope string) func(htt
 						RequestID:  getRequestID(r),
 						TokenID:    claims.ID,
 						SubjectID:  claims.SubjectID,
-						Route:      r.URL.Path,
+						Route:      sanitizeRoute(r.URL.Path),
 						ResultCode: "AUTH_SCOPE_DENIED",
 						ClientIP:   getClientIP(r),
 						CreatedAt:  time.Now(),
@@ -411,6 +502,42 @@ func getClientIP(r *http.Request) string {
 		return addr[:idx]
 	}
 	return addr
+}
+
+// sanitizeRoute 清理路由字符串，防止路径遍历和其他安全问题
+// MED-04: 审计日志Route字段需要验证以防止路径遍历攻击
+func sanitizeRoute(route string) string {
+	if route == "" {
+		return route
+	}
+
+	// 检查是否包含路径遍历模式
+	// 路径遍历通常包含 .. 或 . 后面跟着 / 或 \
+	for i := 0; i < len(route)-1; i++ {
+		if route[i] == '.' {
+			next := route[i+1]
+			if next == '.' || next == '/' || next == '\\' {
+				// 检测到路径遍历模式，返回安全的替代值
+				return "/sanitized"
+			}
+		}
+		// 检查反斜杠（Windows路径遍历）
+		if route[i] == '\\' {
+			return "/sanitized"
+		}
+	}
+
+	// 检查null字节
+	if strings.Contains(route, "\x00") {
+		return "/sanitized"
+	}
+
+	// 检查换行符
+	if strings.Contains(route, "\n") || strings.Contains(route, "\r") {
+		return "/sanitized"
+	}
+
+	return route
 }
 
 // containsScope 检查scope列表是否包含目标scope

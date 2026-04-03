@@ -39,6 +39,7 @@ const (
 	COMMON_RESOURCE_NOT_FOUND   ErrorCode = "COMMON_002"
 	COMMON_INTERNAL_ERROR       ErrorCode = "COMMON_003"
 	COMMON_SERVICE_UNAVAILABLE  ErrorCode = "COMMON_004"
+	COMMON_REQUEST_TOO_LARGE    ErrorCode = "COMMON_005"
 )
 
 // ErrorInfo 错误信息
@@ -202,6 +203,12 @@ var ErrorDefinitions = map[ErrorCode]ErrorInfo{
 		Message:    "Service unavailable",
 		HTTPStatus: 503,
 		Retryable:  true,
+	},
+	COMMON_REQUEST_TOO_LARGE: {
+		Code:       COMMON_REQUEST_TOO_LARGE,
+		Message:    "Request body too large",
+		HTTPStatus: 413,
+		Retryable:  false,
 	},
 }
 

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"lijiaoqiao/gateway/internal/adapter"
-	"lijiaoqiao/gateway/internal/alert"
 	"lijiaoqiao/gateway/internal/config"
 	"lijiaoqiao/gateway/internal/handler"
 	"lijiaoqiao/gateway/internal/middleware"
@@ -37,25 +36,59 @@ func main() {
 	)
 	r.RegisterProvider("openai", openaiAdapter)
 
-	// 初始化限流器
-	var limiter ratelimit.Limiter
+	// 初始化限流中间件
+	var limiterMiddleware *ratelimit.Middleware
 	if cfg.RateLimit.Algorithm == "token_bucket" {
-		limiter = ratelimit.NewTokenBucketLimiter(
+		limiter := ratelimit.NewTokenBucketLimiter(
 			cfg.RateLimit.DefaultRPM,
 			cfg.RateLimit.DefaultTPM,
 			cfg.RateLimit.BurstMultiplier,
 		)
+		limiterMiddleware = ratelimit.NewMiddleware(limiter)
 	} else {
-		limiter = ratelimit.NewSlidingWindowLimiter(
+		limiter := ratelimit.NewSlidingWindowLimiter(
 			time.Minute,
 			cfg.RateLimit.DefaultRPM,
 		)
+		limiterMiddleware = ratelimit.NewMiddleware(limiter)
 	}
 
-	// 初始化告警管理器
-	alertManager, err := alert.NewManager(&cfg.Alert)
-	if err != nil {
-		log.Printf("Warning: Failed to create alert manager: %v", err)
+	// 初始化审计发射器
+	var auditor middleware.AuditEmitter
+	if cfg.Database.Host != "" {
+		// MED-10: 使用 GetPassword() 获取解密后的密码，避免在日志中暴露明文密码
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
+			cfg.Database.User,
+			cfg.Database.GetPassword(),
+			cfg.Database.Host,
+			cfg.Database.Port,
+			cfg.Database.Database,
+		)
+		auditEmitter, err := middleware.NewDatabaseAuditEmitter(dsn, time.Now)
+		if err != nil {
+			log.Printf("Warning: Failed to create database audit emitter: %v, using memory emitter", err)
+			auditor = middleware.NewMemoryAuditEmitter()
+		} else {
+			auditor = auditEmitter
+			defer auditEmitter.Close()
+		}
+	} else {
+		log.Printf("Warning: Database not configured, using memory audit emitter")
+		auditor = middleware.NewMemoryAuditEmitter()
+	}
+
+	// 初始化 token 运行时（内存实现）
+	tokenRuntime := middleware.NewInMemoryTokenRuntime(time.Now)
+
+	// 构建认证中间件配置
+	authMiddlewareConfig := middleware.AuthMiddlewareConfig{
+		Verifier:          tokenRuntime,
+		StatusResolver:    tokenRuntime,
+		Authorizer:        middleware.NewScopeRoleAuthorizer(),
+		Auditor:           auditor,
+		ProtectedPrefixes: []string{"/api/v1/supply", "/api/v1/platform"},
+		ExcludedPrefixes:  []string{"/health", "/healthz", "/metrics", "/readyz"},
+		Now:               time.Now,
 	}
 
 	// 初始化Handler
@@ -64,7 +97,7 @@ func main() {
 	// 创建Server
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      createMux(h, limiter, alertManager),
+		Handler:      createMux(h, limiterMiddleware, authMiddlewareConfig),
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
@@ -96,56 +129,36 @@ func main() {
 	log.Println("Server exited")
 }
 
-func createMux(h *handler.Handler, limiter *ratelimit.Middleware, alertMgr *alert.Manager) *http.ServeMux {
+func createMux(h *handler.Handler, limiter *ratelimit.Middleware, authConfig middleware.AuthMiddlewareConfig) http.Handler {
 	mux := http.NewServeMux()
 
-	// V1 API
-	v1 := mux.PathPrefix("/v1").Subrouter()
+	// 创建认证处理链
+	authHandler := middleware.BuildTokenAuthChain(authConfig, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ChatCompletionsHandle(w, r)
+	}))
 
-	// Chat Completions (需要限流和认证)
-	v1.HandleFunc("/chat/completions", withMiddleware(h.ChatCompletionsHandle,
-		limiter.Limit,
-		authMiddleware(),
-	))
+	// Chat Completions - 应用限流和认证
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		limiter.Limit(authHandler.ServeHTTP)(w, r)
+	})
 
-	// Completions
-	v1.HandleFunc("/completions", withMiddleware(h.CompletionsHandle,
-		limiter.Limit,
-		authMiddleware(),
-	))
+	// Completions - 应用限流和认证
+	mux.HandleFunc("/v1/completions", func(w http.ResponseWriter, r *http.Request) {
+		limiter.Limit(authHandler.ServeHTTP)(w, r)
+	})
 
-	// Models
-	v1.HandleFunc("/models", h.ModelsHandle)
+	// Models - 公开接口
+	mux.HandleFunc("/v1/models", h.ModelsHandle)
 
-	// Health
+	// 旧版路径兼容
+	mux.HandleFunc("/api/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		h.ChatCompletionsHandle(w, r)
+	})
+
+	// Health - 排除认证
 	mux.HandleFunc("/health", h.HealthHandle)
+	mux.HandleFunc("/healthz", h.HealthHandle)
+	mux.HandleFunc("/readyz", h.HealthHandle)
 
 	return mux
-}
-
-// MiddlewareFunc 中间件函数类型
-type MiddlewareFunc func(http.HandlerFunc) http.HandlerFunc
-
-// withMiddleware 应用中间件
-func withMiddleware(h http.HandlerFunc, limiters ...func(http.HandlerFunc) http.HandlerFunc) http.HandlerFunc {
-	for _, m := range limiters {
-		h = m(h)
-	}
-	return h
-}
-
-// authMiddleware 认证中间件(简化实现)
-func authMiddleware() MiddlewareFunc {
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			// 简化: 检查Authorization头
-			if r.Header.Get("Authorization") == "" {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":{"message":"Missing Authorization header","code":"AUTH_001"}}`))
-				return
-			}
-			next.ServeHTTP(w, r)
-		}
-	}
 }
