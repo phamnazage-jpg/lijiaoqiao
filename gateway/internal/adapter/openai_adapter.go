@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,8 +9,6 @@ import (
 	"io"
 	"net/http"
 	"time"
-
-	"lijiaoqiao/gateway/pkg/error"
 )
 
 // OpenAIAdapter OpenAI适配器
@@ -188,13 +187,9 @@ func (a *OpenAIAdapter) ChatCompletionStream(ctx context.Context, model string, 
 		defer close(ch)
 		defer resp.Body.Close()
 
-		reader := io.Reader(resp.Body)
-		for {
-			line, err := io.ReadLine(reader)
-			if err != nil {
-				return
-			}
-
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Bytes()
 			if len(line) < 6 {
 				continue
 			}
@@ -262,24 +257,24 @@ func (a *OpenAIAdapter) GetUsage(response *CompletionResponse) Usage {
 }
 
 // MapError 错误码映射
-func (a *OpenAIAdapter) MapError(err error) error {
+func (a *OpenAIAdapter) MapError(err error) ProviderError {
 	// 简化实现，实际应根据OpenAI错误响应映射
 	errStr := err.Error()
 
 	if contains(errStr, "invalid_api_key") {
-		return error.NewGatewayError(error.PROVIDER_INVALID_KEY, "Invalid API key").WithInternal(err)
+		return ProviderError{Code: "PROVIDER_001", Message: "Invalid API key", HTTPStatus: 401, Retryable: false}
 	}
 	if contains(errStr, "rate_limit") {
-		return error.NewGatewayError(error.PROVIDER_RATE_LIMIT, "Rate limit exceeded").WithInternal(err)
+		return ProviderError{Code: "PROVIDER_002", Message: "Rate limit exceeded", HTTPStatus: 429, Retryable: true}
 	}
 	if contains(errStr, "quota") {
-		return error.NewGatewayError(error.PROVIDER_QUOTA_EXCEEDED, "Quota exceeded").WithInternal(err)
+		return ProviderError{Code: "PROVIDER_003", Message: "Quota exceeded", HTTPStatus: 402, Retryable: false}
 	}
 	if contains(errStr, "model_not_found") {
-		return error.NewGatewayError(error.PROVIDER_MODEL_NOT_FOUND, "Model not found").WithInternal(err)
+		return ProviderError{Code: "PROVIDER_004", Message: "Model not found", HTTPStatus: 404, Retryable: false}
 	}
 
-	return error.NewGatewayError(error.PROVIDER_ERROR, "Provider error").WithInternal(err)
+	return ProviderError{Code: "PROVIDER_005", Message: "Provider error", HTTPStatus: 502, Retryable: true}
 }
 
 func contains(s, substr string) bool {
