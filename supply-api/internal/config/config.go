@@ -66,10 +66,17 @@ type AuditConfig struct {
 	ExportTimeout time.Duration
 }
 
-// DSN 返回数据库连接字符串
+// DSN 返回数据库连接字符串（包含明文密码，仅限内部使用）
 func (d *DatabaseConfig) DSN() string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		d.User, d.Password, d.Host, d.Port, d.Database)
+}
+
+// SafeDSN 返回脱敏的数据库连接字符串（密码被替换为***），用于日志记录
+// P2-05: 避免在日志中泄露数据库密码
+func (d *DatabaseConfig) SafeDSN() string {
+	return fmt.Sprintf("postgres://%s:***@%s:%d/%s?sslmode=disable",
+		d.User, d.Host, d.Port, d.Database)
 }
 
 // Addr 返回Redis地址

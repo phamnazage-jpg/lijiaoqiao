@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,9 +18,11 @@ type DB struct {
 
 // NewDB 创建数据库连接池
 func NewDB(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
-	poolConfig, err := pgxpool.ParseConfig(cfg.DSN())
+	dsn := cfg.DSN()
+	poolConfig, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse database config: %w", err)
+		// P2-05: 使用SafeDSN替代DSN，避免在错误信息中泄露密码
+		return nil, fmt.Errorf("failed to parse database config for %s: %v", cfg.SafeDSN(), sanitizeErrorPassword(err, cfg.Password))
 	}
 
 	poolConfig.MaxConns = int32(cfg.MaxOpenConns)
@@ -30,16 +33,32 @@ func NewDB(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create connection pool: %w", err)
+		// P2-05: 清理错误信息中的密码
+		return nil, fmt.Errorf("failed to create connection pool for %s: %v", cfg.SafeDSN(), sanitizeErrorPassword(err, cfg.Password))
 	}
 
 	// 验证连接
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+		return nil, fmt.Errorf("failed to ping database at %s:%d: %v", cfg.Host, cfg.Port, err)
 	}
 
 	return &DB{Pool: pool}, nil
+}
+
+// sanitizeErrorPassword 从错误信息中清理密码
+// P2-05: pgxpool.ParseConfig的错误信息可能包含完整的DSN，需要清理
+func sanitizeErrorPassword(err error, password string) error {
+	if err == nil || password == "" {
+		return err
+	}
+	// 将错误信息中的密码替换为***
+	errStr := err.Error()
+	safeErrStr := strings.ReplaceAll(errStr, password, "***")
+	if safeErrStr != errStr {
+		return fmt.Errorf("%s (password sanitized)", safeErrStr)
+	}
+	return err
 }
 
 // Close 关闭连接池
