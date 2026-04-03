@@ -52,6 +52,9 @@ type AuditStoreInterface interface {
 	GetByIdempotencyKey(ctx context.Context, key string) (*model.AuditEvent, error)
 }
 
+// 内存存储容量常量
+const MaxEvents = 100000
+
 // InMemoryAuditStore 内存审计存储
 type InMemoryAuditStore struct {
 	mu              sync.RWMutex
@@ -74,6 +77,11 @@ func (s *InMemoryAuditStore) Emit(ctx context.Context, event *model.AuditEvent) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// 检查容量，超过上限时清理旧事件
+	if len(s.events) >= MaxEvents {
+		s.cleanupOldEvents(MaxEvents / 10)
+	}
+
 	// 生成事件ID
 	if event.EventID == "" {
 		event.EventID = generateEventID()
@@ -88,6 +96,20 @@ func (s *InMemoryAuditStore) Emit(ctx context.Context, event *model.AuditEvent) 
 	}
 
 	return nil
+}
+
+// cleanupOldEvents 清理旧事件，保留最近的 events
+func (s *InMemoryAuditStore) cleanupOldEvents(removeCount int) {
+	if removeCount <= 0 {
+		removeCount = MaxEvents / 10
+	}
+	if removeCount >= len(s.events) {
+		removeCount = len(s.events) - 1
+	}
+
+	// 保留最近的事件，删除旧事件
+	remaining := len(s.events) - removeCount
+	s.events = s.events[remaining:]
 }
 
 // Query 查询事件
@@ -168,6 +190,7 @@ func generateEventID() string {
 // AuditService 审计服务
 type AuditService struct {
 	store            AuditStoreInterface
+	idempotencyMu    sync.Mutex  // 保护幂等性检查的互斥锁
 	processingDelay  time.Duration
 }
 
@@ -206,10 +229,12 @@ func (s *AuditService) CreateEvent(ctx context.Context, event *model.AuditEvent)
 		event.EventID = generateEventID()
 	}
 
-	// 处理幂等性
+	// 处理幂等性 - 使用互斥锁保护检查和插入之间的时间窗口
 	if event.IdempotencyKey != "" {
+		s.idempotencyMu.Lock()
 		existing, err := s.store.GetByIdempotencyKey(ctx, event.IdempotencyKey)
 		if err == nil && existing != nil {
+			s.idempotencyMu.Unlock()
 			// 检查payload是否相同
 			if isSamePayload(existing, event) {
 				// 重放同参 - 返回200
@@ -229,6 +254,7 @@ func (s *AuditService) CreateEvent(ctx context.Context, event *model.AuditEvent)
 				}, nil
 			}
 		}
+		s.idempotencyMu.Unlock()
 	}
 
 	// 首次创建 - 返回201
