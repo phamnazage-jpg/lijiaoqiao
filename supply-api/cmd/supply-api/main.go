@@ -120,6 +120,12 @@ func main() {
 		// 可以使用Redis缓存
 	}
 
+	// 初始化token状态后端（NEW-P1-03修复）
+	tokenBackend := newMemoryTokenBackend()
+
+	// 初始化审计事件适配器（NEW-P1-03修复）
+	auditEmitter := newAuditEmitterAdapter(auditStore)
+
 	// 初始化鉴权中间件
 	authConfig := middleware.AuthConfig{
 		SecretKey: cfg.Token.SecretKey,
@@ -127,14 +133,21 @@ func main() {
 		CacheTTL:  cfg.Token.RevocationCacheTTL,
 		Enabled:   *env != "dev", // 开发模式禁用鉴权
 	}
-	authMiddleware := middleware.NewAuthMiddleware(authConfig, tokenCache, nil, nil)
+	authMiddleware := middleware.NewAuthMiddleware(authConfig, tokenCache, tokenBackend, auditEmitter)
 
-	// 初始化幂等中间件
-	idempotencyMiddleware := middleware.NewIdempotencyMiddleware(nil, middleware.IdempotencyConfig{
-		TTL:     24 * time.Hour,
-		Enabled: *env != "dev",
-	})
-	_ = idempotencyMiddleware // TODO: 在生产环境中用于幂等处理
+	// 初始化幂等中间件（NEW-P1-04修复 - 由于repo为nil，暂保持禁用状态）
+	// 注意：幂等逻辑在supply_api.go中以内联方式实现
+	var idempotencyMiddleware *middleware.IdempotencyMiddleware
+	if db != nil && idempotencyRepo != nil {
+		idempotencyMiddleware = middleware.NewIdempotencyMiddleware(idempotencyRepo, middleware.IdempotencyConfig{
+			TTL:     24 * time.Hour,
+			Enabled: *env != "dev",
+		})
+		log.Println("幂等中间件已启用")
+	} else {
+		log.Println("警告：幂等中间件未启用（db或repo不可用）- 使用内联幂等逻辑作为替代")
+	}
+	_ = idempotencyMiddleware // 暂不使用，幂等逻辑在supply_api.go中实现
 
 	// 初始化幂等存储
 	idempotencyStore := storage.NewInMemoryIdempotencyStore()
@@ -159,7 +172,7 @@ func main() {
 	mux.HandleFunc("/actuator/health/live", handleLiveness)
 	mux.HandleFunc("/actuator/health/ready", handleReadiness(db, redisCache))
 
-	// 注册API路由（应用鉴权和幂等中间件）
+	// 注册API路由
 	api.Register(mux)
 
 	// 应用中间件链路
@@ -169,10 +182,9 @@ func main() {
 	// 4. QueryKeyReject - 拒绝外部query key (M-016)
 	// 5. BearerExtract - Bearer Token提取
 	// 6. TokenVerify - JWT校验
-	// 7. ScopeRoleAuthz - 权限校验
-	// 8. Idempotent - 幂等处理
+	// 注：幂等处理在supply_api.go中以内联方式实现（NEW-P1-05已统一：中间件方案需要DB-backed repo）
 
-	handler := http.Handler(mux)
+	var handler http.Handler = mux
 	handler = middleware.RequestID(handler)
 	handler = middleware.Recovery(handler)
 	handler = middleware.Logging(handler)
@@ -186,9 +198,6 @@ func main() {
 		// 6. TokenVerify
 		handler = authMiddleware.TokenVerifyMiddleware(handler)
 	}
-
-	// 注册API路由
-	api.Register(mux)
 
 	// 创建HTTP服务器
 	srv := &http.Server{
@@ -479,4 +488,57 @@ func (s *DBEarningStore) ListRecords(ctx context.Context, supplierID int64, star
 func (s *DBEarningStore) GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*domain.BillingSummary, error) {
 	// TODO: 实现真实查询
 	return nil, nil
+}
+
+// ==================== 内存Backend适配器 ====================
+
+// memoryTokenBackend 内存token状态后端（临时实现，生产应使用DB-backed）
+type memoryTokenBackend struct {
+	revokedTokens map[string]string // tokenID -> status
+}
+
+func newMemoryTokenBackend() *memoryTokenBackend {
+	return &memoryTokenBackend{
+		revokedTokens: make(map[string]string),
+	}
+}
+
+func (b *memoryTokenBackend) CheckTokenStatus(ctx context.Context, tokenID string) (string, error) {
+	// 默认所有token都是active的
+	if status, found := b.revokedTokens[tokenID]; found {
+		return status, nil
+	}
+	return "active", nil
+}
+
+func (b *memoryTokenBackend) RevokeToken(tokenID string) {
+	b.revokedTokens[tokenID] = "revoked"
+}
+
+// ==================== 审计事件适配器 ====================
+
+// auditEmitterAdapter 将auditStore适配为middleware.AuditEmitter
+type auditEmitterAdapter struct {
+	store audit.AuditStore
+}
+
+func newAuditEmitterAdapter(store audit.AuditStore) *auditEmitterAdapter {
+	return &auditEmitterAdapter{store: store}
+}
+
+func (a *auditEmitterAdapter) Emit(ctx context.Context, event middleware.AuditEvent) error {
+	if a.store == nil {
+		return nil
+	}
+	// 转换middleware.AuditEvent为audit.Event
+	auditEvent := audit.Event{
+		EventID:    event.RequestID,
+		ObjectType: "auth",
+		Action:     event.EventName,
+		RequestID:  event.RequestID,
+		ResultCode: event.ResultCode,
+		ClientIP:   event.ClientIP,
+	}
+	a.store.Emit(ctx, auditEvent)
+	return nil
 }
