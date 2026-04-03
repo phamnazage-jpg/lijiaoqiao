@@ -591,6 +591,160 @@ func TestP2_01_WildcardScope_SecurityRisk(t *testing.T) {
 	// 问题：通配符scope被使用时没有记录审计日志
 	// 修复建议：在hasScope返回true时，如果scope是"*"，应该记录审计日志
 	// 这是一个安全风险，因为无法追踪何时使用了超级权限
-	
+
 	t.Logf("P2-01: Wildcard scope usage should be audited for security compliance")
+}
+
+// TestSetRouteScopePolicy 测试设置路由Scope策略
+func TestSetRouteScopePolicy(t *testing.T) {
+	// arrange
+	m := NewScopeAuthMiddleware()
+
+	// act
+	m.SetRouteScopePolicy("/api/v1/admin", []string{"platform:admin"})
+	m.SetRouteScopePolicy("/api/v1/user", []string{"platform:read"})
+
+	// assert - 验证路由策略是否正确设置
+	_, ok1 := m.routeScopePolicies["/api/v1/admin"]
+	_, ok2 := m.routeScopePolicies["/api/v1/user"]
+	assert.True(t, ok1, "admin route policy should be set")
+	assert.True(t, ok2, "user route policy should be set")
+}
+
+// TestRequireRole_HasRole 测试RequireRole中间件 - 有角色
+func TestRequireRole_HasRole(t *testing.T) {
+	// arrange
+	m := NewScopeAuthMiddleware()
+	claims := &IAMTokenClaims{
+		SubjectID: "user:1",
+		Role:      "org_admin",
+		Scope:     []string{"platform:admin"},
+		TenantID:  1,
+	}
+	ctx := WithIAMClaims(context.Background(), claims)
+
+	handler := m.RequireRole("org_admin")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// act
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// assert
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// TestRequireRole_NoRole 测试RequireRole中间件 - 无角色
+func TestRequireRole_NoRole(t *testing.T) {
+	// arrange
+	m := NewScopeAuthMiddleware()
+	claims := &IAMTokenClaims{
+		SubjectID: "user:1",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+	ctx := WithIAMClaims(context.Background(), claims)
+
+	handler := m.RequireRole("org_admin")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// act
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// assert
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// TestRequireRole_NoClaims 测试RequireRole中间件 - 无Claims
+func TestRequireRole_NoClaims(t *testing.T) {
+	// arrange
+	m := NewScopeAuthMiddleware()
+	ctx := context.Background()
+
+	handler := m.RequireRole("org_admin")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// act
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// assert
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+// TestRequireMinLevel_HasLevel 测试RequireMinLevel中间件 - 满足等级
+func TestRequireMinLevel_HasLevel(t *testing.T) {
+	// arrange
+	m := NewScopeAuthMiddleware()
+	claims := &IAMTokenClaims{
+		SubjectID: "user:1",
+		Role:      "org_admin",
+		Scope:     []string{"platform:admin"},
+		TenantID:  1,
+	}
+	ctx := WithIAMClaims(context.Background(), claims)
+
+	handler := m.RequireMinLevel(50)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// act
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// assert
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// TestRequireMinLevel_InsufficientLevel 测试RequireMinLevel中间件 - 等级不足
+func TestRequireMinLevel_InsufficientLevel(t *testing.T) {
+	// arrange
+	m := NewScopeAuthMiddleware()
+	claims := &IAMTokenClaims{
+		SubjectID: "user:1",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+	ctx := WithIAMClaims(context.Background(), claims)
+
+	handler := m.RequireMinLevel(50)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// act
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// assert
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// TestHasAnyScope_True 测试hasAnyScope - 有交集
+func TestHasAnyScope_True(t *testing.T) {
+	// act & assert
+	assert.True(t, hasAnyScope([]string{"platform:read", "platform:write"}, []string{"platform:admin", "platform:read"}))
+	assert.True(t, hasAnyScope([]string{"*"}, []string{"platform:read"}))
+}
+
+// TestHasAnyScope_False 测试hasAnyScope - 无交集
+func TestHasAnyScope_False(t *testing.T) {
+	// act & assert
+	assert.False(t, hasAnyScope([]string{"platform:read"}, []string{"platform:admin", "supply:write"}))
+	assert.False(t, hasAnyScope([]string{"tenant:read"}, []string{"platform:admin"}))
 }
