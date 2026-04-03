@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"lijiaoqiao/gateway/internal/adapter"
@@ -36,10 +37,11 @@ type ProviderHealth struct {
 
 // Router 路由器
 type Router struct {
-	providers map[string]adapter.ProviderAdapter
-	health    map[string]*ProviderHealth
-	strategy  LoadBalancerStrategy
-	mu        sync.RWMutex
+	providers         map[string]adapter.ProviderAdapter
+	health            map[string]*ProviderHealth
+	strategy          LoadBalancerStrategy
+	mu                sync.RWMutex
+	roundRobinCounter uint64 // RoundRobin策略的原子计数器
 }
 
 // NewRouter 创建路由器
@@ -87,6 +89,8 @@ func (r *Router) SelectProvider(ctx context.Context, model string) (adapter.Prov
 	switch r.strategy {
 	case StrategyLatency:
 		return r.selectByLatency(candidates)
+	case StrategyRoundRobin:
+		return r.selectByRoundRobin(candidates)
 	case StrategyWeighted:
 		return r.selectByWeight(candidates)
 	case StrategyAvailability:
@@ -119,6 +123,16 @@ func (r *Router) isProviderAvailable(name, model string) bool {
 	}
 
 	return false
+}
+
+func (r *Router) selectByRoundRobin(candidates []string) (adapter.ProviderAdapter, error) {
+	if len(candidates) == 0 {
+		return nil, gwerror.NewGatewayError(gwerror.ROUTER_NO_PROVIDER_AVAILABLE, "no available provider")
+	}
+
+	// 使用原子操作进行轮询选择
+	index := atomic.AddUint64(&r.roundRobinCounter, 1) - 1
+	return r.providers[candidates[index%uint64(len(candidates))]], nil
 }
 
 func (r *Router) selectByLatency(candidates []string) (adapter.ProviderAdapter, error) {

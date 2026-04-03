@@ -315,6 +315,9 @@ func isSamePayload(a, b *model.AuditEvent) bool {
 	if a.Action != b.Action {
 		return false
 	}
+	if a.ActionDetail != b.ActionDetail {
+		return false
+	}
 	if a.CredentialType != b.CredentialType {
 		return false
 	}
@@ -329,6 +332,31 @@ func isSamePayload(a, b *model.AuditEvent) bool {
 	}
 	if a.ResultCode != b.ResultCode {
 		return false
+	}
+	if a.ResultMessage != b.ResultMessage {
+		return false
+	}
+	// 比较Extensions
+	if !compareExtensions(a.Extensions, b.Extensions) {
+		return false
+	}
+	return true
+}
+
+// compareExtensions 比较两个map是否相等
+func compareExtensions(a, b map[string]any) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v1 := range a {
+		v2, ok := b[k]
+		if !ok {
+			return false
+		}
+		// 简单的值比较，不处理嵌套map的情况
+		if v1 != v2 {
+			return false
+		}
 	}
 	return true
 }

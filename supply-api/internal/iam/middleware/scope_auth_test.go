@@ -569,3 +569,28 @@ func TestMED01_RequireAnyScope_EmptyScopesShouldDenyAccess(t *testing.T) {
 	// assert - 空scope列表应该拒绝访问（安全修复）
 	assert.Equal(t, http.StatusForbidden, rec.Code, "empty required scopes should DENY access (security fix)")
 }
+
+// P2-01: scope=="*"时直接返回true，应记录审计日志
+// 由于hasScope是内部函数，我们通过中间件来验证通配符scope的行为
+func TestP2_01_WildcardScope_SecurityRisk(t *testing.T) {
+	// 创建一个带通配符scope的claims
+	claims := &IAMTokenClaims{
+		SubjectID: "user:p2-01",
+		Role:      "super_admin",
+		Scope:     []string{"*"}, // 通配符scope代表所有权限
+		TenantID:  1,
+	}
+
+	ctx := WithIAMClaims(context.Background(), claims)
+
+	// 通配符scope应该能通过任何scope检查
+	assert.True(t, CheckScope(ctx, "platform:read"), "wildcard scope should have platform:read")
+	assert.True(t, CheckScope(ctx, "platform:write"), "wildcard scope should have platform:write")
+	assert.True(t, CheckScope(ctx, "any:custom:scope"), "wildcard scope should have any:custom:scope")
+
+	// 问题：通配符scope被使用时没有记录审计日志
+	// 修复建议：在hasScope返回true时，如果scope是"*"，应该记录审计日志
+	// 这是一个安全风险，因为无法追踪何时使用了超级权限
+	
+	t.Logf("P2-01: Wildcard scope usage should be audited for security compliance")
+}

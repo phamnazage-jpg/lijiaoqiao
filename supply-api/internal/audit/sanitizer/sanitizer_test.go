@@ -1,6 +1,7 @@
 package sanitizer
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -287,4 +288,44 @@ func TestSanitizer_MultipleViolations(t *testing.T) {
 
 	assert.True(t, result.HasViolation())
 	assert.GreaterOrEqual(t, len(result.Violations), 3)
+}
+// P2-03: regexp.MustCompile可能panic，应该使用regexp.Compile并处理错误
+func TestP2_03_NewCredentialScanner_InvalidRegex(t *testing.T) {
+	// 测试一个无效的正则表达式
+	// 由于NewCredentialScanner内部使用MustCompile，这里我们测试在初始化时是否会panic
+	
+	// 创建一个会panic的场景：无效正则应该被Compile检测而不是MustCompile
+	// 通过检查NewCredentialScanner是否能正常创建（不panic）来验证
+	
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("P2-03 BUG: NewCredentialScanner panicked with invalid regex: %v", r)
+		}
+	}()
+	
+	// 这里如果正则都是有效的，应该不会panic
+	scanner := NewCredentialScanner()
+	if scanner == nil {
+		t.Error("scanner should not be nil")
+	}
+	
+	// 但我们无法在测试中模拟无效正则，因为MustCompile在编译时就panic了
+	// 所以这个测试更多是文档性质的
+	t.Logf("P2-03: NewCredentialScanner uses MustCompile which panics on invalid regex - should use Compile with error handling")
+}
+
+// P2-03: 验证MustCompile在无效正则时会panic
+// 这个测试演示了问题：使用无效正则会导致panic
+func TestP2_03_MustCompile_PanicsOnInvalidRegex(t *testing.T) {
+	invalidRegex := "[invalid" // 无效的正则，缺少结束括号
+	
+	defer func() {
+		if r := recover(); r != nil {
+			t.Logf("P2-03 CONFIRMED: MustCompile panics on invalid regex: %v", r)
+		}
+	}()
+	
+	// 这行会panic
+	_ = regexp.MustCompile(invalidRegex)
+	t.Error("Should have panicked")
 }

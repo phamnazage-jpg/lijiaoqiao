@@ -551,3 +551,62 @@ func TestAuditService_IdempotencyRaceCondition(t *testing.T) {
 	assert.Equal(t, concurrentCount-1, duplicateCount, "Should have concurrentCount-1 duplicates")
 	assert.Equal(t, 0, conflictCount, "Should have no conflicts for same payload")
 }
+// P2-02: isSamePayload比较字段不完整，缺少ActionDetail/ResultMessage/Extensions等字段
+func TestP2_02_IsSamePayload_MissingFields(t *testing.T) {
+	ctx := context.Background()
+	svc := NewAuditService(NewInMemoryAuditStore())
+
+	// 第一次事件 - 完整的payload
+	event1 := &model.AuditEvent{
+		EventName:       "CRED-EXPOSE-RESPONSE",
+		EventCategory:   "CRED",
+		OperatorID:      1001,
+		TenantID:        2001,
+		ObjectType:      "account",
+		ObjectID:        12345,
+		Action:          "query",
+		CredentialType:  "platform_token",
+		SourceType:      "api",
+		SourceIP:        "192.168.1.1",
+		Success:         true,
+		ResultCode:     "SEC_CRED_EXPOSED",
+		ActionDetail:    "detailed action info",       // 缺失字段
+		ResultMessage:  "operation completed",          // 缺失字段
+		IdempotencyKey: "p2-02-test-key",
+	}
+
+	// 第二次重放 - ActionDetail和ResultMessage不同，但isSamePayload应该能检测出来
+	event2 := &model.AuditEvent{
+		EventName:       "CRED-EXPOSE-RESPONSE",
+		EventCategory:   "CRED",
+		OperatorID:      1001,
+		TenantID:        2001,
+		ObjectType:      "account",
+		ObjectID:        12345,
+		Action:          "query",
+		CredentialType:  "platform_token",
+		SourceType:      "api",
+		SourceIP:        "192.168.1.1",
+		Success:         true,
+		ResultCode:     "SEC_CRED_EXPOSED",
+		ActionDetail:    "different action info",        // 与event1不同
+		ResultMessage:  "different message",             // 与event1不同
+		IdempotencyKey: "p2-02-test-key",
+	}
+
+	// 首次创建
+	result1, err1 := svc.CreateEvent(ctx, event1)
+	assert.NoError(t, err1)
+	assert.Equal(t, 201, result1.StatusCode)
+
+	// 重放异参 - 应该返回409
+	result2, err2 := svc.CreateEvent(ctx, event2)
+	assert.NoError(t, err2)
+	
+	// 如果isSamePayload没有比较ActionDetail和ResultMessage，这里会错误地返回200而不是409
+	if result2.StatusCode == 200 {
+		t.Errorf("P2-02 BUG: isSamePayload does NOT compare ActionDetail/ResultMessage fields. Got 200 (duplicate) but should be 409 (conflict)")
+	} else if result2.StatusCode == 409 {
+		t.Logf("P2-02 FIXED: isSamePayload correctly detects payload mismatch")
+	}
+}

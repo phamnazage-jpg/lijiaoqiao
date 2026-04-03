@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"lijiaoqiao/supply-api/internal/middleware"
@@ -174,6 +175,31 @@ func hasScope(scopes []string, target string) bool {
 	return false
 }
 
+// hasWildcardScope 检查scope列表是否包含通配符scope
+func hasWildcardScope(scopes []string) bool {
+	for _, scope := range scopes {
+		if scope == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// logWildcardScopeAccess 记录通配符scope访问的审计日志
+// P2-01: 通配符scope是安全风险，应记录审计日志
+func logWildcardScopeAccess(ctx context.Context, claims *IAMTokenClaims, requiredScope string) {
+	if claims == nil {
+		return
+	}
+
+	// 检查是否使用了通配符scope
+	if hasWildcardScope(claims.Scope) {
+		// 记录审计日志
+		log.Printf("[AUDIT] P2-01 WILDCARD_SCOPE_ACCESS: subject_id=%s, role=%s, required_scope=%s, tenant_id=%d, user_type=%s",
+			claims.SubjectID, claims.Role, requiredScope, claims.TenantID, claims.UserType)
+	}
+}
+
 // RequireScope 返回一个要求特定Scope的中间件
 func (m *ScopeAuthMiddleware) RequireScope(requiredScope string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -191,6 +217,11 @@ func (m *ScopeAuthMiddleware) RequireScope(requiredScope string) func(http.Handl
 				writeAuthError(w, http.StatusForbidden, "AUTH_SCOPE_DENIED",
 					"required scope is not granted")
 				return
+			}
+
+			// P2-01: 记录通配符scope访问的审计日志
+			if hasWildcardScope(claims.Scope) {
+				logWildcardScopeAccess(r.Context(), claims, requiredScope)
 			}
 
 			next.ServeHTTP(w, r)
@@ -218,6 +249,11 @@ func (m *ScopeAuthMiddleware) RequireAllScopes(requiredScopes []string) func(htt
 				}
 			}
 
+			// P2-01: 记录通配符scope访问的审计日志
+			if hasWildcardScope(claims.Scope) {
+				logWildcardScopeAccess(r.Context(), claims, "")
+			}
+
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -240,6 +276,11 @@ func (m *ScopeAuthMiddleware) RequireAnyScope(requiredScopes []string) func(http
 				writeAuthError(w, http.StatusForbidden, "AUTH_SCOPE_DENIED",
 					"none of the required scopes are granted")
 				return
+			}
+
+			// P2-01: 记录通配符scope访问的审计日志
+			if hasWildcardScope(claims.Scope) {
+				logWildcardScopeAccess(r.Context(), claims, "")
 			}
 
 			next.ServeHTTP(w, r)

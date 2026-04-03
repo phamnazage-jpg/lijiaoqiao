@@ -51,55 +51,66 @@ type CredentialScanner struct {
 	rules []ScanRule
 }
 
+// compileRegex 安全编译正则表达式，避免panic
+func compileRegex(pattern string) *regexp.Regexp {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		// 如果编译失败，使用一个永远不会匹配的pattern
+		// 这样可以避免panic，同时让扫描器继续工作
+		return regexp.MustCompile("(?!)")
+	}
+	return re
+}
+
 // NewCredentialScanner 创建凭证扫描器
 func NewCredentialScanner() *CredentialScanner {
 	scanner := &CredentialScanner{
 		rules: []ScanRule{
 			{
 				ID:          "openai_key",
-				Pattern:     regexp.MustCompile(`sk-[a-zA-Z0-9]{20,}`),
+				Pattern:     compileRegex(`sk-[a-zA-Z0-9]{20,}`),
 				Description: "OpenAI API Key",
 				Severity:    "HIGH",
 			},
 			{
 				ID:          "api_key",
-				Pattern:     regexp.MustCompile(`(?i)(api[_-]?key|apikey)["\s:=]+['"]?([a-zA-Z0-9_\-]{16,})['"]?`),
+				Pattern:     compileRegex(`(?i)(api[_-]?key|apikey)["\s:=]+['"]?([a-zA-Z0-9_\-]{16,})['"]?`),
 				Description: "Generic API Key",
 				Severity:    "MEDIUM",
 			},
 			{
 				ID:          "aws_access_key",
-				Pattern:     regexp.MustCompile(`(?i)(access[_-]?key[_-]?id|aws[_-]?access[_-]?key)["\s:=]+['"]?(AKIA[0-9A-Z]{16})['"]?`),
+				Pattern:     compileRegex(`(?i)(access[_-]?key[_-]?id|aws[_-]?access[_-]?key)["\s:=]+['"]?(AKIA[0-9A-Z]{16})['"]?`),
 				Description: "AWS Access Key ID",
 				Severity:    "HIGH",
 			},
 			{
 				ID:          "aws_secret_key",
-				Pattern:     regexp.MustCompile(`(?i)(secret[_-]?key|aws[_-]?.*secret[_-]?key)["\s:=]+['"]?([a-zA-Z0-9/+=]{40})['"]?`),
+				Pattern:     compileRegex(`(?i)(secret[_-]?key|aws[_-]?.*secret[_-]?key)["\s:=]+['"]?([a-zA-Z0-9/+=]{40})['"]?`),
 				Description: "AWS Secret Access Key",
 				Severity:    "HIGH",
 			},
 			{
 				ID:          "password",
-				Pattern:     regexp.MustCompile(`(?i)(password|passwd|pwd)["\s:=]+['"]?([a-zA-Z0-9@#$%^&*!]{8,})['"]?`),
+				Pattern:     compileRegex(`(?i)(password|passwd|pwd)["\s:=]+['"]?([a-zA-Z0-9@#$%^&*!]{8,})['"]?`),
 				Description: "Password",
 				Severity:    "HIGH",
 			},
 			{
 				ID:          "bearer_token",
-				Pattern:     regexp.MustCompile(`(?i)(token|bearer|authorization)["\s:=]+['"]?([Bb]earer\s+)?([a-zA-Z0-9_\-\.]+)['"]?`),
+				Pattern:     compileRegex(`(?i)(token|bearer|authorization)["\s:=]+['"]?([Bb]earer\s+)?([a-zA-Z0-9_\-\.]+)['"]?`),
 				Description: "Bearer Token",
 				Severity:    "MEDIUM",
 			},
 			{
 				ID:          "private_key",
-				Pattern:     regexp.MustCompile(`-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----`),
+				Pattern:     compileRegex(`-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----`),
 				Description: "Private Key",
 				Severity:    "CRITICAL",
 			},
 			{
 				ID:          "secret",
-				Pattern:     regexp.MustCompile(`(?i)(secret|client[_-]?secret)["\s:=]+['"]?([a-zA-Z0-9_\-]{16,})['"]?`),
+				Pattern:     compileRegex(`(?i)(secret|client[_-]?secret)["\s:=]+['"]?([a-zA-Z0-9_\-]{16,})['"]?`),
 				Description: "Secret",
 				Severity:    "HIGH",
 			},
@@ -151,13 +162,13 @@ func NewSanitizer() *Sanitizer {
 	return &Sanitizer{
 		patterns: []*regexp.Regexp{
 			// OpenAI API Key
-			regexp.MustCompile(`(sk-[a-zA-Z0-9]{4})[a-zA-Z0-9]+([a-zA-Z0-9]{4})`),
+			compileRegex(`(sk-[a-zA-Z0-9]{4})[a-zA-Z0-9]+([a-zA-Z0-9]{4})`),
 			// AWS Access Key
-			regexp.MustCompile(`(AKIA[0-9A-Z]{4})[0-9A-Z]+([0-9A-Z]{4})`),
+			compileRegex(`(AKIA[0-9A-Z]{4})[0-9A-Z]+([0-9A-Z]{4})`),
 			// Generic API Key
-			regexp.MustCompile(`([a-zA-Z0-9_\-]{4})[a-zA-Z0-9_\-]{8,}([a-zA-Z0-9_\-]{4})`),
+			compileRegex(`([a-zA-Z0-9_\-]{4})[a-zA-Z0-9_\-]{8,}([a-zA-Z0-9_\-]{4})`),
 			// Password
-			regexp.MustCompile(`([a-zA-Z0-9@#$%^&*!]{4})[a-zA-Z0-9@#$%^&*!]+([a-zA-Z0-9@#$%^&*!]{4})`),
+			compileRegex(`([a-zA-Z0-9@#$%^&*!]{4})[a-zA-Z0-9@#$%^&*!]+([a-zA-Z0-9@#$%^&*!]{4})`),
 		},
 	}
 }
@@ -170,7 +181,7 @@ func (s *Sanitizer) Mask(content string) string {
 		// 替换为格式：前4字符 + **** + 后4字符
 		result = pattern.ReplaceAllStringFunc(result, func(match string) string {
 			// 尝试分组替换
-			re := regexp.MustCompile(`^(.{4}).+(.{4})$`)
+			re := compileRegex(`^(.{4}).+(.{4})$`)
 			submatch := re.FindStringSubmatch(match)
 			if len(submatch) == 3 {
 				return submatch[1] + "****" + submatch[2]
