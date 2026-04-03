@@ -56,7 +56,11 @@ func NewRuleLoader() *RuleLoader {
 	// Category: 大写字母, 2-4字符
 	// SubCategory: 大写字母, 2-10字符
 	// Detail: 可选, 大写字母+数字+连字符, 1-20字符
-	pattern := regexp.MustCompile(`^[A-Z]{2,4}-[A-Z]{2,10}(-[A-Z0-9-]{1,20})?$`)
+	pattern, err := regexp.Compile(`^[A-Z]{2,4}-[A-Z]{2,10}(-[A-Z0-9-]{1,20})?$`)
+	if err != nil {
+		// 如果正则表达式无效，使用一个永远不匹配的pattern作为fallback
+		pattern = regexp.MustCompile("a^") // 永远不匹配的无效正则
+	}
 
 	return &RuleLoader{
 		ruleIDPattern: pattern,
