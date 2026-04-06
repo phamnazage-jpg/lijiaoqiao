@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 
+	"lijiaoqiao/supply-api/internal/iam/model"
 	"lijiaoqiao/supply-api/internal/middleware"
 )
 
@@ -17,7 +18,12 @@ const (
 	IAMTokenClaimsKey iamContextKey = "iam_token_claims"
 )
 
+// ClaimsVersion Token Claims版本号，用于迁移追踪
+const ClaimsVersion = 1
+
 // IAMTokenClaims IAM扩展Token Claims
+// 版本: v1
+// 迁移路径: 见 MigrateClaims 函数
 type IAMTokenClaims struct {
 	SubjectID   string   `json:"subject_id"`
 	Role        string   `json:"role"`
@@ -25,30 +31,73 @@ type IAMTokenClaims struct {
 	TenantID    int64    `json:"tenant_id"`
 	UserType    string   `json:"user_type"`     // 用户类型: platform/supply/consumer
 	Permissions []string `json:"permissions"`    // 细粒度权限列表
+
+	// 版本控制字段（未来迁移用）
+	Version int `json:"version,omitempty"`
 }
 
-// 角色层级定义
-var roleHierarchyLevels = map[string]int{
-	"super_admin":      100,
-	"org_admin":        50,
-	"supply_admin":     40,
-	"consumer_admin":    40,
-	"operator":         30,
-	"developer":        20,
-	"finops":           20,
-	"supply_operator":  30,
-	"supply_finops":    20,
-	"supply_viewer":    10,
-	"consumer_operator": 30,
-	"consumer_viewer":  10,
-	"viewer":           10,
+// MigrateClaims 将旧版本Claims迁移到当前版本
+// 迁移路径：
+//   v0 -> v1: 初始版本，添加 Version 字段
+//
+// 使用示例：
+//   claims := &IAMTokenClaims{}
+//   if err := json.Unmarshal(data, claims); err != nil {
+//       return err
+//   }
+//   migrated := MigrateClaims(claims)
+//   // 使用 migrated
+func MigrateClaims(claims *IAMTokenClaims) *IAMTokenClaims {
+	if claims == nil {
+		return nil
+	}
+
+	// 当前版本是v1，无需迁移
+	// 未来版本迁移：
+	// case 0:
+	//     claims = migrateV0ToV1(claims)
+	// case 1:
+	//     claims = migrateV1ToV2(claims)
+	claims.Version = ClaimsVersion
+	return claims
 }
+
+// ValidateClaims 验证Claims完整性
+func ValidateClaims(claims *IAMTokenClaims) error {
+	if claims == nil {
+		return ErrInvalidClaims
+	}
+	if claims.SubjectID == "" {
+		return ErrInvalidSubjectID
+	}
+	return nil
+}
+
+// 迁移相关错误
+var (
+	ErrInvalidClaims   = &ClaimsError{Code: "IAM_CLAIMS_4001", Message: "invalid claims structure"}
+	ErrInvalidSubjectID = &ClaimsError{Code: "IAM_CLAIMS_4002", Message: "subject_id is required"}
+)
+
+// ClaimsError Claims相关错误
+type ClaimsError struct {
+	Code    string
+	Message string
+}
+
+func (e *ClaimsError) Error() string {
+	return e.Code + ": " + e.Message
+}
+
+// 角色层级定义（已废弃，请使用 model.RoleHierarchyLevels）
+// @deprecated 使用 model.RoleHierarchyLevels 获取角色层级
+var roleHierarchyLevels = model.RoleHierarchyLevels
 
 // ScopeAuthMiddleware Scope权限验证中间件
 type ScopeAuthMiddleware struct {
 	// 路由-Scope映射
 	routeScopePolicies map[string][]string
-	// 角色层级（已废弃，使用包级变量roleHierarchyLevels）
+	// 角色层级
 	roleHierarchy map[string]int
 }
 
@@ -56,7 +105,7 @@ type ScopeAuthMiddleware struct {
 func NewScopeAuthMiddleware() *ScopeAuthMiddleware {
 	return &ScopeAuthMiddleware{
 		routeScopePolicies: make(map[string][]string),
-		roleHierarchy:      roleHierarchyLevels,
+		roleHierarchy:      model.RoleHierarchyLevels, // 使用统一的角色层级定义
 	}
 }
 
@@ -142,11 +191,9 @@ func HasRoleLevel(ctx context.Context, minLevel int) bool {
 }
 
 // GetRoleLevel 获取角色层级数值
+// @deprecated 请使用 model.GetRoleLevelByCode
 func GetRoleLevel(role string) int {
-	if level, ok := roleHierarchyLevels[role]; ok {
-		return level
-	}
-	return 0
+	return model.GetRoleLevelByCode(role)
 }
 
 // GetIAMTokenClaims 获取IAM Token Claims

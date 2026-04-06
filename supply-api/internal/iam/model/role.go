@@ -15,6 +15,7 @@ const (
 )
 
 // 角色层级常量（用于权限优先级判断）
+// 注意：这些常量值必须与 RoleHierarchyLevels map保持一致
 const (
 	LevelSuperAdmin = 100
 	LevelOrgAdmin   = 50
@@ -24,6 +25,33 @@ const (
 	LevelFinops     = 20
 	LevelViewer     = 10
 )
+
+// RoleHierarchyLevels 角色层级映射（用于权限验证）
+// 层级越高，权限越大。superset角色可以执行subset角色的操作。
+// 注意：此map的值必须与上述常量保持一致！
+var RoleHierarchyLevels = map[string]int{
+	"super_admin":       LevelSuperAdmin, // 100 - 超级管理员
+	"org_admin":         LevelOrgAdmin,   // 50  - 组织管理员
+	"supply_admin":      LevelSupplyAdmin, // 40 - 供应商管理员
+	"consumer_admin":    LevelSupplyAdmin, // 40 - 消费者管理员(同供应商)
+	"operator":          LevelOperator,  // 30  - 操作员
+	"developer":          LevelDeveloper, // 20  - 开发者
+	"finops":            LevelFinops,    // 20  - 财务运营
+	"supply_operator":   LevelOperator, // 30  - 供应商操作员
+	"supply_finops":     LevelFinops,   // 20  - 供应商财务
+	"supply_viewer":     LevelViewer,   // 10  - 供应商查看者
+	"consumer_operator": LevelOperator, // 30  - 消费者操作员
+	"consumer_viewer":   LevelViewer,   // 10  - 消费者查看者
+	"viewer":            LevelViewer,    // 10  - 通用查看者
+}
+
+// GetRoleLevelByCode 根据角色代码获取层级数值
+func GetRoleLevelByCode(roleCode string) int {
+	if level, ok := RoleHierarchyLevels[roleCode]; ok {
+		return level
+	}
+	return 0 // 默认最低级别
+}
 
 // 角色错误定义
 var (

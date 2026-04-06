@@ -66,7 +66,7 @@ func (s *InMemoryAccountStore) List(ctx context.Context, supplierID int64) ([]*d
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []*domain.Account
+	result := make([]*domain.Account, 0)
 	for _, account := range s.accounts {
 		if account.SupplierID == supplierID {
 			result = append(result, account)
@@ -129,7 +129,7 @@ func (s *InMemoryPackageStore) List(ctx context.Context, supplierID int64) ([]*d
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []*domain.Package
+	result := make([]*domain.Package, 0)
 	for _, pkg := range s.packages {
 		if pkg.SupplierID == supplierID {
 			result = append(result, pkg)
@@ -192,7 +192,7 @@ func (s *InMemorySettlementStore) List(ctx context.Context, supplierID int64) ([
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []*domain.Settlement
+	result := make([]*domain.Settlement, 0)
 	for _, settlement := range s.settlements {
 		if settlement.SupplierID == supplierID {
 			result = append(result, settlement)
@@ -264,8 +264,9 @@ func (s *InMemoryEarningStore) GetBillingSummary(ctx context.Context, supplierID
 
 // 内存幂等存储
 type InMemoryIdempotencyStore struct {
-	mu      sync.RWMutex
-	records map[string]*IdempotencyRecord
+	mu             sync.RWMutex
+	records        map[string]*IdempotencyRecord
+	cleanupCounter int64 // 清理触发计数器
 }
 
 type IdempotencyRecord struct {
@@ -303,6 +304,7 @@ func (s *InMemoryIdempotencyStore) SetProcessing(key string, ttl time.Duration) 
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(ttl),
 	}
+	s.triggerCleanupLocked()
 }
 
 func (s *InMemoryIdempotencyStore) SetSuccess(key string, response interface{}, ttl time.Duration) {
@@ -316,4 +318,39 @@ func (s *InMemoryIdempotencyStore) SetSuccess(key string, response interface{}, 
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(ttl),
 	}
+	s.triggerCleanupLocked()
+}
+
+// triggerCleanupLocked 触发清理（每100次操作清理一次过期记录）
+// 调用时必须持有锁
+func (s *InMemoryIdempotencyStore) triggerCleanupLocked() {
+	s.cleanupCounter++
+	if s.cleanupCounter >= 100 {
+		s.cleanupCounter = 0
+		s.cleanupExpiredLocked()
+	}
+}
+
+// cleanupExpiredLocked 清理过期记录（需要持有锁）
+func (s *InMemoryIdempotencyStore) cleanupExpiredLocked() {
+	now := time.Now()
+	for key, record := range s.records {
+		if record.ExpiresAt.Before(now) {
+			delete(s.records, key)
+		}
+	}
+}
+
+// CleanExpired 主动清理过期记录（可由外部定期调用）
+func (s *InMemoryIdempotencyStore) CleanExpired() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupExpiredLocked()
+}
+
+// Len 返回当前记录数量（用于监控）
+func (s *InMemoryIdempotencyStore) Len() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.records)
 }

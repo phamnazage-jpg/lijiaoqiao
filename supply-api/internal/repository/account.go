@@ -254,7 +254,7 @@ func (r *AccountRepository) List(ctx context.Context, supplierID int64) ([]*doma
 	}
 	defer rows.Close()
 
-	var accounts []*domain.Account
+	accounts := make([]*domain.Account, 0)
 	for rows.Next() {
 		account := &domain.Account{}
 		err := rows.Scan(

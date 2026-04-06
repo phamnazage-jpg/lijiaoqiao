@@ -206,7 +206,7 @@ func (r *PackageRepository) List(ctx context.Context, supplierID int64) ([]*doma
 	}
 	defer rows.Close()
 
-	var packages []*domain.Package
+	packages := make([]*domain.Package, 0)
 	for rows.Next() {
 		pkg := &domain.Package{}
 		err := rows.Scan(

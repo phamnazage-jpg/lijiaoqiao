@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"errors"
+	"log"
 	"net/netip"
 	"time"
 
@@ -160,9 +161,22 @@ func NewSettlementService(store SettlementStore, earningStore EarningStore, audi
 	}
 }
 
+// emitAudit 安全记录审计日志（失败只记录错误，不影响主流程）
+func (s *settlementService) emitAudit(ctx context.Context, event audit.Event) {
+	if err := s.auditStore.Emit(ctx, event); err != nil {
+		log.Printf("[AUDIT_ERROR] failed to emit audit event: %v, object_type=%s, object_id=%d, action=%s",
+			err, event.ObjectType, event.ObjectID, event.Action)
+	}
+}
+
 func (s *settlementService) Withdraw(ctx context.Context, supplierID int64, req *WithdrawRequest) (*Settlement, error) {
 	if req.SMSCode != "123456" {
 		return nil, errors.New("invalid sms code")
+	}
+
+	// 验证金额：必须为正数
+	if req.Amount <= 0 {
+		return nil, errors.New("SUP_SET_4003: withdraw amount must be positive")
 	}
 
 	balance, err := s.store.GetWithdrawableBalance(ctx, supplierID)
@@ -192,7 +206,7 @@ func (s *settlementService) Withdraw(ctx context.Context, supplierID int64, req 
 		return nil, err
 	}
 
-	s.auditStore.Emit(ctx, audit.Event{
+	s.emitAudit(ctx, audit.Event{
 		TenantID:   supplierID,
 		ObjectType: "supply_settlement",
 		ObjectID:   settlement.ID,
@@ -221,7 +235,7 @@ func (s *settlementService) Cancel(ctx context.Context, supplierID, settlementID
 		return nil, err
 	}
 
-	s.auditStore.Emit(ctx, audit.Event{
+	s.emitAudit(ctx, audit.Event{
 		TenantID:   supplierID,
 		ObjectType: "supply_settlement",
 		ObjectID:   settlementID,

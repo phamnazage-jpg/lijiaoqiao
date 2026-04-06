@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"errors"
+	"log"
 	"net/netip"
 	"time"
 
@@ -132,6 +133,14 @@ func NewPackageService(store PackageStore, accountStore AccountStore, auditStore
 	}
 }
 
+// emitAudit 安全记录审计日志（失败只记录错误，不影响主流程）
+func (s *packageService) emitAudit(ctx context.Context, event audit.Event) {
+	if err := s.auditStore.Emit(ctx, event); err != nil {
+		log.Printf("[AUDIT_ERROR] failed to emit audit event: %v, object_type=%s, object_id=%d, action=%s",
+			err, event.ObjectType, event.ObjectID, event.Action)
+	}
+}
+
 func (s *packageService) CreateDraft(ctx context.Context, supplierID int64, req *CreatePackageDraftRequest) (*Package, error) {
 	pkg := &Package{
 		SupplierID:       supplierID,
@@ -154,7 +163,7 @@ func (s *packageService) CreateDraft(ctx context.Context, supplierID int64, req 
 		return nil, err
 	}
 
-	s.auditStore.Emit(ctx, audit.Event{
+	s.emitAudit(ctx, audit.Event{
 		TenantID:   supplierID,
 		ObjectType: "supply_package",
 		ObjectID:   pkg.ID,
@@ -183,7 +192,7 @@ func (s *packageService) Publish(ctx context.Context, supplierID, packageID int6
 		return nil, err
 	}
 
-	s.auditStore.Emit(ctx, audit.Event{
+	s.emitAudit(ctx, audit.Event{
 		TenantID:   supplierID,
 		ObjectType: "supply_package",
 		ObjectID:   packageID,
@@ -212,7 +221,7 @@ func (s *packageService) Pause(ctx context.Context, supplierID, packageID int64)
 		return nil, err
 	}
 
-	s.auditStore.Emit(ctx, audit.Event{
+	s.emitAudit(ctx, audit.Event{
 		TenantID:   supplierID,
 		ObjectType: "supply_package",
 		ObjectID:   packageID,
@@ -237,7 +246,7 @@ func (s *packageService) Unlist(ctx context.Context, supplierID, packageID int64
 		return nil, err
 	}
 
-	s.auditStore.Emit(ctx, audit.Event{
+	s.emitAudit(ctx, audit.Event{
 		TenantID:   supplierID,
 		ObjectType: "supply_package",
 		ObjectID:   packageID,
@@ -275,7 +284,7 @@ func (s *packageService) Clone(ctx context.Context, supplierID, packageID int64)
 		return nil, err
 	}
 
-	s.auditStore.Emit(ctx, audit.Event{
+	s.emitAudit(ctx, audit.Event{
 		TenantID:   supplierID,
 		ObjectType: "supply_package",
 		ObjectID:   clone.ID,
@@ -292,6 +301,17 @@ func (s *packageService) BatchUpdatePrice(ctx context.Context, supplierID int64,
 	}
 
 	for _, item := range req.Items {
+		// 验证价格不能为负数
+		if item.PricePer1MInput < 0 || item.PricePer1MOutput < 0 {
+			resp.FailedCount++
+			resp.Failures = append(resp.Failures, BatchPriceFailure{
+				PackageID: item.PackageID,
+				ErrorCode: "SUP_PKG_4004",
+				Message:   "price cannot be negative",
+			})
+			continue
+		}
+
 		pkg, err := s.store.GetByID(ctx, supplierID, item.PackageID)
 		if err != nil {
 			resp.FailedCount++

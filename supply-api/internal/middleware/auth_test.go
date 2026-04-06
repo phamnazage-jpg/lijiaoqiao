@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +9,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"lijiaoqiao/supply-api/internal/iam/model"
 )
 
 func TestTokenVerify(t *testing.T) {
@@ -248,27 +251,25 @@ func TestContainsScope(t *testing.T) {
 }
 
 func TestRoleLevel(t *testing.T) {
-	hierarchy := map[string]int{
-		"admin":  3,
-		"owner":  2,
-		"viewer": 1,
-	}
-
 	tests := []struct {
 		role     string
 		expected int
 	}{
-		{"admin", 3},
-		{"owner", 2},
-		{"viewer", 1},
+		{"super_admin", 100},
+		{"org_admin", 50},
+		{"supply_admin", 40},
+		{"operator", 30},
+		{"developer", 20},
+		{"finops", 20},
+		{"viewer", 10},
 		{"unknown", 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.role, func(t *testing.T) {
-			result := roleLevel(tt.role, hierarchy)
+			result := model.GetRoleLevelByCode(tt.role)
 			if result != tt.expected {
-				t.Errorf("roleLevel(%s) = %d, want %d", tt.role, result, tt.expected)
+				t.Errorf("GetRoleLevelByCode(%s) = %d, want %d", tt.role, result, tt.expected)
 			}
 		})
 	}
@@ -411,7 +412,7 @@ func TestMED02_TokenCacheMiss_ShouldNotAssumeActive(t *testing.T) {
 	}
 
 	// act - 查询一个不在缓存中的token
-	status, err := middleware.checkTokenStatus("nonexistent-token-id")
+	status, err := middleware.checkTokenStatus(context.Background(), "nonexistent-token-id")
 
 	// assert - 缓存未命中且没有后端时应该返回错误（安全修复）
 	// 修复前bug：缓存未命中时默认返回"active"

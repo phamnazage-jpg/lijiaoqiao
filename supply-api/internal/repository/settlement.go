@@ -195,7 +195,7 @@ func (r *SettlementRepository) List(ctx context.Context, supplierID int64) ([]*d
 	}
 	defer rows.Close()
 
-	var settlements []*domain.Settlement
+	settlements := make([]*domain.Settlement, 0)
 	for rows.Next() {
 		s := &domain.Settlement{}
 		err := rows.Scan(

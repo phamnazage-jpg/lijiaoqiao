@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -23,8 +24,10 @@ type Event struct {
 
 // 审计存储接口
 type AuditStore interface {
-	Emit(ctx context.Context, event Event)
+	Emit(ctx context.Context, event Event) error
 	Query(ctx context.Context, filter EventFilter) ([]Event, error)
+	QueryWithTotal(ctx context.Context, filter EventFilter) ([]Event, int64, error)
+	GetByID(ctx context.Context, eventID string) (Event, error)
 }
 
 // 事件过滤器
@@ -52,13 +55,14 @@ func NewMemoryAuditStore() *MemoryAuditStore {
 	}
 }
 
-func (s *MemoryAuditStore) Emit(ctx context.Context, event Event) {
+func (s *MemoryAuditStore) Emit(ctx context.Context, event Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	event.EventID = generateEventID()
 	event.CreatedAt = time.Now()
 	s.events = append(s.events, event)
+	return nil
 }
 
 func (s *MemoryAuditStore) Query(ctx context.Context, filter EventFilter) ([]Event, error) {
@@ -88,6 +92,52 @@ func (s *MemoryAuditStore) Query(ctx context.Context, filter EventFilter) ([]Eve
 	}
 
 	return result, nil
+}
+
+// QueryWithTotal 查询事件并返回总数
+func (s *MemoryAuditStore) QueryWithTotal(ctx context.Context, filter EventFilter) ([]Event, int64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []Event
+	total := int64(0)
+
+	for _, event := range s.events {
+		total++
+		if filter.TenantID > 0 && event.TenantID != filter.TenantID {
+			continue
+		}
+		if filter.ObjectType != "" && event.ObjectType != filter.ObjectType {
+			continue
+		}
+		if filter.ObjectID > 0 && event.ObjectID != filter.ObjectID {
+			continue
+		}
+		if filter.Action != "" && event.Action != filter.Action {
+			continue
+		}
+		result = append(result, event)
+	}
+
+	// 限制返回数量
+	if filter.Limit > 0 && len(result) > filter.Limit {
+		result = result[:filter.Limit]
+	}
+
+	return result, total, nil
+}
+
+// GetByID 根据事件ID获取单个事件
+func (s *MemoryAuditStore) GetByID(ctx context.Context, eventID string) (Event, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, event := range s.events {
+		if event.EventID == eventID {
+			return event, nil
+		}
+	}
+	return Event{}, fmt.Errorf("event not found")
 }
 
 func generateEventID() string {

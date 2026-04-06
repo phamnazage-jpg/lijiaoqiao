@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/netip"
 	"time"
 
@@ -141,6 +142,14 @@ func NewAccountService(store AccountStore, auditStore audit.AuditStore) AccountS
 	return &accountService{store: store, auditStore: auditStore}
 }
 
+// emitAudit 安全记录审计日志（失败只记录错误，不影响主流程）
+func (s *accountService) emitAudit(ctx context.Context, event audit.Event) {
+	if err := s.auditStore.Emit(ctx, event); err != nil {
+		log.Printf("[AUDIT_ERROR] failed to emit audit event: %v, object_type=%s, object_id=%d, action=%s",
+			err, event.ObjectType, event.ObjectID, event.Action)
+	}
+}
+
 func (s *accountService) Verify(ctx context.Context, supplierID int64, provider Provider, accountType AccountType, credential string) (*VerifyResult, error) {
 	// 开发阶段：模拟验证逻辑
 	result := &VerifyResult{
@@ -181,7 +190,7 @@ func (s *accountService) Create(ctx context.Context, req *CreateAccountRequest) 
 	}
 
 	// 记录审计日志
-	s.auditStore.Emit(ctx, audit.Event{
+	s.emitAudit(ctx, audit.Event{
 		TenantID:   req.SupplierID,
 		ObjectType: "supply_account",
 		ObjectID:   account.ID,
@@ -210,7 +219,7 @@ func (s *accountService) Activate(ctx context.Context, supplierID, accountID int
 		return nil, err
 	}
 
-	s.auditStore.Emit(ctx, audit.Event{
+	s.emitAudit(ctx, audit.Event{
 		TenantID:   supplierID,
 		ObjectType: "supply_account",
 		ObjectID:   accountID,
@@ -239,7 +248,7 @@ func (s *accountService) Suspend(ctx context.Context, supplierID, accountID int6
 		return nil, err
 	}
 
-	s.auditStore.Emit(ctx, audit.Event{
+	s.emitAudit(ctx, audit.Event{
 		TenantID:   supplierID,
 		ObjectType: "supply_account",
 		ObjectID:   accountID,
@@ -260,7 +269,7 @@ func (s *accountService) Delete(ctx context.Context, supplierID, accountID int64
 		return errors.New("SUP_ACC_4092: cannot delete active accounts")
 	}
 
-	s.auditStore.Emit(ctx, audit.Event{
+	s.emitAudit(ctx, audit.Event{
 		TenantID:   supplierID,
 		ObjectType: "supply_account",
 		ObjectID:   accountID,
