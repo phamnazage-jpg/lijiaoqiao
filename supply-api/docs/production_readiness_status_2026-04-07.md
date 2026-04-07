@@ -300,14 +300,16 @@ if db != nil {
 ### 5.1 修复进展
 
 - ✅ **审计存储DB-backed**: 已完成
-- ✅ **幂等中间件DB-backed**: 已完成并集成到链路
+- ✅ **幂等中间件DB-backed**: 已完成并集成到链路（双键协议）
 - ✅ **Token状态DB-backed**: 已完成（Redis缓存+DB后端）
+- ✅ **主动吊销机制**: 已完成（Redis Pub/Sub订阅）
 - ✅ **OutboxProcessor**: 已完成（Redis Streams+DLQ）
-- ✅ **分区策略DDL**: 已完成并实施
+- ✅ **分区策略DDL**: 已完成并实施（后台自动维护）
 - ✅ **GetWithdrawableBalance**: 已修复（使用accountRepo查询）
 - ✅ **DBEarningStore**: 已修复（使用UsageRepository实现）
 - ✅ **供应商ID配置化**: 已修复（从config读取DefaultSupplierID）
 - ✅ **PDF链接配置化**: 已修复（从config读取StatementBaseURL）
+- ✅ **JWT RS256配置支持**: 已完成（Algorithm + PublicKey）
 - ⚠️ **测试覆盖率**: 35% → 需达80%（预计2-3周）
 
 ### 5.2 上线条件
