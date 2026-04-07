@@ -55,6 +55,8 @@ type RedisConfig struct {
 // TokenConfig Token运行时配置
 type TokenConfig struct {
 	SecretKey          string
+	PublicKey          string // RSA公钥内容（用于RS256验证）
+	Algorithm          string // 算法: HS256, HS384, HS512, RS256, RS384, RS512
 	Issuer             string
 	AccessTokenTTL     time.Duration
 	RefreshTokenTTL    time.Duration
@@ -149,6 +151,8 @@ func Load(env string) (*Config, error) {
 
 	// Token配置
 	cfg.Token.SecretKey = v.GetString("token.secret_key")
+	cfg.Token.PublicKey = v.GetString("token.public_key")
+	cfg.Token.Algorithm = v.GetString("token.algorithm")
 	cfg.Token.Issuer = v.GetString("token.issuer")
 	cfg.Token.AccessTokenTTL = v.GetDuration("token.access_token_ttl")
 	cfg.Token.RefreshTokenTTL = v.GetDuration("token.refresh_token_ttl")
@@ -196,6 +200,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("token.access_token_ttl", 1*time.Hour)
 	v.SetDefault("token.refresh_token_ttl", 7*24*time.Hour)
 	v.SetDefault("token.revocation_cache_ttl", 30*time.Second)
+	v.SetDefault("token.algorithm", "HS256") // 默认HS256，可配置RS256
 
 	// Audit defaults
 	v.SetDefault("audit.buffer_size", 1000)

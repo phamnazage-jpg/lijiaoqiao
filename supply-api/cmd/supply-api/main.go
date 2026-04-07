@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"log"
@@ -152,6 +154,7 @@ func main() {
 	// 初始化鉴权中间件
 	authConfig := middleware.AuthConfig{
 		SecretKey: cfg.Token.SecretKey,
+		PublicKey: parseRSAPublicKey(cfg.Token.PublicKey),
 		Issuer:    cfg.Token.Issuer,
 		CacheTTL:  cfg.Token.RevocationCacheTTL,
 		Enabled:   *env != "dev", // 开发模式禁用鉴权
@@ -675,3 +678,25 @@ func calculateOutboxBackoff(retryCount, maxRetries int) int {
 
 // Ensure domain.OutboxEvent is compatible with our conversion
 var _ = domain.OutboxEvent{}
+
+// parseRSAPublicKey 解析PEM格式的RSA公钥
+func parseRSAPublicKey(pemKey string) interface{} {
+	if pemKey == "" {
+		return nil
+	}
+	block, _ := pem.Decode([]byte(pemKey))
+	if block == nil {
+		return nil
+	}
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		// 尝试解析PKCS1公钥
+		rsaPub, err2 := x509.ParsePKCS1PublicKey(block.Bytes)
+		if err2 != nil {
+			log.Printf("警告: 解析RSA公钥失败: %v", err2)
+			return nil
+		}
+		return rsaPub
+	}
+	return pub
+}
