@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,11 +13,14 @@ import (
 	"time"
 
 	"lijiaoqiao/supply-api/internal/audit"
+	auditrepo "lijiaoqiao/supply-api/internal/audit/repository"
 	"lijiaoqiao/supply-api/internal/cache"
 	"lijiaoqiao/supply-api/internal/config"
 	"lijiaoqiao/supply-api/internal/domain"
 	"lijiaoqiao/supply-api/internal/httpapi"
+	"lijiaoqiao/supply-api/internal/messaging"
 	"lijiaoqiao/supply-api/internal/middleware"
+	"lijiaoqiao/supply-api/internal/pkg/logging"
 	"lijiaoqiao/supply-api/internal/repository"
 	"lijiaoqiao/supply-api/internal/storage"
 )
@@ -39,6 +43,9 @@ func main() {
 	}
 
 	log.Printf("starting supply-api in %s mode", *env)
+
+	// P1-010修复: 初始化结构化日志
+	jsonLogger := logging.NewLogger("supply-api", logging.LogLevelInfo)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -63,30 +70,29 @@ func main() {
 		defer redisCache.Close()
 	}
 
-	// 初始化审计存储
-	// R-08: DatabaseAuditService 已创建 (audit/service/audit_service_db.go)
-	// 注意：由于domain层使用audit.AuditStore接口(旧)，而DatabaseAuditService实现的是AuditStoreInterface(新)
-	// 需要接口适配。暂保持内存存储，后续统一架构时处理。
-	auditStore := audit.NewMemoryAuditStore()
-
 	// 初始化存储层
 	var accountStore domain.AccountStore
 	var packageStore domain.PackageStore
 	var settlementStore domain.SettlementStore
 	var earningStore domain.EarningStore
+	var auditRepo *auditrepo.PostgresAuditRepository
+	var tokenStatusRepo *repository.TokenStatusRepository
 
 	if db != nil {
 		// 使用PostgreSQL存储
 		accountRepo := repository.NewAccountRepository(db.Pool)
 		packageRepo := repository.NewPackageRepository(db.Pool)
 		settlementRepo := repository.NewSettlementRepository(db.Pool)
+		usageRepo := repository.NewUsageRepository(db.Pool)
 		idempotencyRepo := repository.NewIdempotencyRepository(db.Pool)
+		auditRepo = auditrepo.NewPostgresAuditRepository(db.Pool)
+		tokenStatusRepo = repository.NewTokenStatusRepository(db.Pool)
 
 		// 创建DB-backed存储（使用repository作为store接口）
 		accountStore = &DBAccountStore{repo: accountRepo}
 		packageStore = &DBPackageStore{repo: packageRepo}
-		settlementStore = &DBSettlementStore{repo: settlementRepo}
-		earningStore = &DBEarningStore{repo: settlementRepo} // 复用
+		settlementStore = &DBSettlementStore{repo: settlementRepo, accountRepo: accountRepo}
+		earningStore = &DBEarningStore{usageRepo: usageRepo}
 
 		_ = idempotencyRepo // 用于幂等中间件
 	} else {
@@ -95,6 +101,16 @@ func main() {
 		packageStore = NewInMemoryPackageStoreAdapter()
 		settlementStore = NewInMemorySettlementStoreAdapter()
 		earningStore = NewInMemoryEarningStoreAdapter()
+	}
+
+	// P0-R08修复: 初始化审计存储 - 使用DB-backed实现
+	var auditStore audit.AuditStore
+	if auditRepo != nil {
+		auditStore = audit.NewPostgresAuditStore(auditRepo)
+		log.Println("审计存储: 使用PostgreSQL (DB-backed)")
+	} else {
+		auditStore = audit.NewMemoryAuditStore()
+		log.Println("警告: 审计存储使用内存实现 (生产环境不应使用)")
 	}
 
 	// 初始化不变量检查器
@@ -120,8 +136,15 @@ func main() {
 		// 可以使用Redis缓存
 	}
 
-	// 初始化token状态后端（NEW-P1-03修复）
-	tokenBackend := newMemoryTokenBackend()
+	// 初始化token状态后端（P0-03修复: 使用DB-backed实现）
+	var tokenBackend middleware.TokenStatusBackend
+	if tokenStatusRepo != nil {
+		tokenBackend = middleware.NewDBTokenStatusBackend(tokenStatusRepo, redisCache, cfg.Token.RevocationCacheTTL)
+		log.Println("Token状态后端: 使用PostgreSQL (DB-backed)")
+	} else {
+		tokenBackend = newMemoryTokenBackend()
+		log.Println("警告: Token状态后端使用内存实现 (生产环境不应使用)")
+	}
 
 	// 初始化审计事件适配器（NEW-P1-03修复）
 	auditEmitter := newAuditEmitterAdapter(auditStore)
@@ -143,60 +166,81 @@ func main() {
 			TTL:     24 * time.Hour,
 			Enabled: *env != "dev",
 		})
-		log.Println("幂等中间件已启用")
+		log.Println("幂等中间件已启用（DB-backed）")
 	} else {
 		log.Println("警告：幂等中间件未启用（db或repo不可用）- 使用内联幂等逻辑作为替代")
 	}
-	_ = idempotencyMiddleware // 暂不使用，幂等逻辑在supply_api.go中实现
 
-	// 初始化幂等存储
-	idempotencyStore := storage.NewInMemoryIdempotencyStore()
+	// P0-05修复: 初始化限流中间件
+	rateLimitConfig := middleware.DefaultRateLimitConfig()
+	rateLimitConfig.Enabled = *env != "dev" // 生产环境启用
+	log.Println("限流中间件已初始化")
 
 	// 初始化HTTP API处理器
+	// P0-P4修复: 使用DB-backed幂等中间件替代内联幂等存储
 	api := httpapi.NewSupplyAPI(
 		accountService,
 		packageService,
 		settlementService,
 		earningService,
-		idempotencyStore,
+		idempotencyMiddleware, // 使用幂等中间件（DB-backed）
 		auditStore,
-		1, // 默认供应商ID
+		cfg.Server.DefaultSupplierID,
+		cfg.Server.StatementBaseURL,
 		time.Now,
 	)
 
 	// 创建路由器
 	mux := http.NewServeMux()
 
-	// 健康检查端点
-	mux.HandleFunc("/actuator/health", handleHealthCheck(db, redisCache))
-	mux.HandleFunc("/actuator/health/live", handleLiveness)
-	mux.HandleFunc("/actuator/health/ready", handleReadiness(db, redisCache))
+	// P1-007修复: 统一健康检查实现，使用HealthHandler代替重复的inline handlers
+	var dbHealthCheck func(ctx context.Context) error
+	var redisHealthCheck func(ctx context.Context) error
+	if db != nil {
+		dbHealthCheck = db.HealthCheck
+	}
+	if redisCache != nil {
+		redisHealthCheck = redisCache.HealthCheck
+	}
+	healthHandler := httpapi.NewHealthHandlerWithDefaults(dbHealthCheck, redisHealthCheck)
+	mux.HandleFunc("/actuator/health", healthHandler.ServeHealth)
+	mux.HandleFunc("/actuator/health/live", healthHandler.ServeLiveness)
+	mux.HandleFunc("/actuator/health/ready", healthHandler.ServeReadiness)
 
 	// 注册API路由
 	api.Register(mux)
+
+	// 注册告警API路由
+	alertAPI := httpapi.NewAlertAPI()
+	alertAPI.Register(mux)
 
 	// 应用中间件链路
 	// 1. RequestID - 请求追踪
 	// 2. Recovery - Panic恢复
 	// 3. Logging - 请求日志
-	// 4. QueryKeyReject - 拒绝外部query key (M-016)
-	// 5. BearerExtract - Bearer Token提取
-	// 6. TokenVerify - JWT校验
+	// 4. Tracing - W3C Trace Context (P1-006)
+	// 5. QueryKeyReject - 拒绝外部query key (M-016)
+	// 6. BearerExtract - Bearer Token提取
+	// 7. TokenVerify - JWT校验
+	// 8. RateLimit - 限流 (P0-05)
 	// 注：幂等处理在supply_api.go中以内联方式实现（NEW-P1-05已统一：中间件方案需要DB-backed repo）
 
 	var handler http.Handler = mux
 	handler = middleware.RequestID(handler)
 	handler = middleware.Recovery(handler)
-	handler = middleware.Logging(handler)
+	handler = middleware.Logging(handler, jsonLogger) // P1-010: 使用结构化JSON日志
+	handler = middleware.TracingMiddleware(handler)   // P1-006: W3C Trace Context中间件
 
 	// 生产环境启用安全中间件
 	if *env != "dev" {
-		// 4. QueryKeyReject - 拒绝外部query key
+		// 5. QueryKeyReject - 拒绝外部query key
 		handler = authMiddleware.QueryKeyRejectMiddleware(handler)
-		// 5. BearerExtract
+		// 6. BearerExtract
 		handler = authMiddleware.BearerExtractMiddleware(handler)
-		// 6. TokenVerify
+		// 7. TokenVerify
 		handler = authMiddleware.TokenVerifyMiddleware(handler)
+		// 8. RateLimit - 限流 (使用中间件包装器)
+		handler = middleware.NewRateLimitHandler(rateLimitConfig, handler)
 	}
 
 	// 创建HTTP服务器
@@ -209,13 +253,21 @@ func main() {
 		IdleTimeout:       cfg.Server.IdleTimeout,
 	}
 
-	// 启动服务器
-	go func() {
-		log.Printf("supply-api listening on %s", cfg.Server.Addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen failed: %v", err)
+	// P0-06修复: 启动OutboxProcessor（仅在DB可用时）
+	var outboxProcessor *OutboxProcessorRunner
+	if db != nil {
+		outboxRepo := repository.NewOutboxRepository(db.Pool)
+		var msgBroker messaging.MessageBroker
+		if redisCache != nil {
+			// 使用Redis Streams作为消息代理
+			redisClient := redisCache.GetClient()
+			msgBroker = messaging.NewOutboxMessageBroker(redisClient, "supply:outbox:stream", "outbox-processor")
 		}
-	}()
+		stats := &messaging.NoOpOutboxStats{}
+		outboxProcessor = NewOutboxProcessorRunner(outboxRepo, msgBroker, stats)
+		go outboxProcessor.Start(ctx)
+		log.Println("OutboxProcessor已启动")
+	}
 
 	// 优雅关闭
 	sigCh := make(chan os.Signal, 1)
@@ -232,79 +284,6 @@ func main() {
 	}
 
 	log.Println("shutdown complete")
-}
-
-// handleHealthCheck 健康检查
-func handleHealthCheck(db *repository.DB, redisCache *cache.RedisCache) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		checks := map[string]string{
-			"database": "UP",
-			"redis":    "UP",
-		}
-
-		if db != nil {
-			if err := db.HealthCheck(ctx); err != nil {
-				checks["database"] = "DOWN"
-			}
-		} else {
-			checks["database"] = "MISSING"
-		}
-
-		if redisCache != nil {
-			if err := redisCache.HealthCheck(ctx); err != nil {
-				checks["redis"] = "DOWN"
-			}
-		} else {
-			checks["redis"] = "MISSING"
-		}
-
-		status := http.StatusOK
-		for _, v := range checks {
-			if v == "DOWN" {
-				status = http.StatusServiceUnavailable
-				break
-			}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": map[bool]string{true: "UP", false: "DOWN"}[status == http.StatusOK],
-			"checks": checks,
-			"time":   time.Now().Format(time.RFC3339),
-		})
-	}
-}
-
-// handleLiveness 存活探针
-func handleLiveness(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"LIVE"}`))
-}
-
-// handleReadiness 就绪探针
-func handleReadiness(db *repository.DB, redisCache *cache.RedisCache) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		ready := true
-		if db == nil {
-			ready = false
-		} else if err := db.HealthCheck(ctx); err != nil {
-			ready = false
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if ready {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"status":"READY"}`))
-		} else {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"status":"NOT_READY"}`))
-		}
-	}
 }
 
 // ==================== 内存存储适配器（开发模式）====================
@@ -376,8 +355,9 @@ func (a *InMemorySettlementStoreAdapter) GetByID(ctx context.Context, supplierID
 	return a.store.GetByID(ctx, supplierID, id)
 }
 
-func (a *InMemorySettlementStoreAdapter) Update(ctx context.Context, s *domain.Settlement) error {
-	return a.store.Update(ctx, s)
+func (a *InMemorySettlementStoreAdapter) Update(ctx context.Context, s *domain.Settlement, expectedVersion int) error {
+	// P1-005: 乐观锁更新
+	return a.store.Update(ctx, s, expectedVersion)
 }
 
 func (a *InMemorySettlementStoreAdapter) List(ctx context.Context, supplierID int64) ([]*domain.Settlement, error) {
@@ -451,7 +431,8 @@ func (s *DBPackageStore) List(ctx context.Context, supplierID int64) ([]*domain.
 
 // DBSettlementStore DB-backed结算存储
 type DBSettlementStore struct {
-	repo *repository.SettlementRepository
+	repo        *repository.SettlementRepository
+	accountRepo *repository.AccountRepository // 用于GetWithdrawableBalance查询账户余额
 }
 
 func (s *DBSettlementStore) Create(ctx context.Context, settlement *domain.Settlement) error {
@@ -462,8 +443,9 @@ func (s *DBSettlementStore) GetByID(ctx context.Context, supplierID, id int64) (
 	return s.repo.GetByID(ctx, supplierID, id)
 }
 
-func (s *DBSettlementStore) Update(ctx context.Context, settlement *domain.Settlement) error {
-	return s.repo.Update(ctx, settlement, settlement.Version)
+func (s *DBSettlementStore) Update(ctx context.Context, settlement *domain.Settlement, expectedVersion int) error {
+	// P1-005: 乐观锁更新，expectedVersion由调用方传入更新前的版本号
+	return s.repo.Update(ctx, settlement, expectedVersion)
 }
 
 func (s *DBSettlementStore) List(ctx context.Context, supplierID int64) ([]*domain.Settlement, error) {
@@ -471,23 +453,29 @@ func (s *DBSettlementStore) List(ctx context.Context, supplierID int64) ([]*doma
 }
 
 func (s *DBSettlementStore) GetWithdrawableBalance(ctx context.Context, supplierID int64) (float64, error) {
-	// TODO: 实现真实查询 - 通过 account service 获取
-	return 0.0, nil
+	if s.accountRepo == nil {
+		return 0.0, fmt.Errorf("account repository not initialized")
+	}
+	return s.accountRepo.GetWithdrawableBalance(ctx, supplierID)
 }
 
 // DBEarningStore DB-backed收益存储
 type DBEarningStore struct {
-	repo *repository.SettlementRepository
+	usageRepo *repository.UsageRepository
 }
 
 func (s *DBEarningStore) ListRecords(ctx context.Context, supplierID int64, startDate, endDate string, page, pageSize int) ([]*domain.EarningRecord, int, error) {
-	// TODO: 实现真实查询
-	return nil, 0, nil
+	if s.usageRepo == nil {
+		return nil, 0, fmt.Errorf("usage repository not initialized")
+	}
+	return s.usageRepo.ListRecords(ctx, supplierID, startDate, endDate, page, pageSize)
 }
 
 func (s *DBEarningStore) GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*domain.BillingSummary, error) {
-	// TODO: 实现真实查询
-	return nil, nil
+	if s.usageRepo == nil {
+		return nil, fmt.Errorf("usage repository not initialized")
+	}
+	return s.usageRepo.GetBillingSummary(ctx, supplierID, startDate, endDate)
 }
 
 // ==================== 内存Backend适配器 ====================
@@ -537,8 +525,153 @@ func (a *auditEmitterAdapter) Emit(ctx context.Context, event middleware.AuditEv
 		Action:     event.EventName,
 		RequestID:  event.RequestID,
 		ResultCode: event.ResultCode,
-		ClientIP:   event.ClientIP,
+		SourceIP:   event.SourceIP, // C-002修复: 使用统一后的SourceIP
 	}
 	a.store.Emit(ctx, auditEvent)
 	return nil
 }
+
+// ==================== Outbox处理器 ====================
+
+// OutboxProcessorRunner Outbox处理器运行器
+type OutboxProcessorRunner struct {
+	repo        *repository.OutboxRepository
+	msgBroker   messaging.MessageBroker
+	stats       messaging.OutboxStats
+	stopCh      chan struct{}
+	batchSize   int
+	interval    time.Duration
+}
+
+// NewOutboxProcessorRunner 创建Outbox处理器运行器
+func NewOutboxProcessorRunner(
+	repo *repository.OutboxRepository,
+	msgBroker messaging.MessageBroker,
+	stats messaging.OutboxStats,
+) *OutboxProcessorRunner {
+	return &OutboxProcessorRunner{
+		repo:      repo,
+		msgBroker: msgBroker,
+		stats:     stats,
+		stopCh:    make(chan struct{}),
+		batchSize: 100,
+		interval:  1 * time.Second,
+	}
+}
+
+// Start 启动Outbox处理器
+func (r *OutboxProcessorRunner) Start(ctx context.Context) {
+	log.Println("OutboxProcessor started")
+	ticker := time.NewTicker(r.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("OutboxProcessor stopping due to context cancellation")
+			return
+		case <-r.stopCh:
+			log.Println("OutboxProcessor stopping")
+			return
+		case <-ticker.C:
+			if err := r.process(ctx); err != nil {
+				log.Printf("OutboxProcessor error: %v", err)
+			}
+		}
+	}
+}
+
+// Stop 停止Outbox处理器
+func (r *OutboxProcessorRunner) Stop() {
+	close(r.stopCh)
+}
+
+// process 处理一批Outbox事件
+func (r *OutboxProcessorRunner) process(ctx context.Context) error {
+	// 获取待处理事件
+	events, err := r.repo.FetchAndLock(ctx, r.batchSize)
+	if err != nil {
+		return err
+	}
+
+	if len(events) == 0 {
+		return nil
+	}
+
+	for _, event := range events {
+		// 转换为domain.OutboxEvent
+		domainEvent := &domain.OutboxEvent{
+			ID:            event.ID,
+			AggregateType: event.AggregateType,
+			AggregateID:   event.AggregateID,
+			EventType:     event.EventType,
+			EventID:       event.EventID,
+			Payload:       event.Payload,
+			Status:       string(event.Status),
+			RetryCount:    event.RetryCount,
+			MaxRetries:    event.MaxRetries,
+			ErrorMessage:  event.ErrorMessage,
+			Version:       event.Version,
+		}
+
+		// 发布消息
+		if err := r.msgBroker.Publish(ctx, event); err != nil {
+			r.handleFailure(ctx, domainEvent, err)
+			continue
+		}
+
+		// 标记完成
+		if err := r.repo.MarkCompleted(ctx, event.EventID); err != nil {
+			r.stats.RecordOutboxFailure("mark_completed_failed")
+			continue
+		}
+
+		r.stats.RecordOutboxSuccess(event.EventType)
+	}
+
+	return nil
+}
+
+// handleFailure 处理失败事件
+func (r *OutboxProcessorRunner) handleFailure(ctx context.Context, event *domain.OutboxEvent, publishErr error) {
+	event.RetryCount++
+
+	if event.RetryCount >= event.MaxRetries {
+		// 移入死信队列
+		domainEvent := &repository.OutboxEvent{
+			ID:         event.ID,
+			EventID:    event.EventID,
+			Payload:    event.Payload,
+			RetryCount: event.RetryCount,
+		}
+		if err := r.repo.MoveToDeadLetter(ctx, domainEvent, publishErr.Error()); err != nil {
+			r.stats.RecordOutboxFailure("move_to_dlq_failed")
+		} else {
+			r.stats.RecordOutboxDLQ(event.EventType)
+		}
+	} else {
+		// 计算下次重试时间（指数退避）
+		backoffSeconds := calculateOutboxBackoff(event.RetryCount, event.MaxRetries)
+		nextRetry := time.Now().Add(time.Duration(backoffSeconds) * time.Second)
+
+		if err := r.repo.MarkFailed(ctx, event.EventID, publishErr.Error(), &nextRetry); err != nil {
+			r.stats.RecordOutboxFailure("mark_failed_failed")
+		} else {
+			r.stats.RecordOutboxRetry(event.EventType)
+		}
+	}
+}
+
+// calculateOutboxBackoff 计算指数退避时间
+func calculateOutboxBackoff(retryCount, maxRetries int) int {
+	initialBackoff := 1.0
+	maxBackoff := 60.0
+	backoff := initialBackoff * math.Pow(2, float64(retryCount-1))
+	if backoff > maxBackoff {
+		backoff = maxBackoff
+	}
+	return int(backoff)
+}
+
+// Ensure domain.OutboxEvent is compatible with our conversion
+var _ = domain.OutboxEvent{}

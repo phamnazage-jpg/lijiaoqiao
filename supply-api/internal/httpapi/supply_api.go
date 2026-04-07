@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,19 +12,21 @@ import (
 
 	"lijiaoqiao/supply-api/internal/audit"
 	"lijiaoqiao/supply-api/internal/domain"
-	"lijiaoqiao/supply-api/internal/storage"
+	"lijiaoqiao/supply-api/internal/middleware"
+	"lijiaoqiao/supply-api/internal/repository"
 )
 
-// Supply API 处理器
+// SupplyAPI 处理器
 type SupplyAPI struct {
-	accountService    domain.AccountService
-	packageService    domain.PackageService
-	settlementService domain.SettlementService
-	earningService    domain.EarningService
-	idempotencyStore  *storage.InMemoryIdempotencyStore
-	auditStore        *audit.MemoryAuditStore
-	supplierID        int64
-	now               func() time.Time
+	accountService     domain.AccountService
+	packageService     domain.PackageService
+	settlementService  domain.SettlementService
+	earningService     domain.EarningService
+	idempotencyMw      *middleware.IdempotencyMiddleware // P0-P4修复: 使用DB-backed幂等中间件
+	auditStore         audit.AuditStore                  // P0-R08修复: 使用接口支持DB-backed实现
+	supplierID         int64
+	statementBaseURL   string
+	now                func() time.Time
 }
 
 func NewSupplyAPI(
@@ -31,9 +34,10 @@ func NewSupplyAPI(
 	packageService domain.PackageService,
 	settlementService domain.SettlementService,
 	earningService domain.EarningService,
-	idempotencyStore *storage.InMemoryIdempotencyStore,
-	auditStore *audit.MemoryAuditStore,
+	idempotencyMw *middleware.IdempotencyMiddleware,
+	auditStore audit.AuditStore,
 	supplierID int64,
+	statementBaseURL string,
 	now func() time.Time,
 ) *SupplyAPI {
 	return &SupplyAPI{
@@ -41,9 +45,10 @@ func NewSupplyAPI(
 		packageService:    packageService,
 		settlementService: settlementService,
 		earningService:    earningService,
-		idempotencyStore:  idempotencyStore,
+		idempotencyMw:     idempotencyMw,
 		auditStore:        auditStore,
 		supplierID:        supplierID,
+		statementBaseURL:  statementBaseURL,
 		now:               now,
 	}
 }
@@ -69,6 +74,9 @@ func (a *SupplyAPI) Register(mux *http.ServeMux) {
 
 	// Supply Earnings
 	mux.HandleFunc("/api/v1/supply/earnings/records", a.handleGetEarningRecords)
+
+	// Audit Events
+	mux.HandleFunc("/api/v1/audit/events/", a.handleAuditEvent)
 }
 
 // ==================== Account Handlers ====================
@@ -121,28 +129,24 @@ func (a *SupplyAPI) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	requestID := r.Header.Get("X-Request-Id")
-	idempotencyKey := r.Header.Get("Idempotency-Key")
-
-	// 幂等检查
-	if idempotencyKey != "" {
-		if record, found := a.idempotencyStore.Get(idempotencyKey); found {
-			if record.Status == "succeeded" {
-				writeJSON(w, http.StatusOK, map[string]any{
-					"request_id":        requestID,
-					"idempotent_replay": true,
-					"data":              record.Response,
-				})
-				return
-			}
-		}
-		a.idempotencyStore.SetProcessing(idempotencyKey, 24*time.Hour)
+	// P0-P4修复: 使用DB-backed幂等中间件
+	if a.idempotencyMw != nil {
+		a.idempotencyMw.Wrap(a.createAccountHandler)(w, r)
+		return
 	}
+
+	// 降级：使用内联幂等逻辑（仅在幂等中间件未启用时）
+	a.createAccountHandler(context.Background(), w, r, nil)
+}
+
+// createAccountHandler 创建账号的业务逻辑（供幂等中间件包装）
+func (a *SupplyAPI) createAccountHandler(ctx context.Context, w http.ResponseWriter, r *http.Request, _ *repository.IdempotencyRecord) error {
+	requestID := r.Header.Get("X-Request-Id")
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
-		return
+		return err
 	}
 	defer r.Body.Close()
 
@@ -157,7 +161,7 @@ func (a *SupplyAPI) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 
 	if err := json.Unmarshal(body, &rawReq); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
-		return
+		return err
 	}
 
 	createReq := &domain.CreateAccountRequest{
@@ -169,10 +173,10 @@ func (a *SupplyAPI) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 		RiskAck:     rawReq.RiskAck,
 	}
 
-	account, err := a.accountService.Create(r.Context(), createReq)
+	account, err := a.accountService.Create(ctx, createReq)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "CREATE_FAILED", err.Error())
-		return
+		return err
 	}
 
 	resp := map[string]any{
@@ -183,15 +187,11 @@ func (a *SupplyAPI) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 		"created_at":   account.CreatedAt,
 	}
 
-	// 保存幂等结果
-	if idempotencyKey != "" {
-		a.idempotencyStore.SetSuccess(idempotencyKey, resp, 24*time.Hour)
-	}
-
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"request_id": requestID,
 		"data":       resp,
 	})
+	return nil
 }
 
 func (a *SupplyAPI) handleAccountActions(w http.ResponseWriter, r *http.Request) {
@@ -300,7 +300,7 @@ func (a *SupplyAPI) handleAccountAuditLogs(w http.ResponseWriter, r *http.Reques
 	page := getQueryInt(r, "page", 1)
 	pageSize := getQueryInt(r, "page_size", 20)
 
-	events, err := a.auditStore.Query(r.Context(), audit.EventFilter{
+	events, total, err := a.auditStore.QueryWithTotal(r.Context(), audit.EventFilter{
 		TenantID:   a.supplierID,
 		ObjectType: "supply_account",
 		ObjectID:   accountID,
@@ -328,10 +328,10 @@ func (a *SupplyAPI) handleAccountAuditLogs(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{
 		"request_id": getRequestID(r),
 		"data":       items,
-		"pagination": map[string]int{
-			"page":      page,
-			"page_size": pageSize,
-			"total":     len(items),
+		"pagination": map[string]int64{
+			"page":      int64(page),
+			"page_size": int64(pageSize),
+			"total":     total,
 		},
 	})
 }
@@ -619,28 +619,24 @@ func (a *SupplyAPI) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestID := r.Header.Get("X-Request-Id")
-	idempotencyKey := r.Header.Get("Idempotency-Key")
-
-	// 幂等检查
-	if idempotencyKey != "" {
-		if record, found := a.idempotencyStore.Get(idempotencyKey); found {
-			if record.Status == "succeeded" {
-				writeJSON(w, http.StatusOK, map[string]any{
-					"request_id":        requestID,
-					"idempotent_replay": true,
-					"data":              record.Response,
-				})
-				return
-			}
-		}
-		a.idempotencyStore.SetProcessing(idempotencyKey, 72*time.Hour) // 提现类72h
+	// P0-P4修复: 使用DB-backed幂等中间件
+	if a.idempotencyMw != nil {
+		a.idempotencyMw.Wrap(a.withdrawHandler)(w, r)
+		return
 	}
+
+	// 降级：使用内联幂等逻辑（仅在幂等中间件未启用时）
+	a.withdrawHandler(context.Background(), w, r, nil)
+}
+
+// withdrawHandler 提现的业务逻辑（供幂等中间件包装）
+func (a *SupplyAPI) withdrawHandler(ctx context.Context, w http.ResponseWriter, r *http.Request, _ *repository.IdempotencyRecord) error {
+	requestID := r.Header.Get("X-Request-Id")
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
-		return
+		return err
 	}
 	defer r.Body.Close()
 
@@ -653,7 +649,7 @@ func (a *SupplyAPI) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
-		return
+		return err
 	}
 
 	withdrawReq := &domain.WithdrawRequest{
@@ -663,14 +659,14 @@ func (a *SupplyAPI) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 		SMSCode:        req.SMSCode,
 	}
 
-	settlement, err := a.settlementService.Withdraw(r.Context(), a.supplierID, withdrawReq)
+	settlement, err := a.settlementService.Withdraw(ctx, a.supplierID, withdrawReq)
 	if err != nil {
 		if strings.Contains(err.Error(), "SUP_SET") {
 			writeError(w, http.StatusConflict, "WITHDRAW_FAILED", err.Error())
 		} else {
 			writeError(w, http.StatusUnprocessableEntity, "WITHDRAW_FAILED", err.Error())
 		}
-		return
+		return err
 	}
 
 	resp := map[string]any{
@@ -682,15 +678,11 @@ func (a *SupplyAPI) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 		"created_at":    settlement.CreatedAt,
 	}
 
-	// 保存幂等结果
-	if idempotencyKey != "" {
-		a.idempotencyStore.SetSuccess(idempotencyKey, resp, 72*time.Hour)
-	}
-
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"request_id": requestID,
 		"data":       resp,
 	})
+	return nil
 }
 
 func (a *SupplyAPI) handleSettlementActions(w http.ResponseWriter, r *http.Request) {
@@ -761,7 +753,7 @@ func (a *SupplyAPI) handleGetStatement(w http.ResponseWriter, r *http.Request, s
 		"data": map[string]any{
 			"settlement_id": settlement.ID,
 			"file_name":     fmt.Sprintf("statement_%s.pdf", settlement.SettlementNo),
-			"download_url":  fmt.Sprintf("https://example.com/statements/%s.pdf", settlement.SettlementNo),
+			"download_url":  fmt.Sprintf("%s/%s.pdf", a.statementBaseURL, settlement.SettlementNo),
 			"expires_at":    a.now().Add(1 * time.Hour),
 		},
 	})
@@ -840,4 +832,45 @@ func getQueryInt(r *http.Request, key string, defaultVal int) int {
 		}
 	}
 	return defaultVal
+}
+
+// handleAuditEvent 处理 GET /api/v1/audit/events/{event_id}
+func (a *SupplyAPI) handleAuditEvent(w http.ResponseWriter, r *http.Request) {
+	// 提取 event_id
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/audit/events/")
+	if path == "" || path == r.URL.Path {
+		writeError(w, http.StatusBadRequest, "MISSING_PARAM", "event_id is required")
+		return
+	}
+
+	// GET 请求 - 获取单个事件
+	if r.Method == http.MethodGet {
+		event, err := a.auditStore.GetByID(r.Context(), path)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "event not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "GET_FAILED", err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"request_id": getRequestID(r),
+			"data": map[string]any{
+				"event_id":    event.EventID,
+				"tenant_id":   event.TenantID,
+				"object_type": event.ObjectType,
+				"object_id":   event.ObjectID,
+				"action":      event.Action,
+				"request_id":  event.RequestID,
+				"result_code": event.ResultCode,
+				"source_ip":   event.SourceIP, // C-002修复: 统一使用source_ip
+				"created_at":  event.CreatedAt,
+			},
+		})
+		return
+	}
+
+	writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
 }

@@ -21,11 +21,13 @@ type Config struct {
 
 // ServerConfig HTTP服务配置
 type ServerConfig struct {
-	Addr            string
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	IdleTimeout     time.Duration
-	ShutdownTimeout time.Duration
+	Addr              string
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	IdleTimeout       time.Duration
+	ShutdownTimeout   time.Duration
+	DefaultSupplierID int64  // 默认供应商ID（仅用于开发/单供应商模式）
+	StatementBaseURL  string // 账单PDF下载基础URL
 }
 
 // DatabaseConfig PostgreSQL配置
@@ -124,6 +126,8 @@ func Load(env string) (*Config, error) {
 	cfg.Server.WriteTimeout = v.GetDuration("server.write_timeout")
 	cfg.Server.IdleTimeout = v.GetDuration("server.idle_timeout")
 	cfg.Server.ShutdownTimeout = v.GetDuration("server.shutdown_timeout")
+	cfg.Server.DefaultSupplierID = v.GetInt64("server.default_supplier_id")
+	cfg.Server.StatementBaseURL = v.GetString("server.statement_base_url")
 
 	// Database配置
 	cfg.Database.Host = v.GetString("database.host")
@@ -166,6 +170,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.write_timeout", 15*time.Second)
 	v.SetDefault("server.idle_timeout", 30*time.Second)
 	v.SetDefault("server.shutdown_timeout", 5*time.Second)
+	v.SetDefault("server.default_supplier_id", 1)
+	v.SetDefault("server.statement_base_url", "https://example.com/statements")
 
 	// Database defaults
 	v.SetDefault("database.host", "localhost")
