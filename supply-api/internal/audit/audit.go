@@ -18,7 +18,7 @@ type Event struct {
 	AfterState  map[string]any `json:"after_state,omitempty"`
 	RequestID   string         `json:"request_id,omitempty"`
 	ResultCode  string         `json:"result_code"`
-	ClientIP    string         `json:"client_ip,omitempty"`
+	SourceIP    string         `json:"source_ip,omitempty"` // C-002修复: 统一使用SourceIP
 	CreatedAt   time.Time      `json:"created_at"`
 }
 

@@ -57,6 +57,26 @@ func (s *DatabaseAuditService) Emit(ctx context.Context, event *model.AuditEvent
 	return nil
 }
 
+// EmitBatch 批量发送审计事件
+func (s *DatabaseAuditService) EmitBatch(ctx context.Context, events []*model.AuditEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	// 验证所有事件
+	for _, event := range events {
+		if event == nil {
+			return ErrInvalidInput
+		}
+		if event.EventName == "" {
+			return ErrMissingEventName
+		}
+	}
+
+	// 调用仓储批量发送
+	return s.repo.EmitBatch(ctx, events)
+}
+
 // Query 查询审计事件
 func (s *DatabaseAuditService) Query(ctx context.Context, filter *EventFilter) ([]*model.AuditEvent, int64, error) {
 	if filter == nil {
@@ -82,6 +102,11 @@ func (s *DatabaseAuditService) Query(ctx context.Context, filter *EventFilter) (
 // GetByIdempotencyKey 根据幂等键获取事件
 func (s *DatabaseAuditService) GetByIdempotencyKey(ctx context.Context, key string) (*model.AuditEvent, error) {
 	return s.repo.GetByIdempotencyKey(ctx, key)
+}
+
+// GetByEventID 根据事件ID获取事件
+func (s *DatabaseAuditService) GetByEventID(ctx context.Context, eventID string) (*model.AuditEvent, error) {
+	return s.repo.GetByEventID(ctx, eventID)
 }
 
 // NewDatabaseAuditServiceWithPool 从数据库连接池创建审计服务

@@ -100,11 +100,11 @@ func (s *MetricsService) CalculateM014(ctx context.Context, start, end time.Time
 		return nil, err
 	}
 
-	// 统计CRED-INGRESS-PLATFORM事件（只有这个才算入M-014）
+	// 统计CRED-INGRESS事件（使用分类字段过滤，符合设计文档）
 	var platformCount, totalIngressCount int
 	for _, e := range events {
-		// M-014只统计CRED-INGRESS-PLATFORM事件
-		if e.EventName == "CRED-INGRESS-PLATFORM" {
+		// M-014使用event_category + event_sub_category过滤（设计文档8.2节）
+		if model.IsM014EventByCategory(e) {
 			totalIngressCount++
 			// M-014分母：platform_token请求
 			if e.CredentialType == model.CredentialTypePlatformToken {
@@ -159,11 +159,12 @@ func (s *MetricsService) CalculateM015(ctx context.Context, start, end time.Time
 		return nil, err
 	}
 
-	// 统计CRED-DIRECT事件数
+	// 统计直连绕过事件（使用target_direct字段过滤，符合设计文档8.3节）
 	directCallCount := 0
 	blockedCount := 0
 	for _, e := range events {
-		if model.IsM015Event(e.EventName) {
+		// M-015使用target_direct字段过滤（设计文档8.3.3节）
+		if model.IsM015EventByTargetDirect(e) {
 			directCallCount++
 			// 检查是否被阻断
 			if s.isEventBlocked(e) {
@@ -210,13 +211,17 @@ func (s *MetricsService) CalculateM016(ctx context.Context, start, end time.Time
 		return nil, err
 	}
 
-	// 统计AUTH-QUERY-*事件
+	// 统计token.query_key.*事件
+	// M-016分母：所有query key请求事件（含rejected）
+	// M-016分子：被拒绝的query key请求
 	var totalQueryKey, rejectedCount int
 	rejectBreakdown := make(map[string]int)
 	for _, e := range events {
 		if model.IsM016Event(e.EventName) {
+			// 分母：所有 query key 请求（包含 rejected）
 			totalQueryKey++
-			if e.EventName == "AUTH-QUERY-REJECT" {
+			// 分子：只计算 token.query_key.rejected
+			if model.IsM016QueryKeyRejectEvent(e.EventName) {
 				rejectedCount++
 				rejectBreakdown[e.ResultCode]++
 			}

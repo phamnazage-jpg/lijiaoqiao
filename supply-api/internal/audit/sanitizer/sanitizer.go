@@ -203,9 +203,14 @@ func (s *Sanitizer) MaskMap(data map[string]interface{}) map[string]interface{} 
 
 	for key, value := range data {
 		if IsSensitiveField(key) {
-			if str, ok := value.(string); ok {
-				result[key] = s.Mask(str)
-			} else {
+			switch v := value.(type) {
+			case string:
+				result[key] = s.Mask(v)
+			case []string:
+				result[key] = s.MaskSlice(v)
+			case []interface{}:
+				result[key] = s.maskSliceInterface(v)
+			default:
 				result[key] = value
 			}
 		} else {
@@ -213,6 +218,15 @@ func (s *Sanitizer) MaskMap(data map[string]interface{}) map[string]interface{} 
 		}
 	}
 
+	return result
+}
+
+// maskSliceInterface 处理 []interface{} 类型的切片
+func (s *Sanitizer) maskSliceInterface(data []interface{}) []interface{} {
+	result := make([]interface{}, len(data))
+	for i, item := range data {
+		result[i] = s.maskValue(item)
+	}
 	return result
 }
 

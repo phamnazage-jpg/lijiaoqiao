@@ -49,8 +49,10 @@ type EventFilter struct {
 // AuditStoreInterface 审计存储接口
 type AuditStoreInterface interface {
 	Emit(ctx context.Context, event *model.AuditEvent) error
+	EmitBatch(ctx context.Context, events []*model.AuditEvent) error
 	Query(ctx context.Context, filter *EventFilter) ([]*model.AuditEvent, int64, error)
 	GetByIdempotencyKey(ctx context.Context, key string) (*model.AuditEvent, error)
+	GetByEventID(ctx context.Context, eventID string) (*model.AuditEvent, error)
 }
 
 // 内存存储容量常量
@@ -78,9 +80,9 @@ func (s *InMemoryAuditStore) Emit(ctx context.Context, event *model.AuditEvent) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// 检查容量，超过上限时清理旧事件
+	// 检查容量，超过上限时清理旧事件（直接调用带锁版本，因为Emit已持有锁）
 	if len(s.events) >= MaxEvents {
-		s.cleanupOldEvents(MaxEvents / 10)
+		s.cleanupOldEventsLocked(MaxEvents / 10)
 	}
 
 	// 生成事件ID
@@ -99,8 +101,36 @@ func (s *InMemoryAuditStore) Emit(ctx context.Context, event *model.AuditEvent) 
 	return nil
 }
 
-// cleanupOldEvents 清理旧事件，保留最近的 events
-func (s *InMemoryAuditStore) cleanupOldEvents(removeCount int) {
+// EmitBatch 批量发送事件
+func (s *InMemoryAuditStore) EmitBatch(ctx context.Context, events []*model.AuditEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, event := range events {
+		// 检查容量，超过上限时清理旧事件
+		if len(s.events) >= MaxEvents {
+			s.cleanupOldEventsLocked(MaxEvents / 10)
+		}
+
+		// 生成事件ID
+		if event.EventID == "" {
+			event.EventID = generateEventID()
+		}
+		event.CreatedAt = time.Now()
+
+		s.events = append(s.events, event)
+
+		// 如果有幂等键，记录映射
+		if event.IdempotencyKey != "" {
+			s.idempotencyKeys[event.IdempotencyKey] = event
+		}
+	}
+
+	return nil
+}
+
+// cleanupOldEventsLocked 清理旧事件（ caller 必须持锁）
+func (s *InMemoryAuditStore) cleanupOldEventsLocked(removeCount int) {
 	if removeCount <= 0 {
 		removeCount = MaxEvents / 10
 	}
@@ -111,6 +141,13 @@ func (s *InMemoryAuditStore) cleanupOldEvents(removeCount int) {
 	// 保留最近的事件，删除旧事件
 	remaining := len(s.events) - removeCount
 	s.events = s.events[remaining:]
+}
+
+// cleanupOldEvents 清理旧事件，保留最近的 events
+func (s *InMemoryAuditStore) cleanupOldEvents(removeCount int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupOldEventsLocked(removeCount)
 }
 
 // Query 查询事件
@@ -178,6 +215,19 @@ func (s *InMemoryAuditStore) GetByIdempotencyKey(ctx context.Context, key string
 
 	if event, ok := s.idempotencyKeys[key]; ok {
 		return event, nil
+	}
+	return nil, ErrEventNotFound
+}
+
+// GetByEventID 根据事件ID获取事件
+func (s *InMemoryAuditStore) GetByEventID(ctx context.Context, eventID string) (*model.AuditEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, event := range s.events {
+		if event.EventID == eventID {
+			return event, nil
+		}
 	}
 	return nil, ErrEventNotFound
 }
@@ -282,6 +332,54 @@ func (s *AuditService) CreateEvent(ctx context.Context, event *model.AuditEvent)
 	}, nil
 }
 
+// CreateEventsBatch 批量创建审计事件
+func (s *AuditService) CreateEventsBatch(ctx context.Context, events []*model.AuditEvent) (*CreateEventsBatchResult, error) {
+	if len(events) == 0 {
+		return &CreateEventsBatchResult{
+			SuccessCount: 0,
+			FailCount:    0,
+		}, nil
+	}
+
+	result := &CreateEventsBatchResult{
+		SuccessCount: 0,
+		FailCount:    0,
+		Errors:      make([]string, 0),
+	}
+
+	// 设置默认时间戳
+	now := time.Now()
+	for _, event := range events {
+		if event.Timestamp.IsZero() {
+			event.Timestamp = now
+		}
+		if event.TimestampMs == 0 {
+			event.TimestampMs = event.Timestamp.UnixMilli()
+		}
+		if event.EventID == "" {
+			event.EventID = generateEventID()
+		}
+	}
+
+	// 批量发送到存储
+	err := s.store.EmitBatch(ctx, events)
+	if err != nil {
+		result.Errors = append(result.Errors, err.Error())
+		result.FailCount = len(events)
+		return result, err
+	}
+
+	result.SuccessCount = len(events)
+	return result, nil
+}
+
+// CreateEventsBatchResult 批量创建结果
+type CreateEventsBatchResult struct {
+	SuccessCount int      `json:"success_count"`
+	FailCount    int      `json:"fail_count"`
+	Errors       []string `json:"errors,omitempty"`
+}
+
 // ListEvents 列出事件（带分页）
 func (s *AuditService) ListEvents(ctx context.Context, tenantID int64, offset, limit int) ([]*model.AuditEvent, int64, error) {
 	filter := &EventFilter{
@@ -295,6 +393,14 @@ func (s *AuditService) ListEvents(ctx context.Context, tenantID int64, offset, l
 // ListEventsWithFilter 列出事件（带过滤器）
 func (s *AuditService) ListEventsWithFilter(ctx context.Context, filter *EventFilter) ([]*model.AuditEvent, int64, error) {
 	return s.store.Query(ctx, filter)
+}
+
+// GetEventByID 根据事件ID获取单个事件
+func (s *AuditService) GetEventByID(ctx context.Context, eventID string) (*model.AuditEvent, error) {
+	if eventID == "" {
+		return nil, ErrInvalidInput
+	}
+	return s.store.GetByEventID(ctx, eventID)
 }
 
 // HashIdempotencyKey 计算幂等键的哈希值

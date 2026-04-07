@@ -149,7 +149,7 @@ func TestAuditEvent_NewEvent_WithSecurityFlags(t *testing.T) {
 func TestAuditEvent_NewAuditEventWithIdempotencyKey(t *testing.T) {
 	// 测试带幂等键的事件
 	event := NewAuditEvent(
-		"AUTH-QUERY-KEY",
+		"token.query_key.rejected",
 		"AUTH",
 		"QUERY",
 		"query_key_external_reject_rate_pct",
@@ -279,8 +279,8 @@ func TestAuditEvent_MetricName(t *testing.T) {
 		{"CRED-EXPOSE-LOG", "supplier_credential_exposure_events"},
 		{"CRED-INGRESS-PLATFORM", "platform_credential_ingress_coverage_pct"},
 		{"CRED-DIRECT-SUPPLIER", "direct_supplier_call_by_consumer_events"},
-		{"AUTH-QUERY-KEY", "query_key_external_reject_rate_pct"},
-		{"AUTH-QUERY-REJECT", "query_key_external_reject_rate_pct"},
+		{"token.query_key.rejected", "query_key_external_reject_rate_pct"},
+		{"token.query_key.rejected", "query_key_external_reject_rate_pct"},
 	}
 
 	for _, tc := range testCases {
@@ -299,7 +299,7 @@ func TestAuditEvent_IsM013Event(t *testing.T) {
 	assert.True(t, IsM013Event("CRED-EXPOSE-LOG"), "CRED-EXPOSE-LOG is M-013 event")
 	assert.True(t, IsM013Event("CRED-EXPOSE"), "CRED-EXPOSE is M-013 event")
 	assert.False(t, IsM013Event("CRED-INGRESS-PLATFORM"), "CRED-INGRESS-PLATFORM is not M-013 event")
-	assert.False(t, IsM013Event("AUTH-QUERY-KEY"), "AUTH-QUERY-KEY is not M-013 event")
+	assert.False(t, IsM013Event("token.query_key.rejected"), "token.query_key.rejected is not M-013 event")
 }
 
 func TestAuditEvent_IsM014Event(t *testing.T) {
@@ -318,9 +318,9 @@ func TestAuditEvent_IsM015Event(t *testing.T) {
 
 func TestAuditEvent_IsM016Event(t *testing.T) {
 	// M-016: query key拒绝事件
-	assert.True(t, IsM016Event("AUTH-QUERY-KEY"), "AUTH-QUERY-KEY is M-016 event")
-	assert.True(t, IsM016Event("AUTH-QUERY-REJECT"), "AUTH-QUERY-REJECT is M-016 event")
-	assert.True(t, IsM016Event("AUTH-QUERY"), "AUTH-QUERY is M-016 event")
+	assert.True(t, IsM016Event("token.query_key.rejected"), "token.query_key.rejected is M-016 event")
+	assert.True(t, IsM016Event("token.query_key.rejected"), "token.query_key.rejected is M-016 event")
+	assert.True(t, IsM016Event("token.query_key"), "token.query_key is M-016 event")
 	assert.False(t, IsM016Event("CRED-EXPOSE-RESPONSE"), "CRED-EXPOSE-RESPONSE is not M-016 event")
 }
 

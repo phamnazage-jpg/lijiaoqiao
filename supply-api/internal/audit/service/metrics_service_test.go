@@ -33,7 +33,7 @@ func TestAuditMetrics_M013_CredentialExposure(t *testing.T) {
 			ResultCode:     "SEC_CRED_EXPOSED",
 		},
 		{
-			EventName:       "AUTH-TOKEN-OK",
+			EventName:       "token.authn.success",
 			EventCategory:   "AUTH",
 			OperatorID:      1001,
 			TenantID:        2001,
@@ -104,7 +104,7 @@ func TestAuditMetrics_M014_IngressCoverage(t *testing.T) {
 			Success:          true,
 			ResultCode:       "CRED_INGRESS_OK",
 		},
-		// 非合规的query_key请求 - 不应该计入M-014的分母
+		// 非合规的query_key请求 - 计入M-014的分母（所有CRED+INGRESS都算分母）
 		{
 			EventName:         "CRED-INGRESS-SUPPLIER",
 			EventCategory:     "CRED",
@@ -134,9 +134,10 @@ func TestAuditMetrics_M014_IngressCoverage(t *testing.T) {
 	assert.NotNil(t, metric)
 	assert.Equal(t, "M-014", metric.MetricID)
 	assert.Equal(t, "platform_credential_ingress_coverage_pct", metric.MetricName)
-	// 2个platform_token / 2个总入站请求 = 100%
-	assert.Equal(t, 100.0, metric.Value)
-	assert.Equal(t, "PASS", metric.Status)
+	// M-014 = platform_token_count / total_ingress_count
+	// = 2 (platform_token) / 3 (total CRED+INGRESS) = 66.67%
+	assert.InDelta(t, 66.67, metric.Value, 0.01)
+	assert.Equal(t, "FAIL", metric.Status) // 66.67% < 100%，应该是FAIL
 }
 
 func TestAuditMetrics_M015_DirectCall(t *testing.T) {
@@ -164,7 +165,7 @@ func TestAuditMetrics_M015_DirectCall(t *testing.T) {
 			TargetDirect:    true,
 		},
 		{
-			EventName:       "AUTH-TOKEN-OK",
+			EventName:       "token.authn.success",
 			EventCategory:   "AUTH",
 			OperatorID:      1001,
 			TenantID:        2001,
@@ -206,7 +207,7 @@ func TestAuditMetrics_M016_QueryKeyRejectRate(t *testing.T) {
 	events := []*model.AuditEvent{
 		// 被拒绝的query key请求
 		{
-			EventName:       "AUTH-QUERY-REJECT",
+			EventName:       "token.query_key.rejected",
 			EventCategory:   "AUTH",
 			OperatorID:      1001,
 			TenantID:        2001,
@@ -220,7 +221,7 @@ func TestAuditMetrics_M016_QueryKeyRejectRate(t *testing.T) {
 			ResultCode:       "QUERY_KEY_NOT_ALLOWED",
 		},
 		{
-			EventName:       "AUTH-QUERY-REJECT",
+			EventName:       "token.query_key.rejected",
 			EventCategory:   "AUTH",
 			OperatorID:      1002,
 			TenantID:        2001,
@@ -233,9 +234,9 @@ func TestAuditMetrics_M016_QueryKeyRejectRate(t *testing.T) {
 			Success:         false,
 			ResultCode:       "QUERY_KEY_EXPIRED",
 		},
-		// query key请求
+		// 有效的query key请求
 		{
-			EventName:       "AUTH-QUERY-KEY",
+			EventName:       "token.query_key",
 			EventCategory:   "AUTH",
 			OperatorID:      1003,
 			TenantID:        2001,
@@ -245,12 +246,12 @@ func TestAuditMetrics_M016_QueryKeyRejectRate(t *testing.T) {
 			CredentialType: "query_key",
 			SourceType:      "api",
 			SourceIP:        "192.168.1.3",
-			Success:         false,
-			ResultCode:       "QUERY_KEY_EXPIRED",
+			Success:         true,
+			ResultCode:       "OK",
 		},
 		// 非query key事件
 		{
-			EventName:       "AUTH-TOKEN-OK",
+			EventName:       "token.authn.success",
 			EventCategory:   "AUTH",
 			OperatorID:      1001,
 			TenantID:        2001,
@@ -317,7 +318,7 @@ func TestAuditMetrics_M016_DifferentFromM014(t *testing.T) {
 	// 创建20个query key请求（全部被拒绝）
 	for i := 0; i < 20; i++ {
 		svc.CreateEvent(ctx, &model.AuditEvent{
-			EventName:       "AUTH-QUERY-REJECT",
+			EventName:       "token.query_key.rejected",
 			EventCategory:   "AUTH",
 			OperatorID:      int64(2000 + i),
 			TenantID:        2001,
@@ -353,7 +354,7 @@ func TestAuditMetrics_M013_ZeroExposure(t *testing.T) {
 
 	// 创建一些正常事件，没有CRED-EXPOSE
 	svc.CreateEvent(ctx, &model.AuditEvent{
-		EventName:       "AUTH-TOKEN-OK",
+		EventName:       "token.authn.success",
 		EventCategory:   "AUTH",
 		OperatorID:      1001,
 		TenantID:        2001,
@@ -373,4 +374,123 @@ func TestAuditMetrics_M013_ZeroExposure(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, float64(0), metric.Value)
 	assert.Equal(t, "PASS", metric.Status)
+}
+
+// TestMetricsService_GetAllMetrics tests the GetAllMetrics function
+func TestMetricsService_GetAllMetrics(t *testing.T) {
+	ctx := context.Background()
+	svc := NewAuditService(NewInMemoryAuditStore())
+	metricsSvc := NewMetricsService(svc)
+
+	// Create some events
+	svc.CreateEvent(ctx, &model.AuditEvent{
+		EventName:       "CRED-EXPOSE-RESPONSE",
+		EventCategory:   "CRED",
+		OperatorID:      1001,
+		TenantID:        2001,
+		ObjectType:      "account",
+		ObjectID:        12345,
+		Action:          "create",
+		CredentialType: "platform_token",
+		SourceType:      "api",
+		SourceIP:        "192.168.1.1",
+		Success:         true,
+		ResultCode:     "SEC_CRED_EXPOSED",
+	})
+
+	now := time.Now()
+	metrics, err := metricsSvc.GetAllMetrics(ctx, now.Add(-24*time.Hour), now)
+
+	assert.NoError(t, err)
+	assert.Len(t, metrics, 4) // M-013, M-014, M-015, M-016
+}
+
+// TestMetricsService_isEventBlocked_Success tests isEventBlocked with successful event
+func TestMetricsService_isEventBlocked_Success(t *testing.T) {
+	svc := NewAuditService(NewInMemoryAuditStore())
+	metricsSvc := NewMetricsService(svc)
+
+	event := &model.AuditEvent{
+		Success: true,
+	}
+
+	result := metricsSvc.isEventBlocked(event)
+	assert.False(t, result)
+}
+
+// TestMetricsService_isEventBlocked_BlockedExtension tests isEventBlocked with blocked extension
+func TestMetricsService_isEventBlocked_BlockedExtension(t *testing.T) {
+	svc := NewAuditService(NewInMemoryAuditStore())
+	metricsSvc := NewMetricsService(svc)
+
+	event := &model.AuditEvent{
+		Success:    false,
+		Extensions: map[string]any{"blocked": true},
+	}
+
+	result := metricsSvc.isEventBlocked(event)
+	assert.True(t, result)
+}
+
+// TestMetricsService_isEventBlocked_NotBlockedExtension tests isEventBlocked with not blocked extension
+func TestMetricsService_isEventBlocked_NotBlockedExtension(t *testing.T) {
+	svc := NewAuditService(NewInMemoryAuditStore())
+	metricsSvc := NewMetricsService(svc)
+
+	event := &model.AuditEvent{
+		Success:    false,
+		Extensions: map[string]any{"blocked": false},
+	}
+
+	result := metricsSvc.isEventBlocked(event)
+	assert.False(t, result)
+}
+
+// TestMetricsService_isEventBlocked_DirectBypassCode tests isEventBlocked with SEC_DIRECT_BYPASS code
+func TestMetricsService_isEventBlocked_DirectBypassCode(t *testing.T) {
+	svc := NewAuditService(NewInMemoryAuditStore())
+	metricsSvc := NewMetricsService(svc)
+
+	event := &model.AuditEvent{
+		Success:    false,
+		ResultCode: "SEC_DIRECT_BYPASS",
+	}
+
+	result := metricsSvc.isEventBlocked(event)
+	assert.True(t, result)
+}
+
+// TestMetricsService_isEventBlocked_DirectBypassBlockedCode tests isEventBlocked with SEC_DIRECT_BYPASS_BLOCKED code
+func TestMetricsService_isEventBlocked_DirectBypassBlockedCode(t *testing.T) {
+	svc := NewAuditService(NewInMemoryAuditStore())
+	metricsSvc := NewMetricsService(svc)
+
+	event := &model.AuditEvent{
+		Success:    false,
+		ResultCode: "SEC_DIRECT_BYPASS_BLOCKED",
+	}
+
+	result := metricsSvc.isEventBlocked(event)
+	assert.True(t, result)
+}
+
+// TestMetricsService_isEventBlocked_OtherCode tests isEventBlocked with other result code
+func TestMetricsService_isEventBlocked_OtherCode(t *testing.T) {
+	svc := NewAuditService(NewInMemoryAuditStore())
+	metricsSvc := NewMetricsService(svc)
+
+	event := &model.AuditEvent{
+		Success:    false,
+		ResultCode: "OTHER_ERROR",
+	}
+
+	result := metricsSvc.isEventBlocked(event)
+	assert.False(t, result)
+}
+
+// TestBatchBufferError tests the BatchBufferError type
+func TestBatchBufferError(t *testing.T) {
+	err := &BatchBufferError{msg: "test error message"}
+
+	assert.Equal(t, "test error message", err.Error())
 }

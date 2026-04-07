@@ -318,14 +318,212 @@ func TestP2_03_NewCredentialScanner_InvalidRegex(t *testing.T) {
 // 这个测试演示了问题：使用无效正则会导致panic
 func TestP2_03_MustCompile_PanicsOnInvalidRegex(t *testing.T) {
 	invalidRegex := "[invalid" // 无效的正则，缺少结束括号
-	
+
 	defer func() {
 		if r := recover(); r != nil {
 			t.Logf("P2-03 CONFIRMED: MustCompile panics on invalid regex: %v", r)
 		}
 	}()
-	
+
 	// 这行会panic
 	_ = regexp.MustCompile(invalidRegex)
 	t.Error("Should have panicked")
+}
+
+// TestMaskString_LongString tests maskString with string length > 8
+func TestMaskString_LongString(t *testing.T) {
+	input := "supersecretkey12345"
+	result := maskString(input)
+	expected := "supe****2345"
+	if result != expected {
+		t.Errorf("expected '%s', got '%s'", expected, result)
+	}
+}
+
+// TestMaskString_ShortString tests maskString with string length <= 8
+func TestMaskString_ShortString(t *testing.T) {
+	input := "shortpw"
+	result := maskString(input)
+	expected := "****"
+	if result != expected {
+		t.Errorf("expected '%s', got '%s'", expected, result)
+	}
+}
+
+// TestMaskString_Exactly8Chars tests maskString with exactly 8 characters
+func TestMaskString_Exactly8Chars(t *testing.T) {
+	input := "12345678"
+	result := maskString(input)
+	// len <= 8, so should return ****
+	expected := "****"
+	if result != expected {
+		t.Errorf("expected '%s', got '%s'", expected, result)
+	}
+}
+
+// TestMaskString_EmptyString tests maskString with empty string
+func TestMaskString_EmptyString(t *testing.T) {
+	input := ""
+	result := maskString(input)
+	expected := "****"
+	if result != expected {
+		t.Errorf("expected '%s', got '%s'", expected, result)
+	}
+}
+
+// TestSanitizer_MaskMap_NestedMap tests MaskMap with nested map values
+func TestSanitizer_MaskMap_NestedMap(t *testing.T) {
+	sanitizer := NewSanitizer()
+
+	input := map[string]interface{}{
+		"user": map[string]interface{}{
+			"name":     "john",
+			"password": "secret123",
+		},
+		"normal": "value",
+	}
+
+	masked := sanitizer.MaskMap(input)
+
+	// Check that nested password is masked
+	nestedMap, ok := masked["user"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected nested map")
+	}
+	if nestedMap["password"] == "secret123" {
+		t.Error("nested password should be masked")
+	}
+	if nestedMap["name"] != "john" {
+		t.Error("non-sensitive nested field should not be masked")
+	}
+}
+
+// TestSanitizer_MaskMap_SliceValue tests MaskMap with slice values (non-sensitive key)
+func TestSanitizer_MaskMap_SliceValue(t *testing.T) {
+	sanitizer := NewSanitizer()
+
+	input := map[string]interface{}{
+		"users": []interface{}{
+			map[string]interface{}{"name": "john"},
+			map[string]interface{}{"name": "jane"},
+		},
+	}
+
+	masked := sanitizer.MaskMap(input)
+
+	users, ok := masked["users"].([]interface{})
+	if !ok {
+		t.Fatal("expected users slice")
+	}
+	if len(users) != 2 {
+		t.Errorf("expected 2 users, got %d", len(users))
+	}
+}
+
+// TestSanitizer_MaskMap_StringSliceValue tests MaskMap with []string slice values
+func TestSanitizer_MaskMap_StringSliceValue(t *testing.T) {
+	sanitizer := NewSanitizer()
+
+	input := map[string]interface{}{
+		"api_keys": []string{
+			"sk-1234567890abcdefghijklmnopqrstuvwxyz",
+			"sk-abcdefghijklmnopqrstuvwxyz1234567890",
+		},
+	}
+
+	masked := sanitizer.MaskMap(input)
+
+	apiKeys, ok := masked["api_keys"].([]string)
+	if !ok {
+		t.Fatal("expected api_keys slice")
+	}
+	if len(apiKeys) != 2 {
+		t.Errorf("expected 2 api keys, got %d", len(apiKeys))
+	}
+	// The keys should be masked
+	for i, key := range apiKeys {
+		if key == input["api_keys"].([]string)[i] {
+			t.Errorf("api key %d should be masked", i)
+		}
+	}
+}
+
+// TestSanitizer_MaskMap_IntValue tests MaskMap with integer values (non-sensitive)
+func TestSanitizer_MaskMap_IntValue(t *testing.T) {
+	sanitizer := NewSanitizer()
+
+	input := map[string]interface{}{
+		"count": 42,
+		"user":  "john",
+	}
+
+	masked := sanitizer.MaskMap(input)
+
+	if masked["count"] != 42 {
+		t.Error("integer value should be preserved")
+	}
+	if masked["user"] != "john" {
+		t.Error("non-sensitive string value should be preserved")
+	}
+}
+
+// TestSanitizer_MaskMap_FloatValue tests MaskMap with float values (non-sensitive)
+func TestSanitizer_MaskMap_FloatValue(t *testing.T) {
+	sanitizer := NewSanitizer()
+
+	input := map[string]interface{}{
+		"ratio": 3.14159,
+	}
+
+	masked := sanitizer.MaskMap(input)
+
+	if masked["ratio"] != 3.14159 {
+		t.Error("float value should be preserved")
+	}
+}
+
+// TestSanitizer_MaskMap_BoolValue tests MaskMap with boolean values (non-sensitive)
+func TestSanitizer_MaskMap_BoolValue(t *testing.T) {
+	sanitizer := NewSanitizer()
+
+	input := map[string]interface{}{
+		"active": true,
+	}
+
+	masked := sanitizer.MaskMap(input)
+
+	if masked["active"] != true {
+		t.Error("boolean value should be preserved")
+	}
+}
+
+// TestSanitizer_MaskMap_ApiKeySensitive tests that api_key field is masked
+func TestSanitizer_MaskMap_ApiKeySensitive(t *testing.T) {
+	sanitizer := NewSanitizer()
+
+	input := map[string]interface{}{
+		"api_key":   "sk-1234567890abcdefghijklmnopqrstuvwxyz",
+		"user":      "john",
+		"apikey":    "key-abcdefghijklmnop",
+		"secretKey": "supersecretkey1234567890", // 26 chars, meets 16+ char requirement
+	}
+
+	masked := sanitizer.MaskMap(input)
+
+	// api_key should be masked
+	if masked["api_key"] == "sk-1234567890abcdefghijklmnopqrstuvwxyz" {
+		t.Error("api_key should be masked")
+	}
+	// apikey should be masked (16 chars, meets generic API key pattern)
+	if masked["apikey"] == "key-abcdefghijklmnop" {
+		t.Error("apikey should be masked")
+	}
+	// secretKey should be masked (26 chars, meets generic pattern 4+8+4=16)
+	if masked["secretKey"] == "supersecretkey1234567890" {
+		t.Error("secretKey should be masked")
+	}
+	// user should not be masked
+	if masked["user"] != "john" {
+		t.Error("user should not be masked")
+	}
 }

@@ -14,6 +14,11 @@ import (
 	"lijiaoqiao/supply-api/internal/audit/model"
 )
 
+// 错误定义
+var (
+	ErrEventNotFound = errors.New("event not found")
+)
+
 // EventFilter 事件查询过滤器（仓储层定义，避免循环依赖）
 type EventFilter struct {
 	TenantID   int64
@@ -30,10 +35,14 @@ type EventFilter struct {
 type AuditRepository interface {
 	// Emit 发送审计事件
 	Emit(ctx context.Context, event *model.AuditEvent) error
+	// EmitBatch 批量发送审计事件
+	EmitBatch(ctx context.Context, events []*model.AuditEvent) error
 	// Query 查询审计事件
 	Query(ctx context.Context, filter *EventFilter) ([]*model.AuditEvent, int64, error)
 	// GetByIdempotencyKey 根据幂等键获取事件
 	GetByIdempotencyKey(ctx context.Context, key string) (*model.AuditEvent, error)
+	// GetByEventID 根据事件ID获取事件
+	GetByEventID(ctx context.Context, eventID string) (*model.AuditEvent, error)
 }
 
 // PostgresAuditRepository PostgreSQL实现的审计仓储
@@ -107,7 +116,7 @@ func (r *PostgresAuditRepository) Emit(ctx context.Context, event *model.AuditEv
 			source_type, source_ip, source_region, user_agent,
 			target_type, target_endpoint, target_direct,
 			result_code, result_message, success,
-			before_data, after_data,
+			before_state, after_state,
 			security_flags, risk_score,
 			compliance_tags, invariant_rule,
 			extensions,
@@ -146,6 +155,24 @@ func (r *PostgresAuditRepository) Emit(ctx context.Context, event *model.AuditEv
 			return ErrDuplicateIdempotencyKey
 		}
 		return fmt.Errorf("failed to emit audit event: %w", err)
+	}
+
+	return nil
+}
+
+// EmitBatch 批量发送审计事件
+func (r *PostgresAuditRepository) EmitBatch(ctx context.Context, events []*model.AuditEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	// 构建批量插入SQL
+	// 批量插入使用 COPY 协议或多次 INSERT
+	// 这里使用简化方案：循环调用单条 INSERT（复用已有幂等检查）
+	for _, event := range events {
+		if err := r.Emit(ctx, event); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -235,7 +262,7 @@ func (r *PostgresAuditRepository) Query(ctx context.Context, filter *EventFilter
 			source_type, source_ip, source_region, user_agent,
 			target_type, target_endpoint, target_direct,
 			result_code, result_message, success,
-			before_data, after_data,
+			before_state, after_state,
 			security_flags, risk_score,
 			compliance_tags, invariant_rule,
 			extensions,
@@ -282,7 +309,7 @@ func (r *PostgresAuditRepository) GetByIdempotencyKey(ctx context.Context, key s
 			source_type, source_ip, source_region, user_agent,
 			target_type, target_endpoint, target_direct,
 			result_code, result_message, success,
-			before_data, after_data,
+			before_state, after_state,
 			security_flags, risk_score,
 			compliance_tags, invariant_rule,
 			extensions,
@@ -298,6 +325,43 @@ func (r *PostgresAuditRepository) GetByIdempotencyKey(ctx context.Context, key s
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to get event by idempotency key: %w", err)
+	}
+
+	return event, nil
+}
+
+// GetByEventID 根据事件ID获取事件
+func (r *PostgresAuditRepository) GetByEventID(ctx context.Context, eventID string) (*model.AuditEvent, error) {
+	query := `
+		SELECT
+			event_id, event_name, event_category, event_sub_category,
+			timestamp, timestamp_ms,
+			request_id, trace_id, span_id,
+			idempotency_key,
+			operator_id, operator_type, operator_role,
+			tenant_id, tenant_type,
+			object_type, object_id,
+			action, action_detail,
+			credential_type, credential_id, credential_fingerprint,
+			source_type, source_ip, source_region, user_agent,
+			target_type, target_endpoint, target_direct,
+			result_code, result_message, success,
+			before_state, after_state,
+			security_flags, risk_score,
+			compliance_tags, invariant_rule,
+			extensions,
+			version, created_at
+		FROM audit_events
+		WHERE event_id = $1
+	`
+
+	row := r.pool.QueryRow(ctx, query, eventID)
+	event, err := r.scanAuditEventRow(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrEventNotFound
+		}
+		return nil, fmt.Errorf("failed to get event by event_id: %w", err)
 	}
 
 	return event, nil

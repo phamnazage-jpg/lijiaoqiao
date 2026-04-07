@@ -358,7 +358,7 @@ func TestCalculateM013(t *testing.T) {
 		{"CRED-EXPOSE-RESPONSE", true},
 		{"CRED-EXPOSE-RESPONSE", true},
 		{"CRED-EXPOSE-LOG", false},
-		{"AUTH-TOKEN-OK", true},
+		{"token.authn.success", true},
 	}
 
 	var unresolvedCount int
@@ -425,23 +425,24 @@ func TestCalculateM015(t *testing.T) {
 }
 
 func TestCalculateM016(t *testing.T) {
-	// M-016: query key 拒绝率 = 100%
-	// 分母：所有query key请求（不含被拒绝的无效请求）
+	// M-016: query key 拒绝率 = 50%
+	// 分母：所有query key请求（含rejected）
+	// 分子：被拒绝的query key请求
 	events := []struct {
 		eventName string
 	}{
-		{"AUTH-QUERY-KEY"},
-		{"AUTH-QUERY-REJECT"},
-		{"AUTH-QUERY-KEY"},
-		{"AUTH-QUERY-REJECT"},
-		{"AUTH-TOKEN-OK"},
+		{"token.query_key.rejected"}, // 拒绝
+		{"token.query_key.rejected"}, // 拒绝
+		{"token.query_key"},          // 有效
+		{"token.query_key"},          // 有效
+		{"token.authn.success"},      // 非query key
 	}
 
 	var totalQueryKey, rejectedCount int
 	for _, e := range events {
 		if IsM016Event(e.eventName) {
 			totalQueryKey++
-			if e.eventName == "AUTH-QUERY-REJECT" {
+			if IsM016QueryKeyRejectEvent(e.eventName) {
 				rejectedCount++
 			}
 		}

@@ -329,7 +329,7 @@ func (e *AuditEvent) GetMetricName() string {
 		return "platform_credential_ingress_coverage_pct"
 	case "CRED-DIRECT-SUPPLIER", "CRED-DIRECT":
 		return "direct_supplier_call_by_consumer_events"
-	case "AUTH-QUERY-KEY", "AUTH-QUERY-REJECT", "AUTH-QUERY":
+	case "token.query_key.rejected", "token.query_key":
 		return "query_key_external_reject_rate_pct"
 	default:
 		return ""
@@ -346,12 +346,36 @@ func IsM014Event(eventName string) bool {
 	return strings.HasPrefix(eventName, "CRED-INGRESS")
 }
 
+// IsM014EventByCategory 判断是否为M-014凭证入站事件（基于分类字段）
+// 设计文档要求：event_category='CRED' AND event_sub_category='INGRESS'
+func IsM014EventByCategory(e *AuditEvent) bool {
+	return e.EventCategory == CategoryCRED && e.EventSubCategory == SubCategoryCredIngress
+}
+
 // IsM015Event 判断是否为M-015直连绕过事件
 func IsM015Event(eventName string) bool {
 	return strings.HasPrefix(eventName, "CRED-DIRECT")
 }
 
-// IsM016Event 判断是否为M-016 query key拒绝事件
+// IsM015EventByTargetDirect 判断是否为M-015直连绕过事件（基于target_direct字段）
+// 设计文档要求：target_direct = TRUE
+func IsM015EventByTargetDirect(e *AuditEvent) bool {
+	return e.TargetDirect
+}
+
+// IsM016Event 判断是否为M-016 query key相关事件
+// 统一事件格式: token.query_key (请求), token.query_key.rejected (拒绝)
 func IsM016Event(eventName string) bool {
-	return strings.HasPrefix(eventName, "AUTH-QUERY")
+	return strings.HasPrefix(eventName, "token.query_key")
+}
+
+// IsM016QueryKeyEvent 判断是否为M-016 query key请求事件（仅KEY，不含REJECT）
+// M-016分母定义：所有 query key 请求（不含 rejected）
+func IsM016QueryKeyEvent(eventName string) bool {
+	return eventName == "token.query_key"
+}
+
+// IsM016QueryKeyRejectEvent 判断是否为M-016 query key拒绝事件
+func IsM016QueryKeyRejectEvent(eventName string) bool {
+	return eventName == "token.query_key.rejected"
 }

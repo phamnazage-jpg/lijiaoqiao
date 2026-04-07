@@ -81,7 +81,7 @@ func TestCREDEvents_IsValidEvent(t *testing.T) {
 	assert.True(t, IsValidCREDEvent("CRED-INGRESS-PLATFORM"))
 	assert.True(t, IsValidCREDEvent("CRED-DIRECT-SUPPLIER"))
 	assert.False(t, IsValidCREDEvent("INVALID-EVENT"))
-	assert.False(t, IsValidCREDEvent("AUTH-TOKEN-OK"))
+	assert.False(t, IsValidCREDEvent("token.authn.success"))
 }
 
 func TestCREDEvents_IsM013Event(t *testing.T) {
