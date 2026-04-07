@@ -143,6 +143,17 @@ func main() {
 	if tokenStatusRepo != nil {
 		tokenBackend = middleware.NewDBTokenStatusBackend(tokenStatusRepo, redisCache, cfg.Token.RevocationCacheTTL)
 		log.Println("Token状态后端: 使用PostgreSQL (DB-backed)")
+
+		// 启动主动吊销订阅机制（仅在Redis可用时）
+		if redisCache != nil {
+			if dbTokenBackend, ok := tokenBackend.(*middleware.DBTokenStatusBackend); ok {
+				if err := dbTokenBackend.StartRevocationSubscriber(ctx); err != nil {
+					log.Printf("警告: 启动主动吊销订阅失败: %v", err)
+				} else {
+					log.Println("主动吊销机制: 已启动 (Redis Pub/Sub)")
+				}
+			}
+		}
 	} else {
 		tokenBackend = newMemoryTokenBackend()
 		log.Println("警告: Token状态后端使用内存实现 (生产环境不应使用)")
@@ -270,6 +281,36 @@ func main() {
 		outboxProcessor = NewOutboxProcessorRunner(outboxRepo, msgBroker, stats)
 		go outboxProcessor.Start(ctx)
 		log.Println("OutboxProcessor已启动")
+
+		// 分区维护：确保未来分区已创建
+		partitionManager := repository.NewPartitionManager(db.Pool)
+		if err := partitionManager.EnsureFuturePartitions(ctx); err != nil {
+			log.Printf("警告: 预创建未来分区失败: %v", err)
+		} else {
+			log.Println("分区管理: 未来分区已确保存在")
+		}
+
+		// 启动后台分区维护goroutine（每小时检查一次）
+		go func() {
+			ticker := time.NewTicker(1 * time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := partitionManager.EnsureFuturePartitions(context.Background()); err != nil {
+						log.Printf("分区维护: 预创建未来分区失败: %v", err)
+					}
+					// 清理过期分区（仅在需要时）
+					for _, tableName := range []string{"audit_events", "supply_usage_records", "supply_idempotency_records"} {
+						if _, err := partitionManager.DropOldPartitions(context.Background(), tableName); err != nil {
+							log.Printf("分区维护: 清理过期分区失败 (%s): %v", tableName, err)
+						}
+					}
+				}
+			}
+		}()
 	}
 
 	// 优雅关闭
