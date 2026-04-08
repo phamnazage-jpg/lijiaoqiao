@@ -132,10 +132,12 @@ type PlatformStat struct {
 }
 
 // 结算仓储接口
+// P1-005: 乐观锁支持 - Update需要expectedVersion参数防止并发更新
 type SettlementStore interface {
 	Create(ctx context.Context, s *Settlement) error
 	GetByID(ctx context.Context, supplierID, id int64) (*Settlement, error)
-	Update(ctx context.Context, s *Settlement) error
+	// Update 使用乐观锁，expectedVersion是更新前的版本号，如果版本不匹配返回ErrConcurrencyConflict
+	Update(ctx context.Context, s *Settlement, expectedVersion int) error
 	List(ctx context.Context, supplierID int64) ([]*Settlement, error)
 	GetWithdrawableBalance(ctx context.Context, supplierID int64) (float64, error)
 }
@@ -227,11 +229,14 @@ func (s *settlementService) Cancel(ctx context.Context, supplierID, settlementID
 		return nil, errors.New("SUP_SET_4092: cannot cancel processing or completed settlements")
 	}
 
+	// 保存更新前的版本号用于乐观锁
+	expectedVersion := settlement.Version
+
 	settlement.Status = SettlementStatusFailed
 	settlement.UpdatedAt = time.Now()
-	settlement.Version++
+	// 注意：Version++由Repository的Update方法自动处理
 
-	if err := s.store.Update(ctx, settlement); err != nil {
+	if err := s.store.Update(ctx, settlement, expectedVersion); err != nil {
 		return nil, err
 	}
 
@@ -243,7 +248,8 @@ func (s *settlementService) Cancel(ctx context.Context, supplierID, settlementID
 		ResultCode: "OK",
 	})
 
-	return settlement, nil
+	// 重新获取更新后的settlement
+	return s.store.GetByID(ctx, supplierID, settlementID)
 }
 
 func (s *settlementService) GetByID(ctx context.Context, supplierID, settlementID int64) (*Settlement, error) {

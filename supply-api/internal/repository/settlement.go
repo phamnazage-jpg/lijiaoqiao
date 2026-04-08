@@ -120,7 +120,9 @@ func (r *SettlementRepository) Update(ctx context.Context, s *domain.Settlement,
 	return nil
 }
 
-// GetForUpdate 获取结算单并加行锁
+// GetForUpdate 获取结算单并加行锁（悲观锁）
+// 注意：在高并发场景下，建议使用 GetForUpdateNoWait 或 乐观锁
+// P1-005: 已添加 NOWAIT 变体和乐观锁支持
 func (r *SettlementRepository) GetForUpdate(ctx context.Context, tx pgxpool.Tx, supplierID, id int64) (*domain.Settlement, error) {
 	query := `
 		SELECT id, settlement_no, user_id, total_amount, fee_amount, net_amount,
@@ -143,6 +145,36 @@ func (r *SettlementRepository) GetForUpdate(ctx context.Context, tx pgxpool.Tx, 
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get settlement for update: %w", err)
+	}
+
+	return s, nil
+}
+
+// GetForUpdateNoWait 获取结算单并加行锁（不等待锁）
+// P1-005: NOWAIT变体 - 如果无法获取锁立即返回错误，适用于高并发场景
+func (r *SettlementRepository) GetForUpdateNoWait(ctx context.Context, tx pgxpool.Tx, supplierID, id int64) (*domain.Settlement, error) {
+	query := `
+		SELECT id, settlement_no, user_id, total_amount, fee_amount, net_amount,
+			status, payment_method, payment_account, version,
+			created_at, updated_at
+		FROM supply_settlements
+		WHERE id = $1 AND user_id = $2
+		FOR UPDATE NOWAIT
+	`
+
+	s := &domain.Settlement{}
+	err := tx.QueryRow(ctx, query, id, supplierID).Scan(
+		&s.ID, &s.SettlementNo, &s.SupplierID, &s.TotalAmount, &s.FeeAmount, &s.NetAmount,
+		&s.Status, &s.PaymentMethod, &s.PaymentAccount, &s.Version,
+		&s.CreatedAt, &s.UpdatedAt,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		// NOWAIT会导致锁不可用时立即返回错误，而不是等待
+		return nil, fmt.Errorf("failed to get settlement for update (nowait): %w", err)
 	}
 
 	return s, nil

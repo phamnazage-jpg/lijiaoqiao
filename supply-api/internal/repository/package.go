@@ -50,7 +50,7 @@ func (r *PackageRepository) Create(ctx context.Context, pkg *domain.Package, req
 	}
 
 	err := r.pool.QueryRow(ctx, query,
-		pkg.SupplierID, pkg.SupplierID, pkg.Platform, pkg.Model,
+		pkg.SupplierID, pkg.AccountID, pkg.Platform, pkg.Model,
 		pkg.TotalQuota, pkg.AvailableQuota, pkg.SoldQuota, pkg.ReservedQuota,
 		pkg.PricePer1MInput, pkg.PricePer1MOutput, pkg.MinPurchase,
 		startAt, endAt, pkg.ValidDays,
@@ -85,7 +85,7 @@ func (r *PackageRepository) GetByID(ctx context.Context, supplierID, id int64) (
 	pkg := &domain.Package{}
 	var startAt, endAt *time.Time
 	err := r.pool.QueryRow(ctx, query, id, supplierID).Scan(
-		&pkg.ID, &pkg.SupplierID, &pkg.SupplierID, &pkg.Platform, &pkg.Model,
+		&pkg.ID, &pkg.SupplierID, &pkg.AccountID, &pkg.Platform, &pkg.Model,
 		&pkg.TotalQuota, &pkg.AvailableQuota, &pkg.SoldQuota, &pkg.ReservedQuota,
 		&pkg.PricePer1MInput, &pkg.PricePer1MOutput, &pkg.MinPurchase,
 		&startAt, &endAt, &pkg.ValidDays,
@@ -169,7 +169,7 @@ func (r *PackageRepository) GetForUpdate(ctx context.Context, tx pgxpool.Tx, sup
 
 	pkg := &domain.Package{}
 	err := tx.QueryRow(ctx, query, id, supplierID).Scan(
-		&pkg.ID, &pkg.SupplierID, &pkg.SupplierID, &pkg.Platform, &pkg.Model,
+		&pkg.ID, &pkg.SupplierID, &pkg.AccountID, &pkg.Platform, &pkg.Model,
 		&pkg.TotalQuota, &pkg.AvailableQuota, &pkg.SoldQuota, &pkg.ReservedQuota,
 		&pkg.PricePer1MInput, &pkg.PricePer1MOutput,
 		&pkg.Status, &pkg.Version,
@@ -210,7 +210,7 @@ func (r *PackageRepository) List(ctx context.Context, supplierID int64) ([]*doma
 	for rows.Next() {
 		pkg := &domain.Package{}
 		err := rows.Scan(
-			&pkg.ID, &pkg.SupplierID, &pkg.SupplierID, &pkg.Platform, &pkg.Model,
+			&pkg.ID, &pkg.SupplierID, &pkg.AccountID, &pkg.Platform, &pkg.Model,
 			&pkg.TotalQuota, &pkg.AvailableQuota, &pkg.SoldQuota,
 			&pkg.PricePer1MInput, &pkg.PricePer1MOutput,
 			&pkg.Status, &pkg.MaxConcurrent, &pkg.RateLimitRPM,

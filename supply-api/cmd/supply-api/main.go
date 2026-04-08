@@ -165,7 +165,6 @@ func main() {
 	// 初始化鉴权中间件
 	authConfig := middleware.AuthConfig{
 		SecretKey: cfg.Token.SecretKey,
-		PublicKey: parseRSAPublicKey(cfg.Token.PublicKey),
 		Issuer:    cfg.Token.Issuer,
 		CacheTTL:  cfg.Token.RevocationCacheTTL,
 		Enabled:   *env != "dev", // 开发模式禁用鉴权
@@ -569,7 +568,7 @@ func (a *auditEmitterAdapter) Emit(ctx context.Context, event middleware.AuditEv
 		Action:     event.EventName,
 		RequestID:  event.RequestID,
 		ResultCode: event.ResultCode,
-		SourceIP:   event.SourceIP, // C-002修复: 使用统一后的SourceIP
+		SourceIP:   event.ClientIP, // C-002修复: 使用ClientIP替代SourceIP
 	}
 	a.store.Emit(ctx, auditEvent)
 	return nil

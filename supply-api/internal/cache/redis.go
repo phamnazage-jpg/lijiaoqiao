@@ -45,6 +45,11 @@ func (r *RedisCache) HealthCheck(ctx context.Context) error {
 	return r.client.Ping(ctx).Err()
 }
 
+// GetClient 获取原始Redis客户端（用于其他组件）
+func (r *RedisCache) GetClient() *redis.Client {
+	return r.client
+}
+
 // ==================== Token状态缓存 ====================
 
 // TokenStatus Token状态
@@ -92,6 +97,42 @@ func (r *RedisCache) SetTokenStatus(ctx context.Context, status *TokenStatus, tt
 func (r *RedisCache) InvalidateToken(ctx context.Context, tokenID string) error {
 	key := fmt.Sprintf("token:status:%s", tokenID)
 	return r.client.Del(ctx, key).Err()
+}
+
+// PublishTokenRevoked 发布Token吊销事件（用于主动失效机制 P0-03）
+func (r *RedisCache) PublishTokenRevoked(ctx context.Context, event *TokenRevokedCacheEvent) error {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal revocation event: %w", err)
+	}
+	return r.client.Publish(ctx, "token:revoked", data).Err()
+}
+
+// SubscribeTokenRevoked 订阅Token吊销事件（用于主动失效机制 P0-03）
+func (r *RedisCache) SubscribeTokenRevoked(ctx context.Context, handler func(*TokenRevokedCacheEvent)) error {
+	pubsub := r.client.Subscribe(ctx, "token:revoked")
+	defer pubsub.Close()
+
+	ch := pubsub.Channel()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case msg := <-ch:
+			var event TokenRevokedCacheEvent
+			if err := json.Unmarshal([]byte(msg.Payload), &event); err != nil {
+				continue // 忽略解析错误
+			}
+			handler(&event)
+		}
+	}
+}
+
+// TokenRevokedCacheEvent Token吊销缓存事件
+type TokenRevokedCacheEvent struct {
+	TokenID   string    `json:"token_id"`
+	RevokedAt time.Time `json:"revoked_at"`
+	Reason    string    `json:"reason"`
 }
 
 // ==================== 限流 ====================

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"lijiaoqiao/supply-api/internal/domain"
+	"lijiaoqiao/supply-api/internal/repository"
 )
 
 // 错误定义
@@ -175,7 +176,7 @@ func (s *InMemorySettlementStore) GetByID(ctx context.Context, supplierID, id in
 	return settlement, nil
 }
 
-func (s *InMemorySettlementStore) Update(ctx context.Context, settlement *domain.Settlement) error {
+func (s *InMemorySettlementStore) Update(ctx context.Context, settlement *domain.Settlement, expectedVersion int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -183,6 +184,13 @@ func (s *InMemorySettlementStore) Update(ctx context.Context, settlement *domain
 	if !ok || existing.SupplierID != settlement.SupplierID {
 		return ErrNotFound
 	}
+
+	// P1-005: 乐观锁检查
+	if existing.Version != expectedVersion {
+		return repository.ErrConcurrencyConflict
+	}
+
+	settlement.Version = expectedVersion + 1
 	settlement.UpdatedAt = time.Now()
 	s.settlements[settlement.ID] = settlement
 	return nil
