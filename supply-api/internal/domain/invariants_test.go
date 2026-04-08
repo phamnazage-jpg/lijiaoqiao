@@ -130,6 +130,10 @@ func (m *mockSettlementStoreForInvariant) GetWithdrawableBalance(ctx context.Con
 	return 0, nil
 }
 
+func (m *mockSettlementStoreForInvariant) HasPendingOrProcessingWithdraw(ctx context.Context, supplierID int64) (bool, error) {
+	return false, nil
+}
+
 func TestValidateAccountStateTransition(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -65,6 +65,10 @@ func (m *mockSettlementStore) GetWithdrawableBalance(ctx context.Context, suppli
 	return 0, nil
 }
 
+func (m *mockSettlementStore) HasPendingOrProcessingWithdraw(ctx context.Context, supplierID int64) (bool, error) {
+	return false, nil
+}
+
 // mockEarningStore Mock收益存储
 type mockEarningStore struct {
 	records []*EarningRecord

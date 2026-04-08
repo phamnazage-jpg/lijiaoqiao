@@ -209,6 +209,22 @@ func (r *SettlementRepository) GetProcessing(ctx context.Context, tx pgxpool.Tx,
 	return s, nil
 }
 
+// HasPendingOrProcessingWithdraw 检查是否有待处理或处理中的提现单
+func (r *SettlementRepository) HasPendingOrProcessingWithdraw(ctx context.Context, supplierID int64) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1 FROM supply_settlements
+			WHERE user_id = $1 AND status IN ('pending', 'processing')
+		)
+	`
+	var exists bool
+	err := r.pool.QueryRow(ctx, query, supplierID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check pending/processing settlement: %w", err)
+	}
+	return exists, nil
+}
+
 // List 列出结算单
 func (r *SettlementRepository) List(ctx context.Context, supplierID int64) ([]*domain.Settlement, error) {
 	query := `

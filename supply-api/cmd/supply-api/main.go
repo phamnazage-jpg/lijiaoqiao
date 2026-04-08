@@ -430,6 +430,10 @@ func (a *InMemorySettlementStoreAdapter) GetWithdrawableBalance(ctx context.Cont
 	return a.store.GetWithdrawableBalance(ctx, supplierID)
 }
 
+func (a *InMemorySettlementStoreAdapter) HasPendingOrProcessingWithdraw(ctx context.Context, supplierID int64) (bool, error) {
+	return a.store.HasPendingOrProcessingWithdraw(ctx, supplierID)
+}
+
 // InMemoryEarningStoreAdapter 内存收益存储适配器
 type InMemoryEarningStoreAdapter struct {
 	store *storage.InMemoryEarningStore
@@ -519,6 +523,10 @@ func (s *DBSettlementStore) GetWithdrawableBalance(ctx context.Context, supplier
 		return 0.0, fmt.Errorf("account repository not initialized")
 	}
 	return s.accountRepo.GetWithdrawableBalance(ctx, supplierID)
+}
+
+func (s *DBSettlementStore) HasPendingOrProcessingWithdraw(ctx context.Context, supplierID int64) (bool, error) {
+	return s.repo.HasPendingOrProcessingWithdraw(ctx, supplierID)
 }
 
 // DBEarningStore DB-backed收益存储

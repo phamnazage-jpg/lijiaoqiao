@@ -213,6 +213,20 @@ func (s *InMemorySettlementStore) GetWithdrawableBalance(ctx context.Context, su
 	return 10000.0, nil
 }
 
+func (s *InMemorySettlementStore) HasPendingOrProcessingWithdraw(ctx context.Context, supplierID int64) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, settlement := range s.settlements {
+		if settlement.SupplierID == supplierID {
+			if settlement.Status == domain.SettlementStatusPending || settlement.Status == domain.SettlementStatusProcessing {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 // 内存收益存储
 type InMemoryEarningStore struct {
 	mu      sync.RWMutex

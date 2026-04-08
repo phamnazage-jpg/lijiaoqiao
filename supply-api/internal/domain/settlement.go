@@ -140,6 +140,8 @@ type SettlementStore interface {
 	Update(ctx context.Context, s *Settlement, expectedVersion int) error
 	List(ctx context.Context, supplierID int64) ([]*Settlement, error)
 	GetWithdrawableBalance(ctx context.Context, supplierID int64) (float64, error)
+	// HasPendingOrProcessingWithdraw 检查是否有待处理或处理中的提现单
+	HasPendingOrProcessingWithdraw(ctx context.Context, supplierID int64) (bool, error)
 }
 
 // 收益仓储接口
@@ -174,6 +176,15 @@ func (s *settlementService) emitAudit(ctx context.Context, event audit.Event) {
 func (s *settlementService) Withdraw(ctx context.Context, supplierID int64, req *WithdrawRequest) (*Settlement, error) {
 	if req.SMSCode != "123456" {
 		return nil, errors.New("invalid sms code")
+	}
+
+	// INV-SET-004: 检查是否已有待处理或处理中的提现
+	hasPending, err := s.store.HasPendingOrProcessingWithdraw(ctx, supplierID)
+	if err != nil {
+		return nil, err
+	}
+	if hasPending {
+		return nil, ErrWithdrawAlreadyProcessing
 	}
 
 	// 验证金额：必须为正数

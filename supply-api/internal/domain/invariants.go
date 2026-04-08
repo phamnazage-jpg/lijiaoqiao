@@ -32,6 +32,9 @@ var (
 
 	// INV-SET-003: 结算单金额与余额流水必须平衡
 	ErrSettlementBalanceMismatch = errors.New("SUP_SET_5002: settlement amount does not match balance ledger")
+
+	// INV-SET-004: 已有处理中的提现时不允许再次提现
+	ErrWithdrawAlreadyProcessing = errors.New("SUP_SET_4093: another withdrawal is already processing")
 )
 
 // InvariantChecker 领域不变量检查器
