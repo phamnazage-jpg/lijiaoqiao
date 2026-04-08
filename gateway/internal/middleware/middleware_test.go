@@ -184,7 +184,7 @@ func TestQueryKeyRejectMiddleware(t *testing.T) {
 
 		handler := queryKeyRejectMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Error("next handler should not be called")
-		}), auditor, time.Now)
+		}), auditor, time.Now, nil)
 
 		req := httptest.NewRequest("GET", "/api/v1/supply?key=abc123", nil)
 		rr := httptest.NewRecorder()
@@ -202,7 +202,7 @@ func TestQueryKeyRejectMiddleware(t *testing.T) {
 		nextCalled := false
 		handler := queryKeyRejectMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			nextCalled = true
-		}), nil, time.Now)
+		}), nil, time.Now, nil)
 
 		req := httptest.NewRequest("GET", "/api/v1/supply?name=test", nil)
 		rr := httptest.NewRecorder()
@@ -216,7 +216,7 @@ func TestQueryKeyRejectMiddleware(t *testing.T) {
 	t.Run("rejects api_key parameter", func(t *testing.T) {
 		handler := queryKeyRejectMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Error("next handler should not be called")
-		}), nil, time.Now)
+		}), nil, time.Now, nil)
 
 		req := httptest.NewRequest("GET", "/api/v1/supply?api_key=secret", nil)
 		rr := httptest.NewRecorder()

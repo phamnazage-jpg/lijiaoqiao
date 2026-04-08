@@ -46,7 +46,6 @@ func CORSMiddleware(config CORSConfig) func(http.Handler) http.Handler {
 
 // handleCORS Preflight 处理预检请求
 func handleCORSPreflight(w http.ResponseWriter, r *http.Request, config CORSConfig) {
-func handleCORS Preflight(w http.ResponseWriter, r *http.Request, config CORSConfig) {
 	origin := r.Header.Get("Origin")
 
 	// 检查origin是否被允许
