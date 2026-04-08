@@ -117,9 +117,16 @@ func TestSECURITYEvents_GetEventSubCategory(t *testing.T) {
 		expectedSubCategory string
 	}{
 		{"INV-PKG-001", "VIOLATION"},
+		{"INV-PKG-002", "VIOLATION"},
+		{"INV-PKG-003", "VIOLATION"},
 		{"INV-SET-001", "VIOLATION"},
+		{"INV-SET-002", "VIOLATION"},
+		{"INV-SET-003", "VIOLATION"},
 		{"SEC-BREACH-001", "BREACH"},
+		{"SEC-BREACH-002", "BREACH"},
 		{"SEC-ALERT-001", "ALERT"},
+		{"SEC-ALERT-002", "ALERT"},
+		{"UNKNOWN", ""},
 	}
 
 	for _, tc := range testCases {
@@ -128,4 +135,76 @@ func TestSECURITYEvents_GetEventSubCategory(t *testing.T) {
 			assert.Equal(t, tc.expectedSubCategory, subCategory)
 		})
 	}
+}
+
+// TestSECURITYEvents_GetEventCategory_Unknown 测试未知事件的类别
+func TestSECURITYEvents_GetEventCategory_Unknown(t *testing.T) {
+	assert.Equal(t, "", GetEventCategory("UNKNOWN-EVENT"))
+	assert.Equal(t, "", GetEventCategory(""))
+}
+
+// TestSECURITYEvents_GetResultCode_Unknown 测试未知事件的结果码
+func TestSECURITYEvents_GetResultCode_Unknown(t *testing.T) {
+	code := GetResultCode("UNKNOWN-EVENT")
+	assert.Equal(t, "", code)
+}
+
+// TestSECURITYEvents_GetEventDescription_Unknown 测试未知事件的描述
+func TestSECURITYEvents_GetEventDescription_Unknown(t *testing.T) {
+	desc := GetEventDescription("UNKNOWN-EVENT")
+	assert.Equal(t, "", desc)
+}
+
+// TestSECURITYEvents_FormatSECURITYEvent 测试格式化SECURITY事件
+func TestSECURITYEvents_FormatSECURITYEvent(t *testing.T) {
+	// 测试有描述的事件
+	desc := FormatSECURITYEvent("INV-PKG-001", nil)
+	assert.Contains(t, desc, "供应方资质过期")
+
+	// 测试带参数的事件
+	descWithParams := FormatSECURITYEvent("INV-PKG-001", map[string]string{"key": "value"})
+	assert.Contains(t, descWithParams, "供应方资质过期")
+
+	// 测试未知事件
+	descUnknown := FormatSECURITYEvent("UNKNOWN-EVENT", nil)
+	assert.Contains(t, descUnknown, "SECURITY event")
+
+	// 测试带参数但无描述的事件
+	descUnknownWithParams := FormatSECURITYEvent("UNKNOWN-EVENT", map[string]string{"key": "value"})
+	assert.Contains(t, descUnknownWithParams, "SECURITY event")
+}
+
+// TestSECURITYEvents_isSecurityAlert 测试安全告警检测
+func TestSECURITYEvents_isSecurityAlert(t *testing.T) {
+	// 这些函数是内部的，但我们可以通过间接方式测试
+	// isSecurityAlert 通过 GetEventSubCategory("SEC-ALERT-xxx") = "ALERT" 来验证
+	assert.Equal(t, "ALERT", GetEventSubCategory("SEC-ALERT-001"))
+	assert.Equal(t, "ALERT", GetEventSubCategory("SEC-ALERT-002"))
+}
+
+// TestSECURITYEvents_isSecurityBreach 测试安全突破检测
+func TestSECURITYEvents_isSecurityBreach(t *testing.T) {
+	// 通过 GetEventSubCategory 验证
+	assert.Equal(t, "BREACH", GetEventSubCategory("SEC-BREACH-001"))
+	assert.Equal(t, "BREACH", GetEventSubCategory("SEC-BREACH-002"))
+}
+
+// TestSECURITYEvents_GetSECURITYEvents_Complete 测试所有SECURITY事件
+func TestSECURITYEvents_GetSECURITYEvents_Complete(t *testing.T) {
+	events := GetSECURITYEvents()
+
+	// 验证所有SECURITY事件
+	assert.Contains(t, events, "INV-PKG-001")
+	assert.Contains(t, events, "INV-PKG-002")
+	assert.Contains(t, events, "INV-PKG-003")
+	assert.Contains(t, events, "INV-SET-001")
+	assert.Contains(t, events, "INV-SET-002")
+	assert.Contains(t, events, "INV-SET-003")
+	assert.Contains(t, events, "SEC-BREACH-001")
+	assert.Contains(t, events, "SEC-BREACH-002")
+	assert.Contains(t, events, "SEC-ALERT-001")
+	assert.Contains(t, events, "SEC-ALERT-002")
+
+	// 验证总数
+	assert.Len(t, events, 10)
 }

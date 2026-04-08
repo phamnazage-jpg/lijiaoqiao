@@ -132,8 +132,16 @@ func TestCREDEvents_GetResultCode(t *testing.T) {
 		expectedCode string
 	}{
 		{"CRED-EXPOSE-RESPONSE", "SEC_CRED_EXPOSED"},
+		{"CRED-EXPOSE-LOG", "SEC_CRED_EXPOSED"},
+		{"CRED-EXPOSE-EXPORT", "SEC_CRED_EXPOSED"},
 		{"CRED-INGRESS-PLATFORM", "CRED_INGRESS_OK"},
+		{"CRED-INGRESS-SUPPLIER", "CRED_INGRESS_OK"},
 		{"CRED-DIRECT-SUPPLIER", "SEC_DIRECT_BYPASS"},
+		{"CRED-DIRECT-BYPASS", "SEC_DIRECT_BYPASS"},
+		{"CRED-ROTATE", "CRED_ROTATE_OK"},
+		{"CRED-REVOKE", "CRED_REVOKE_OK"},
+		{"CRED-VALIDATE", "CRED_VALIDATE_OK"},
+		{"CRED-UNKNOWN", ""},
 	}
 
 	for _, tc := range testCases {
@@ -142,4 +150,75 @@ func TestCREDEvents_GetResultCode(t *testing.T) {
 			assert.Equal(t, tc.expectedCode, code)
 		})
 	}
+}
+
+// TestCREDEvents_GetMetricName_All 测试所有CRED事件的指标名称
+func TestCREDEvents_GetMetricName_All(t *testing.T) {
+	testCases := []struct {
+		eventName      string
+		expectedMetric string
+	}{
+		{"CRED-EXPOSE-RESPONSE", "supplier_credential_exposure_events"},
+		{"CRED-EXPOSE-LOG", "supplier_credential_exposure_events"},
+		{"CRED-EXPOSE-EXPORT", "supplier_credential_exposure_events"},
+		{"CRED-INGRESS-PLATFORM", "platform_credential_ingress_coverage_pct"},
+		{"CRED-INGRESS-SUPPLIER", "platform_credential_ingress_coverage_pct"},
+		{"CRED-DIRECT-SUPPLIER", "direct_supplier_call_by_consumer_events"},
+		{"CRED-DIRECT-BYPASS", "direct_supplier_call_by_consumer_events"},
+		{"CRED-ROTATE", ""},
+		{"CRED-REVOKE", ""},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.eventName, func(t *testing.T) {
+			metric := GetCREDMetricName(tc.eventName)
+			assert.Equal(t, tc.expectedMetric, metric)
+		})
+	}
+}
+
+// TestCREDEvents_GetEventCategory_All 测试所有CRED事件的类别
+func TestCREDEvents_GetEventCategory_All(t *testing.T) {
+	// 非CRED事件应该返回空
+	assert.Equal(t, "", GetCREDEventCategory("AUTH-TOKEN"))
+	assert.Equal(t, "", GetCREDEventCategory(""))
+}
+
+// TestCREDEvents_IsM013RelatedEvent 测试M-013相关事件检测
+func TestCREDEvents_IsM013RelatedEvent(t *testing.T) {
+	// M-013相关事件
+	assert.True(t, IsM013RelatedEvent("CRED-EXPOSE-RESPONSE"))
+	assert.True(t, IsM013RelatedEvent("CRED-EXPOSE-LOG"))
+	assert.True(t, IsM013RelatedEvent("CRED-EXPOSE-EXPORT"))
+
+	// 非M-013事件
+	assert.False(t, IsM013RelatedEvent("CRED-INGRESS-PLATFORM"))
+	assert.False(t, IsM013RelatedEvent("CRED-DIRECT-SUPPLIER"))
+}
+
+// TestCREDEvents_IsM014RelatedEvent 测试M-014相关事件检测
+func TestCREDEvents_IsM014RelatedEvent(t *testing.T) {
+	// M-014相关事件
+	assert.True(t, IsM014RelatedEvent("CRED-INGRESS-PLATFORM"))
+	assert.True(t, IsM014RelatedEvent("CRED-INGRESS-SUPPLIER"))
+
+	// 非M-014事件
+	assert.False(t, IsM014RelatedEvent("CRED-EXPOSE-RESPONSE"))
+	assert.False(t, IsM014RelatedEvent("CRED-DIRECT-SUPPLIER"))
+}
+
+// TestCREDEvents_IsM015RelatedEvent 测试M-015相关事件检测
+func TestCREDEvents_IsM015RelatedEvent(t *testing.T) {
+	// M-015相关事件
+	assert.True(t, IsM015RelatedEvent("CRED-DIRECT-SUPPLIER"))
+	assert.True(t, IsM015RelatedEvent("CRED-DIRECT-BYPASS"))
+
+	// 非M-015事件
+	assert.False(t, IsM015RelatedEvent("CRED-EXPOSE-RESPONSE"))
+	assert.False(t, IsM015RelatedEvent("CRED-INGRESS-PLATFORM"))
+}
+
+// TestCREDEvents_GetSubCategory_Unknown 测试未知事件的子类别
+func TestCREDEvents_GetSubCategory_Unknown(t *testing.T) {
+	assert.Equal(t, "", GetCREDEventSubCategory("UNKNOWN-EVENT"))
 }
