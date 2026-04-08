@@ -444,6 +444,74 @@ func TestConcurrentAccountAccess(t *testing.T) {
 }
 ```
 
+### 9.2 中间件并发测试要点
+
+**中间件的并发安全问题通常体现在**：
+- ResponseWriter 的并发写入
+- 共享状态的竞争访问
+- 超时与正常响应的冲突
+
+**TimeoutMiddleware 正确测试模式**：
+
+```go
+// ✅ 正确：超时设置足够长（>100ms），确保正常完成
+func TestWithTimeoutMiddleware_NormalCompletion(t *testing.T) {
+    handler := WithTimeoutMiddleware(nextHandler, 100*time.Millisecond)
+
+    req := httptest.NewRequest("GET", "/", nil)
+    w := httptest.NewRecorder()
+
+    handler.ServeHTTP(w, req)
+
+    if w.Code != http.StatusOK {
+        t.Errorf("expected status 200, got %d", w.Code)
+    }
+}
+
+// ✅ 正确：使用 WaitGroup 确保 handler 完成后再检查
+func TestWithTimeoutMiddleware_Concurrent(t *testing.T) {
+    var wg sync.WaitGroup
+    wg.Add(1)
+
+    go func() {
+        defer wg.Done()
+        handler.ServeHTTP(w, req)
+    }()
+
+    wg.Wait()
+    // 现在可以安全检查结果
+}
+```
+
+**⚠️ 常见错误**：
+
+```go
+// ❌ 错误：超时设置过短（<10ms）导致 race 检测下不稳定
+timeoutHandler := WithTimeoutMiddleware(handler, 1*time.Millisecond)
+
+// ❌ 错误：测试并发写入 ResponseRecorder 但不等待完成
+go func() {
+    handler.ServeHTTP(w, req)  // 可能还在执行
+}()
+time.Sleep(10 * time.Millisecond)
+assert.Equal(t, 200, w.Code)  // w 可能尚未写入
+
+// ❌ 错误：假设 select 会优先选择已关闭的 channel
+// 当 handlerDone 和 timeout 同时就绪时，行为是未定义的
+```
+
+### 9.3 Race 检测必须通过
+
+所有并发测试必须在 race 模式下通过：
+
+```bash
+# 必须验证
+go test -race ./internal/middleware/...
+
+# 基准测试也需要 race 检测
+go test -race -bench=. ./internal/benchmark/...
+```
+
 ---
 
 ## 10. 性能回归测试

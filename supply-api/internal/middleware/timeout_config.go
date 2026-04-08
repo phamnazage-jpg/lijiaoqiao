@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -86,40 +87,66 @@ func (c *MiddlewareTimeoutContext) WithBusinessTimeout() (context.Context, conte
 // TimeoutResponseWriter 超时响应writer
 type TimeoutResponseWriter struct {
 	http.ResponseWriter
+	mu      sync.Mutex
 	timeout time.Duration
 	started time.Time
 }
 
 func (w *TimeoutResponseWriter) ensureStarted() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.started.IsZero() {
 		w.started = time.Now()
 	}
 }
 
 func (w *TimeoutResponseWriter) checkTimeout() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.started.IsZero() {
 		return false
 	}
 	return time.Since(w.started) > w.timeout
 }
 
+func (w *TimeoutResponseWriter) setTimeoutHeader() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.Header().Set("X-Timeout", "true")
+}
+
 // WithTimeoutMiddleware 返回带超时检测的中间件
+//
+// 设计说明：
+// - handler 在 goroutine 中执行
+// - 超时时不等待 handler 完成，直接发送超时响应
+// - 使用互斥锁确保响应只发送一次
+// - 实际生产中应设置合理的超时时间使 handler 有机会在超时前完成
 func WithTimeoutMiddleware(next http.Handler, timeout time.Duration) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		done := make(chan struct{})
+		var mu sync.Mutex
+		responseSent := false
+
+		handlerDone := make(chan struct{})
 
 		go func() {
 			next.ServeHTTP(w, r)
-			close(done)
+			close(handlerDone)
 		}()
 
 		select {
-		case <-done:
+		case <-handlerDone:
 			return
 		case <-time.After(timeout):
-			// 超时处理
-			w.Header().Set("X-Timeout", "true")
-			http.Error(w, fmt.Sprintf("middleware timeout after %v", timeout), http.StatusGatewayTimeout)
+			mu.Lock()
+			if !responseSent {
+				responseSent = true
+				mu.Unlock()
+				w.Header().Set("X-Timeout", "true")
+				http.Error(w, fmt.Sprintf("middleware timeout after %v", timeout), http.StatusGatewayTimeout)
+				return
+			}
+			mu.Unlock()
 			return
 		}
 	})

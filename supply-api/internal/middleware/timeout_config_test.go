@@ -226,10 +226,11 @@ func TestWithTimeoutMiddleware_SetsTraceContext(t *testing.T) {
 
 func TestWithTimeoutMiddleware_Timeout(t *testing.T) {
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Simulate slow handler
+		// Simulate slow handler - 使用足够长的 sleep 确保超时触发
 		time.Sleep(200 * time.Millisecond)
 	})
 
+	// 超时设置足够短，确保触发超时
 	handler := WithTimeoutMiddleware(nextHandler, 50*time.Millisecond)
 
 	req := httptest.NewRequest("GET", "/", nil)
