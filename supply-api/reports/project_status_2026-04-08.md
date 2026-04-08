@@ -127,15 +127,15 @@ func WithTimeoutMiddleware(next http.Handler, timeout time.Duration) http.Handle
 
 ---
 
-## 三、TODO 未完成清单
+## 三、TODO 完成情况
 
-### P1 - 短期改进
+### ✅ P1 - 短期改进 (已完成)
 
 | 项目 | 优先级 | 状态 | 说明 |
 |------|--------|------|------|
-| Settlement.GetByID 测试 | P1 | ⏸️ 未开始 | 覆盖率 0% |
-| Settlement.List 测试 | P1 | ⏸️ 未开始 | 覆盖率 0% |
-| Settlement.GetBillingSummary 测试 | P1 | ⏸️ 未开始 | 覆盖率 0% |
+| Settlement.GetByID 测试 | P1 | ✅ 已完成 | TestSettlementService_GetByID + TestSettlementService_GetByID_NotFound |
+| Settlement.List 测试 | P1 | ✅ 已完成 | TestSettlementService_List |
+| Settlement.GetBillingSummary 测试 | P1 | ✅ 已完成 | TestEarningService_GetBillingSummary |
 
 ### P2 - 中期改进
 
@@ -231,14 +231,14 @@ go test -tags=integration ./...
 - ✅ 覆盖率达标 (9/9 模块)
 - ✅ TimeoutMiddleware 修复完成
 
-### 7.2 需要关注
+### 7.2 当前状态
 
-- ⚠️ Settlement 模块测试覆盖不足
-- ⚠️ HTTP API Handler 测试覆盖率低
+- ✅ Settlement 模块测试已完成 (GetByID, List, GetBillingSummary)
+- ⚠️ HTTP API Handler 测试覆盖率低 (httpapi 6%, iam/handler 23%)
 - ⏸️ 集成测试和 E2E 测试需要更多资源
 
 ### 7.3 建议
 
-1. **短期**：补充 Settlement 模块的 GetByID、List、GetBillingSummary 测试
+1. **已完成**：Settlement 模块测试覆盖
 2. **中期**：完善 HTTP API Handler 测试，提升覆盖率
 3. **持续**：每次代码变更必须运行 `go test -race`
