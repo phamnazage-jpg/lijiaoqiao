@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"flag"
 	"fmt"
@@ -115,6 +116,15 @@ func main() {
 		log.Println("警告: 审计存储使用内存实现 (生产环境不应使用)")
 	}
 
+	// P0-09修复: 初始化外键校验器
+	var fkValidator *repository.ForeignKeyValidator
+	if db != nil {
+		fkValidator = repository.NewForeignKeyValidator(db.Pool)
+		log.Println("外键校验器: 已初始化 (PostgreSQL-backed)")
+	} else {
+		log.Println("警告: 外键校验器未启用 (db不可用)")
+	}
+
 	// 初始化不变量检查器
 	invariantChecker := domain.NewInvariantChecker(accountStore, packageStore, settlementStore)
 	_ = invariantChecker // 用于业务逻辑校验
@@ -198,6 +208,7 @@ func main() {
 		earningService,
 		idempotencyMiddleware, // 使用幂等中间件（DB-backed）
 		auditStore,
+		fkValidator, // P0-09修复: 外键校验器
 		cfg.Server.DefaultSupplierID,
 		cfg.Server.StatementBaseURL,
 		time.Now,
@@ -310,6 +321,14 @@ func main() {
 				}
 			}
 		}()
+
+		// P0-07修复: 初始化批量补偿处理器
+		compensationStore := domain.NewSQLCompensationStore(db.Pool)
+		compensationStats := &domain.NoOpCompensationStats{}
+		compensationExecutor := &defaultCompensationExecutor{} // 需要实现OperationExecutor接口
+		compensationProcessor := domain.NewCompensationProcessor(compensationStore, compensationExecutor, compensationStats)
+		log.Println("批量补偿处理器: 已初始化")
+		_ = compensationProcessor // TODO: 启动后台补偿处理goroutine
 	}
 
 	// 优雅关闭
@@ -718,6 +737,18 @@ func calculateOutboxBackoff(retryCount, maxRetries int) int {
 
 // Ensure domain.OutboxEvent is compatible with our conversion
 var _ = domain.OutboxEvent{}
+
+// ==================== 补偿执行器 ====================
+
+// defaultCompensationExecutor 默认补偿执行器
+type defaultCompensationExecutor struct{}
+
+func (e *defaultCompensationExecutor) Execute(ctx context.Context, operationType string, payload json.RawMessage) error {
+	// TODO: 根据operationType执行相应的补偿操作
+	// 目前为placeholder实现，实际生产需要根据业务类型实现具体逻辑
+	log.Printf("补偿执行器: operation_type=%s, payload=%s", operationType, string(payload))
+	return nil
+}
 
 // parseRSAPublicKey 解析PEM格式的RSA公钥
 func parseRSAPublicKey(pemKey string) interface{} {

@@ -21,12 +21,13 @@ type SupplyAPI struct {
 	accountService     domain.AccountService
 	packageService     domain.PackageService
 	settlementService  domain.SettlementService
-	earningService     domain.EarningService
-	idempotencyMw      *middleware.IdempotencyMiddleware // P0-P4修复: 使用DB-backed幂等中间件
-	auditStore         audit.AuditStore                  // P0-R08修复: 使用接口支持DB-backed实现
-	supplierID         int64
-	statementBaseURL   string
-	now                func() time.Time
+	earningService    domain.EarningService
+	idempotencyMw     *middleware.IdempotencyMiddleware // P0-P4修复: 使用DB-backed幂等中间件
+	auditStore        audit.AuditStore                   // P0-R08修复: 使用接口支持DB-backed实现
+	fkValidator       *repository.ForeignKeyValidator     // P0-09修复: 外键校验器
+	supplierID        int64
+	statementBaseURL  string
+	now               func() time.Time
 }
 
 func NewSupplyAPI(
@@ -36,6 +37,7 @@ func NewSupplyAPI(
 	earningService domain.EarningService,
 	idempotencyMw *middleware.IdempotencyMiddleware,
 	auditStore audit.AuditStore,
+	fkValidator *repository.ForeignKeyValidator,
 	supplierID int64,
 	statementBaseURL string,
 	now func() time.Time,
@@ -47,6 +49,7 @@ func NewSupplyAPI(
 		earningService:    earningService,
 		idempotencyMw:     idempotencyMw,
 		auditStore:        auditStore,
+		fkValidator:       fkValidator,
 		supplierID:        supplierID,
 		statementBaseURL:  statementBaseURL,
 		now:               now,
@@ -162,6 +165,14 @@ func (a *SupplyAPI) createAccountHandler(ctx context.Context, w http.ResponseWri
 	if err := json.Unmarshal(body, &rawReq); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return err
+	}
+
+	// P0-09修复: 创建账户前校验外键引用
+	if a.fkValidator != nil {
+		if err := a.fkValidator.ValidateSupplyAccountOwner(ctx, a.supplierID); err != nil {
+			writeError(w, http.StatusUnprocessableEntity, "FK_VALIDATION_FAILED", "supplier does not exist")
+			return err
+		}
 	}
 
 	createReq := &domain.CreateAccountRequest{
@@ -365,6 +376,14 @@ func (a *SupplyAPI) handleCreatePackageDraft(w http.ResponseWriter, r *http.Requ
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
+	}
+
+	// P0-09修复: 创建套餐前校验外键引用
+	if a.fkValidator != nil {
+		if err := a.fkValidator.ValidatePackageSupplyAccount(r.Context(), req.SupplyAccountID); err != nil {
+			writeError(w, http.StatusUnprocessableEntity, "FK_VALIDATION_FAILED", "supply account does not exist")
+			return
+		}
 	}
 
 	createReq := &domain.CreatePackageDraftRequest{
