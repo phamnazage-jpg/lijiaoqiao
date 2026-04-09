@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/netip"
 	"time"
@@ -135,6 +136,8 @@ type PlatformStat struct {
 // P1-005: 乐观锁支持 - Update需要expectedVersion参数防止并发更新
 type SettlementStore interface {
 	Create(ctx context.Context, s *Settlement) error
+	// CreateInTx 在事务中创建结算单
+	CreateInTx(ctx context.Context, s *Settlement) error
 	GetByID(ctx context.Context, supplierID, id int64) (*Settlement, error)
 	// Update 使用乐观锁，expectedVersion是更新前的版本号，如果版本不匹配返回ErrConcurrencyConflict
 	Update(ctx context.Context, s *Settlement, expectedVersion int) error
@@ -150,11 +153,35 @@ type EarningStore interface {
 	GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*BillingSummary, error)
 }
 
+// SMSVerifier 定义短信验证码验证接口
+type SMSVerifier interface {
+	// Verify 验证短信验证码是否正确
+	// phone 手机号, code 验证码
+	// 返回: 是否验证通过, 错误信息
+	Verify(ctx context.Context, phone string, code string) (bool, error)
+}
+
+// DefaultSMSVerifier 默认的短信验证码验证器（安全实现）
+// 注意: 默认实现拒绝所有验证码，要求配置真实的SMS服务
+type DefaultSMSVerifier struct{}
+
+// ErrSMSServiceNotConfigured SMS服务未配置错误
+var ErrSMSServiceNotConfigured = errors.New("SMS service not configured: default verifier cannot validate codes")
+
+// Verify 验证短信验证码 - 默认实现拒绝所有验证码
+// 安全设计：默认实现返回错误，强制要求配置真实SMS服务
+func (v *DefaultSMSVerifier) Verify(ctx context.Context, phone string, code string) (bool, error) {
+	// 默认实现拒绝所有验证码，返回错误表明SMS服务未配置
+	// 这防止了硬编码测试码的安全风险
+	return false, ErrSMSServiceNotConfigured
+}
+
 // 结算服务实现
 type settlementService struct {
 	store        SettlementStore
 	earningStore EarningStore
 	auditStore   audit.AuditStore
+	smsVerifier  SMSVerifier
 }
 
 func NewSettlementService(store SettlementStore, earningStore EarningStore, auditStore audit.AuditStore) SettlementService {
@@ -162,6 +189,17 @@ func NewSettlementService(store SettlementStore, earningStore EarningStore, audi
 		store:        store,
 		earningStore: earningStore,
 		auditStore:   auditStore,
+		smsVerifier:  &DefaultSMSVerifier{}, // 默认使用硬编码验证码
+	}
+}
+
+// NewSettlementServiceWithSMS 创建支持真实SMS服务的结算服务
+func NewSettlementServiceWithSMS(store SettlementStore, earningStore EarningStore, auditStore audit.AuditStore, smsVerifier SMSVerifier) SettlementService {
+	return &settlementService{
+		store:        store,
+		earningStore: earningStore,
+		auditStore:   auditStore,
+		smsVerifier:  smsVerifier,
 	}
 }
 
@@ -174,7 +212,12 @@ func (s *settlementService) emitAudit(ctx context.Context, event audit.Event) {
 }
 
 func (s *settlementService) Withdraw(ctx context.Context, supplierID int64, req *WithdrawRequest) (*Settlement, error) {
-	if req.SMSCode != "123456" {
+	// 使用SMS验证码验证器验证
+	valid, err := s.smsVerifier.Verify(ctx, req.PaymentAccount, req.SMSCode)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify SMS code: %w", err)
+	}
+	if !valid {
 		return nil, errors.New("invalid sms code")
 	}
 
@@ -215,7 +258,7 @@ func (s *settlementService) Withdraw(ctx context.Context, supplierID int64, req 
 		UpdatedAt:      time.Now(),
 	}
 
-	if err := s.store.Create(ctx, settlement); err != nil {
+	if err := s.store.CreateInTx(ctx, settlement); err != nil {
 		return nil, err
 	}
 

@@ -2,30 +2,27 @@ package main
 
 import (
 	"context"
-	"crypto/x509"
-	"encoding/json"
-	"encoding/pem"
 	"flag"
-	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"lijiaoqiao/supply-api/internal/adapter"
 	"lijiaoqiao/supply-api/internal/audit"
 	auditrepo "lijiaoqiao/supply-api/internal/audit/repository"
 	"lijiaoqiao/supply-api/internal/cache"
+	"lijiaoqiao/supply-api/internal/compensation"
 	"lijiaoqiao/supply-api/internal/config"
 	"lijiaoqiao/supply-api/internal/domain"
 	"lijiaoqiao/supply-api/internal/httpapi"
 	"lijiaoqiao/supply-api/internal/messaging"
 	"lijiaoqiao/supply-api/internal/middleware"
+	"lijiaoqiao/supply-api/internal/outbox"
 	"lijiaoqiao/supply-api/internal/pkg/logging"
 	"lijiaoqiao/supply-api/internal/repository"
-	"lijiaoqiao/supply-api/internal/storage"
 )
 
 func main() {
@@ -91,19 +88,19 @@ func main() {
 		auditRepo = auditrepo.NewPostgresAuditRepository(db.Pool)
 		tokenStatusRepo = repository.NewTokenStatusRepository(db.Pool)
 
-		// 创建DB-backed存储（使用repository作为store接口）
-		accountStore = &DBAccountStore{repo: accountRepo}
-		packageStore = &DBPackageStore{repo: packageRepo}
-		settlementStore = &DBSettlementStore{repo: settlementRepo, accountRepo: accountRepo}
-		earningStore = &DBEarningStore{usageRepo: usageRepo}
+		// 创建DB-backed存储（使用adapter包中的类型）
+		accountStore = adapter.NewDBAccountStore(accountRepo)
+		packageStore = adapter.NewDBPackageStore(packageRepo)
+		settlementStore = adapter.NewDBSettlementStore(settlementRepo, accountRepo, db.Pool)
+		earningStore = adapter.NewDBEarningStore(usageRepo)
 
 		_ = idempotencyRepo // 用于幂等中间件
 	} else {
 		// 回退到内存存储（开发模式）
-		accountStore = NewInMemoryAccountStoreAdapter()
-		packageStore = NewInMemoryPackageStoreAdapter()
-		settlementStore = NewInMemorySettlementStoreAdapter()
-		earningStore = NewInMemoryEarningStoreAdapter()
+		accountStore = adapter.NewInMemoryAccountStoreAdapter()
+		packageStore = adapter.NewInMemoryPackageStoreAdapter()
+		settlementStore = adapter.NewInMemorySettlementStoreAdapter()
+		earningStore = adapter.NewInMemoryEarningStoreAdapter()
 	}
 
 	// P0-R08修复: 初始化审计存储 - 使用DB-backed实现
@@ -139,8 +136,8 @@ func main() {
 	var idempotencyRepo *repository.IdempotencyRepository
 	if db != nil {
 		idempotencyRepo = repository.NewIdempotencyRepository(db.Pool)
+		_ = idempotencyRepo // idempotencyRepo 会在下面初始化幂等中间件时使用
 	}
-	_ = idempotencyRepo // TODO: 在生产环境中用于DB-backed幂等
 
 	// 初始化Token缓存
 	tokenCache := middleware.NewTokenCache()
@@ -165,12 +162,12 @@ func main() {
 			}
 		}
 	} else {
-		tokenBackend = newMemoryTokenBackend()
+		tokenBackend = adapter.NewMemoryTokenBackend()
 		log.Println("警告: Token状态后端使用内存实现 (生产环境不应使用)")
 	}
 
 	// 初始化审计事件适配器（NEW-P1-03修复）
-	auditEmitter := newAuditEmitterAdapter(auditStore)
+	auditEmitter := adapter.NewAuditEmitterAdapter(auditStore)
 
 	// 初始化鉴权中间件
 	authConfig := middleware.AuthConfig{
@@ -278,7 +275,7 @@ func main() {
 	}
 
 	// P0-06修复: 启动OutboxProcessor（仅在DB可用时）
-	var outboxProcessor *OutboxProcessorRunner
+	var outboxProcessor *outbox.OutboxProcessorRunner
 	if db != nil {
 		outboxRepo := repository.NewOutboxRepository(db.Pool)
 		var msgBroker messaging.MessageBroker
@@ -288,7 +285,7 @@ func main() {
 			msgBroker = messaging.NewOutboxMessageBroker(redisClient, "supply:outbox:stream", "outbox-processor")
 		}
 		stats := &messaging.NoOpOutboxStats{}
-		outboxProcessor = NewOutboxProcessorRunner(outboxRepo, msgBroker, stats)
+		outboxProcessor = outbox.NewOutboxProcessorRunner(outboxRepo, msgBroker, stats)
 		go outboxProcessor.Start(ctx)
 		log.Println("OutboxProcessor已启动")
 
@@ -325,10 +322,13 @@ func main() {
 		// P0-07修复: 初始化批量补偿处理器
 		compensationStore := domain.NewSQLCompensationStore(db.Pool)
 		compensationStats := &domain.NoOpCompensationStats{}
-		compensationExecutor := &defaultCompensationExecutor{} // 需要实现OperationExecutor接口
+		compensationExecutor := compensation.NewDefaultCompensationExecutor()
 		compensationProcessor := domain.NewCompensationProcessor(compensationStore, compensationExecutor, compensationStats)
 		log.Println("批量补偿处理器: 已初始化")
-		_ = compensationProcessor // TODO: 启动后台补偿处理goroutine
+
+		// 启动后台补偿处理goroutine
+		compensationProcessor.StartBackgroundWorker(ctx, 5*time.Minute)
+		log.Println("批量补偿处理器: 后台worker已启动 (每5分钟检查一次)")
 	}
 
 	// 优雅关闭
@@ -346,436 +346,4 @@ func main() {
 	}
 
 	log.Println("shutdown complete")
-}
-
-// ==================== 内存存储适配器（开发模式）====================
-
-// InMemoryAccountStoreAdapter 内存账号存储适配器
-type InMemoryAccountStoreAdapter struct {
-	store *storage.InMemoryAccountStore
-}
-
-func NewInMemoryAccountStoreAdapter() *InMemoryAccountStoreAdapter {
-	return &InMemoryAccountStoreAdapter{store: storage.NewInMemoryAccountStore()}
-}
-
-func (a *InMemoryAccountStoreAdapter) Create(ctx context.Context, account *domain.Account) error {
-	return a.store.Create(ctx, account)
-}
-
-func (a *InMemoryAccountStoreAdapter) GetByID(ctx context.Context, supplierID, id int64) (*domain.Account, error) {
-	return a.store.GetByID(ctx, supplierID, id)
-}
-
-func (a *InMemoryAccountStoreAdapter) Update(ctx context.Context, account *domain.Account) error {
-	return a.store.Update(ctx, account)
-}
-
-func (a *InMemoryAccountStoreAdapter) List(ctx context.Context, supplierID int64) ([]*domain.Account, error) {
-	return a.store.List(ctx, supplierID)
-}
-
-// InMemoryPackageStoreAdapter 内存套餐存储适配器
-type InMemoryPackageStoreAdapter struct {
-	store *storage.InMemoryPackageStore
-}
-
-func NewInMemoryPackageStoreAdapter() *InMemoryPackageStoreAdapter {
-	return &InMemoryPackageStoreAdapter{store: storage.NewInMemoryPackageStore()}
-}
-
-func (a *InMemoryPackageStoreAdapter) Create(ctx context.Context, pkg *domain.Package) error {
-	return a.store.Create(ctx, pkg)
-}
-
-func (a *InMemoryPackageStoreAdapter) GetByID(ctx context.Context, supplierID, id int64) (*domain.Package, error) {
-	return a.store.GetByID(ctx, supplierID, id)
-}
-
-func (a *InMemoryPackageStoreAdapter) Update(ctx context.Context, pkg *domain.Package) error {
-	return a.store.Update(ctx, pkg)
-}
-
-func (a *InMemoryPackageStoreAdapter) List(ctx context.Context, supplierID int64) ([]*domain.Package, error) {
-	return a.store.List(ctx, supplierID)
-}
-
-// InMemorySettlementStoreAdapter 内存结算存储适配器
-type InMemorySettlementStoreAdapter struct {
-	store *storage.InMemorySettlementStore
-}
-
-func NewInMemorySettlementStoreAdapter() *InMemorySettlementStoreAdapter {
-	return &InMemorySettlementStoreAdapter{store: storage.NewInMemorySettlementStore()}
-}
-
-func (a *InMemorySettlementStoreAdapter) Create(ctx context.Context, s *domain.Settlement) error {
-	return a.store.Create(ctx, s)
-}
-
-func (a *InMemorySettlementStoreAdapter) GetByID(ctx context.Context, supplierID, id int64) (*domain.Settlement, error) {
-	return a.store.GetByID(ctx, supplierID, id)
-}
-
-func (a *InMemorySettlementStoreAdapter) Update(ctx context.Context, s *domain.Settlement, expectedVersion int) error {
-	// P1-005: 乐观锁更新
-	return a.store.Update(ctx, s, expectedVersion)
-}
-
-func (a *InMemorySettlementStoreAdapter) List(ctx context.Context, supplierID int64) ([]*domain.Settlement, error) {
-	return a.store.List(ctx, supplierID)
-}
-
-func (a *InMemorySettlementStoreAdapter) GetWithdrawableBalance(ctx context.Context, supplierID int64) (float64, error) {
-	return a.store.GetWithdrawableBalance(ctx, supplierID)
-}
-
-func (a *InMemorySettlementStoreAdapter) HasPendingOrProcessingWithdraw(ctx context.Context, supplierID int64) (bool, error) {
-	return a.store.HasPendingOrProcessingWithdraw(ctx, supplierID)
-}
-
-// InMemoryEarningStoreAdapter 内存收益存储适配器
-type InMemoryEarningStoreAdapter struct {
-	store *storage.InMemoryEarningStore
-}
-
-func NewInMemoryEarningStoreAdapter() *InMemoryEarningStoreAdapter {
-	return &InMemoryEarningStoreAdapter{store: storage.NewInMemoryEarningStore()}
-}
-
-func (a *InMemoryEarningStoreAdapter) ListRecords(ctx context.Context, supplierID int64, startDate, endDate string, page, pageSize int) ([]*domain.EarningRecord, int, error) {
-	return a.store.ListRecords(ctx, supplierID, startDate, endDate, page, pageSize)
-}
-
-func (a *InMemoryEarningStoreAdapter) GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*domain.BillingSummary, error) {
-	return a.store.GetBillingSummary(ctx, supplierID, startDate, endDate)
-}
-
-// ==================== DB-backed存储适配器 ====================
-
-// DBAccountStore DB-backed账号存储
-type DBAccountStore struct {
-	repo *repository.AccountRepository
-}
-
-func (s *DBAccountStore) Create(ctx context.Context, account *domain.Account) error {
-	return s.repo.Create(ctx, account, "", "", "")
-}
-
-func (s *DBAccountStore) GetByID(ctx context.Context, supplierID, id int64) (*domain.Account, error) {
-	return s.repo.GetByID(ctx, supplierID, id)
-}
-
-func (s *DBAccountStore) Update(ctx context.Context, account *domain.Account) error {
-	return s.repo.Update(ctx, account, account.Version)
-}
-
-func (s *DBAccountStore) List(ctx context.Context, supplierID int64) ([]*domain.Account, error) {
-	return s.repo.List(ctx, supplierID)
-}
-
-// DBPackageStore DB-backed套餐存储
-type DBPackageStore struct {
-	repo *repository.PackageRepository
-}
-
-func (s *DBPackageStore) Create(ctx context.Context, pkg *domain.Package) error {
-	return s.repo.Create(ctx, pkg, "", "")
-}
-
-func (s *DBPackageStore) GetByID(ctx context.Context, supplierID, id int64) (*domain.Package, error) {
-	return s.repo.GetByID(ctx, supplierID, id)
-}
-
-func (s *DBPackageStore) Update(ctx context.Context, pkg *domain.Package) error {
-	return s.repo.Update(ctx, pkg, pkg.Version)
-}
-
-func (s *DBPackageStore) List(ctx context.Context, supplierID int64) ([]*domain.Package, error) {
-	return s.repo.List(ctx, supplierID)
-}
-
-// DBSettlementStore DB-backed结算存储
-type DBSettlementStore struct {
-	repo        *repository.SettlementRepository
-	accountRepo *repository.AccountRepository // 用于GetWithdrawableBalance查询账户余额
-}
-
-func (s *DBSettlementStore) Create(ctx context.Context, settlement *domain.Settlement) error {
-	return s.repo.Create(ctx, settlement, "", "", "")
-}
-
-func (s *DBSettlementStore) GetByID(ctx context.Context, supplierID, id int64) (*domain.Settlement, error) {
-	return s.repo.GetByID(ctx, supplierID, id)
-}
-
-func (s *DBSettlementStore) Update(ctx context.Context, settlement *domain.Settlement, expectedVersion int) error {
-	// P1-005: 乐观锁更新，expectedVersion由调用方传入更新前的版本号
-	return s.repo.Update(ctx, settlement, expectedVersion)
-}
-
-func (s *DBSettlementStore) List(ctx context.Context, supplierID int64) ([]*domain.Settlement, error) {
-	return s.repo.List(ctx, supplierID)
-}
-
-func (s *DBSettlementStore) GetWithdrawableBalance(ctx context.Context, supplierID int64) (float64, error) {
-	if s.accountRepo == nil {
-		return 0.0, fmt.Errorf("account repository not initialized")
-	}
-	return s.accountRepo.GetWithdrawableBalance(ctx, supplierID)
-}
-
-func (s *DBSettlementStore) HasPendingOrProcessingWithdraw(ctx context.Context, supplierID int64) (bool, error) {
-	return s.repo.HasPendingOrProcessingWithdraw(ctx, supplierID)
-}
-
-// DBEarningStore DB-backed收益存储
-type DBEarningStore struct {
-	usageRepo *repository.UsageRepository
-}
-
-func (s *DBEarningStore) ListRecords(ctx context.Context, supplierID int64, startDate, endDate string, page, pageSize int) ([]*domain.EarningRecord, int, error) {
-	if s.usageRepo == nil {
-		return nil, 0, fmt.Errorf("usage repository not initialized")
-	}
-	return s.usageRepo.ListRecords(ctx, supplierID, startDate, endDate, page, pageSize)
-}
-
-func (s *DBEarningStore) GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*domain.BillingSummary, error) {
-	if s.usageRepo == nil {
-		return nil, fmt.Errorf("usage repository not initialized")
-	}
-	return s.usageRepo.GetBillingSummary(ctx, supplierID, startDate, endDate)
-}
-
-// ==================== 内存Backend适配器 ====================
-
-// memoryTokenBackend 内存token状态后端（临时实现，生产应使用DB-backed）
-type memoryTokenBackend struct {
-	revokedTokens map[string]string // tokenID -> status
-}
-
-func newMemoryTokenBackend() *memoryTokenBackend {
-	return &memoryTokenBackend{
-		revokedTokens: make(map[string]string),
-	}
-}
-
-func (b *memoryTokenBackend) CheckTokenStatus(ctx context.Context, tokenID string) (string, error) {
-	// 默认所有token都是active的
-	if status, found := b.revokedTokens[tokenID]; found {
-		return status, nil
-	}
-	return "active", nil
-}
-
-func (b *memoryTokenBackend) RevokeToken(tokenID string) {
-	b.revokedTokens[tokenID] = "revoked"
-}
-
-// ==================== 审计事件适配器 ====================
-
-// auditEmitterAdapter 将auditStore适配为middleware.AuditEmitter
-type auditEmitterAdapter struct {
-	store audit.AuditStore
-}
-
-func newAuditEmitterAdapter(store audit.AuditStore) *auditEmitterAdapter {
-	return &auditEmitterAdapter{store: store}
-}
-
-func (a *auditEmitterAdapter) Emit(ctx context.Context, event middleware.AuditEvent) error {
-	if a.store == nil {
-		return nil
-	}
-	// 转换middleware.AuditEvent为audit.Event
-	auditEvent := audit.Event{
-		EventID:    event.RequestID,
-		ObjectType: "auth",
-		Action:     event.EventName,
-		RequestID:  event.RequestID,
-		ResultCode: event.ResultCode,
-		SourceIP:   event.ClientIP, // C-002修复: 使用ClientIP替代SourceIP
-	}
-	a.store.Emit(ctx, auditEvent)
-	return nil
-}
-
-// ==================== Outbox处理器 ====================
-
-// OutboxProcessorRunner Outbox处理器运行器
-type OutboxProcessorRunner struct {
-	repo        *repository.OutboxRepository
-	msgBroker   messaging.MessageBroker
-	stats       messaging.OutboxStats
-	stopCh      chan struct{}
-	batchSize   int
-	interval    time.Duration
-}
-
-// NewOutboxProcessorRunner 创建Outbox处理器运行器
-func NewOutboxProcessorRunner(
-	repo *repository.OutboxRepository,
-	msgBroker messaging.MessageBroker,
-	stats messaging.OutboxStats,
-) *OutboxProcessorRunner {
-	return &OutboxProcessorRunner{
-		repo:      repo,
-		msgBroker: msgBroker,
-		stats:     stats,
-		stopCh:    make(chan struct{}),
-		batchSize: 100,
-		interval:  1 * time.Second,
-	}
-}
-
-// Start 启动Outbox处理器
-func (r *OutboxProcessorRunner) Start(ctx context.Context) {
-	log.Println("OutboxProcessor started")
-	ticker := time.NewTicker(r.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("OutboxProcessor stopping due to context cancellation")
-			return
-		case <-r.stopCh:
-			log.Println("OutboxProcessor stopping")
-			return
-		case <-ticker.C:
-			if err := r.process(ctx); err != nil {
-				log.Printf("OutboxProcessor error: %v", err)
-			}
-		}
-	}
-}
-
-// Stop 停止Outbox处理器
-func (r *OutboxProcessorRunner) Stop() {
-	close(r.stopCh)
-}
-
-// process 处理一批Outbox事件
-func (r *OutboxProcessorRunner) process(ctx context.Context) error {
-	// 获取待处理事件
-	events, err := r.repo.FetchAndLock(ctx, r.batchSize)
-	if err != nil {
-		return err
-	}
-
-	if len(events) == 0 {
-		return nil
-	}
-
-	for _, event := range events {
-		// 转换为domain.OutboxEvent
-		domainEvent := &domain.OutboxEvent{
-			ID:            event.ID,
-			AggregateType: event.AggregateType,
-			AggregateID:   event.AggregateID,
-			EventType:     event.EventType,
-			EventID:       event.EventID,
-			Payload:       event.Payload,
-			Status:       string(event.Status),
-			RetryCount:    event.RetryCount,
-			MaxRetries:    event.MaxRetries,
-			ErrorMessage:  event.ErrorMessage,
-			Version:       event.Version,
-		}
-
-		// 发布消息
-		if err := r.msgBroker.Publish(ctx, event); err != nil {
-			r.handleFailure(ctx, domainEvent, err)
-			continue
-		}
-
-		// 标记完成
-		if err := r.repo.MarkCompleted(ctx, event.EventID); err != nil {
-			r.stats.RecordOutboxFailure("mark_completed_failed")
-			continue
-		}
-
-		r.stats.RecordOutboxSuccess(event.EventType)
-	}
-
-	return nil
-}
-
-// handleFailure 处理失败事件
-func (r *OutboxProcessorRunner) handleFailure(ctx context.Context, event *domain.OutboxEvent, publishErr error) {
-	event.RetryCount++
-
-	if event.RetryCount >= event.MaxRetries {
-		// 移入死信队列
-		domainEvent := &repository.OutboxEvent{
-			ID:         event.ID,
-			EventID:    event.EventID,
-			Payload:    event.Payload,
-			RetryCount: event.RetryCount,
-		}
-		if err := r.repo.MoveToDeadLetter(ctx, domainEvent, publishErr.Error()); err != nil {
-			r.stats.RecordOutboxFailure("move_to_dlq_failed")
-		} else {
-			r.stats.RecordOutboxDLQ(event.EventType)
-		}
-	} else {
-		// 计算下次重试时间（指数退避）
-		backoffSeconds := calculateOutboxBackoff(event.RetryCount, event.MaxRetries)
-		nextRetry := time.Now().Add(time.Duration(backoffSeconds) * time.Second)
-
-		if err := r.repo.MarkFailed(ctx, event.EventID, publishErr.Error(), &nextRetry); err != nil {
-			r.stats.RecordOutboxFailure("mark_failed_failed")
-		} else {
-			r.stats.RecordOutboxRetry(event.EventType)
-		}
-	}
-}
-
-// calculateOutboxBackoff 计算指数退避时间
-func calculateOutboxBackoff(retryCount, maxRetries int) int {
-	initialBackoff := 1.0
-	maxBackoff := 60.0
-	backoff := initialBackoff * math.Pow(2, float64(retryCount-1))
-	if backoff > maxBackoff {
-		backoff = maxBackoff
-	}
-	return int(backoff)
-}
-
-// Ensure domain.OutboxEvent is compatible with our conversion
-var _ = domain.OutboxEvent{}
-
-// ==================== 补偿执行器 ====================
-
-// defaultCompensationExecutor 默认补偿执行器
-type defaultCompensationExecutor struct{}
-
-func (e *defaultCompensationExecutor) Execute(ctx context.Context, operationType string, payload json.RawMessage) error {
-	// TODO: 根据operationType执行相应的补偿操作
-	// 目前为placeholder实现，实际生产需要根据业务类型实现具体逻辑
-	log.Printf("补偿执行器: operation_type=%s, payload=%s", operationType, string(payload))
-	return nil
-}
-
-// parseRSAPublicKey 解析PEM格式的RSA公钥
-func parseRSAPublicKey(pemKey string) interface{} {
-	if pemKey == "" {
-		return nil
-	}
-	block, _ := pem.Decode([]byte(pemKey))
-	if block == nil {
-		return nil
-	}
-	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		// 尝试解析PKCS1公钥
-		rsaPub, err2 := x509.ParsePKCS1PublicKey(block.Bytes)
-		if err2 != nil {
-			log.Printf("警告: 解析RSA公钥失败: %v", err2)
-			return nil
-		}
-		return rsaPub
-	}
-	return pub
 }

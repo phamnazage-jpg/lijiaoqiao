@@ -434,6 +434,12 @@ go test -cover ./...
 supply-api/
 ├── cmd/supply-api/              # 主程序入口
 ├── internal/
+│   ├── adapter/                  # 存储适配器（内存/DB-backed）
+│   │   ├── adapter.go            # 存储适配器实现
+│   │   ├── account.go            # 账号存储适配器
+│   │   ├── package.go            # 套餐存储适配器
+│   │   ├── settlement.go         # 结算存储适配器
+│   │   └── earning.go           # 收益存储适配器
 │   ├── audit/                    # 审计日志模块
 │   │   ├── model/              # 审计事件模型
 │   │   ├── service/            # 审计服务
@@ -441,9 +447,14 @@ supply-api/
 │   │   ├── repository/         # 数据库仓储
 │   │   ├── sanitizer/          # 敏感信息脱敏
 │   │   └── events/             # 事件定义
-│   ├── iam/                     # IAM 模块
+│   ├── compensation/            # 补偿执行器
+│   │   └── compensation.go     # 补偿操作实现
 │   ├── domain/                  # 领域模型
-│   ├── middleware/               # HTTP 中间件
+│   ├── iam/                     # IAM 模块
+│   ├── messaging/               # 消息队列/outbox
+│   ├── middleware/              # HTTP 中间件
+│   ├── outbox/                  # Outbox处理器
+│   │   └── outbox.go           # Outbox处理器实现
 │   ├── repository/              # 通用数据仓储
 │   ├── cache/                   # Redis 缓存
 │   ├── config/                  # 配置管理

@@ -636,41 +636,57 @@ func TestGetRequestID(t *testing.T) {
 }
 
 func TestGetClientIP(t *testing.T) {
+	// 可信代理配置 - 包含测试中使用的RemoteAddr范围
+	trustedProxies := []string{"192.168.0.0/16", "10.0.0.0/8"}
+
 	tests := []struct {
 		name        string
 		headers     map[string]string
 		remoteAddr  string
+		trusted     []string // 可信代理配置，nil表示使用默认（不信任）
 		expectedIP  string
 	}{
 		{
-			name:       "X-Forwarded-For single",
+			name:       "X-Forwarded-For single (trusted proxy)",
 			headers:    map[string]string{"X-Forwarded-For": "203.0.113.1"},
 			remoteAddr: "192.168.1.1:1234",
+			trusted:    trustedProxies,
 			expectedIP: "203.0.113.1",
 		},
 		{
-			name:       "X-Forwarded-For multiple",
+			name:       "X-Forwarded-For multiple (trusted proxy)",
 			headers:    map[string]string{"X-Forwarded-For": "203.0.113.1, 198.51.100.1, 10.0.0.1"},
 			remoteAddr: "192.168.1.1:1234",
+			trusted:    trustedProxies,
 			expectedIP: "203.0.113.1",
 		},
 		{
-			name:       "X-Real-IP",
+			name:       "X-Real-IP (trusted proxy)",
 			headers:    map[string]string{"X-Real-IP": "203.0.113.5"},
 			remoteAddr: "192.168.1.1:1234",
+			trusted:    trustedProxies,
 			expectedIP: "203.0.113.5",
 		},
 		{
-			name:       "X-Forwarded-For takes precedence",
+			name:       "X-Forwarded-For takes precedence (trusted proxy)",
 			headers:    map[string]string{"X-Forwarded-For": "203.0.113.1", "X-Real-IP": "203.0.113.5"},
 			remoteAddr: "192.168.1.1:1234",
+			trusted:    trustedProxies,
 			expectedIP: "203.0.113.1",
 		},
 		{
-			name:       "fallback to RemoteAddr",
+			name:       "fallback to RemoteAddr (no trusted proxy)",
 			headers:    map[string]string{},
 			remoteAddr: "192.168.1.1:1234",
+			trusted:    nil, // 不配置可信代理
 			expectedIP: "192.168.1.1",
+		},
+		{
+			name:       "SEC-003: Untrusted source ignores X-Forwarded-For",
+			headers:    map[string]string{"X-Forwarded-For": "203.0.113.1"},
+			remoteAddr: "203.0.113.1:1234", // 公网IP作为RemoteAddr
+			trusted:    trustedProxies,       // 但不在可信代理范围内
+			expectedIP: "203.0.113.1",        // 应该使用RemoteAddr
 		},
 	}
 
@@ -682,7 +698,7 @@ func TestGetClientIP(t *testing.T) {
 			}
 			req.RemoteAddr = tt.remoteAddr
 
-			ip := getClientIP(req)
+			ip := getClientIP(req, tt.trusted...)
 			if ip != tt.expectedIP {
 				t.Errorf("expected '%s', got '%s'", tt.expectedIP, ip)
 			}

@@ -16,6 +16,9 @@ type mockSettlementStore struct {
 	settlements map[int64]*Settlement
 	balances    map[int64]float64
 	nextID      int64
+	// 控制 HasPendingOrProcessingWithdraw 的返回值
+	hasPendingWithdraw      bool
+	hasPendingWithdrawError error
 }
 
 func newMockSettlementStore() *mockSettlementStore {
@@ -31,6 +34,10 @@ func (m *mockSettlementStore) Create(ctx context.Context, s *Settlement) error {
 	m.nextID++
 	m.settlements[s.ID] = s
 	return nil
+}
+
+func (m *mockSettlementStore) CreateInTx(ctx context.Context, s *Settlement) error {
+	return m.Create(ctx, s)
 }
 
 func (m *mockSettlementStore) GetByID(ctx context.Context, supplierID, id int64) (*Settlement, error) {
@@ -66,7 +73,10 @@ func (m *mockSettlementStore) GetWithdrawableBalance(ctx context.Context, suppli
 }
 
 func (m *mockSettlementStore) HasPendingOrProcessingWithdraw(ctx context.Context, supplierID int64) (bool, error) {
-	return false, nil
+	if m.hasPendingWithdrawError != nil {
+		return false, m.hasPendingWithdrawError
+	}
+	return m.hasPendingWithdraw, nil
 }
 
 // mockEarningStore Mock收益存储
@@ -125,6 +135,21 @@ func (m *mockAuditStoreForSettlement) QueryWithTotal(ctx context.Context, filter
 
 func (m *mockAuditStoreForSettlement) GetByID(ctx context.Context, eventID string) (audit.Event, error) {
 	return audit.Event{}, errors.New("not found")
+}
+
+// mockSMSVerifierForSettlement Mock短信验证码验证器
+type mockSMSVerifierForSettlement struct {
+	verifyResult bool
+	verifyError  error
+}
+
+func (m *mockSMSVerifierForSettlement) Verify(ctx context.Context, phone string, code string) (bool, error) {
+	if m.verifyError != nil {
+		return false, m.verifyError
+	}
+	// Mock 验证器忽略 phone 和 code 参数，只根据 verifyResult 返回
+	// 真实测试中应根据具体场景设置 verifyResult
+	return m.verifyResult, nil
 }
 
 // TestSettlementConstants 测试结算状态常量
@@ -242,90 +267,170 @@ func TestSettlementService_Withdraw(t *testing.T) {
 	earningStore := newMockEarningStore()
 	auditStore := &mockAuditStoreForSettlement{}
 
-	svc := NewSettlementService(store, earningStore, auditStore)
+	// 设置余额
+	store.balances[1001] = 5000.0
+
+	// 测试无效验证码
+	t.Run("invalid sms code", func(t *testing.T) {
+		smsVerifier := &mockSMSVerifierForSettlement{verifyResult: false}
+		svc := NewSettlementServiceWithSMS(store, earningStore, auditStore, smsVerifier)
+
+		req := &WithdrawRequest{
+			Amount:         1000,
+			SMSCode:        "000000",
+			PaymentMethod:  PaymentMethodBank,
+			PaymentAccount: "1234567890",
+		}
+		result, err := svc.Withdraw(context.Background(), 1001, req)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "invalid sms code")
+	})
+
+	// 测试验证码错误
+	t.Run("sms verify error", func(t *testing.T) {
+		smsVerifier := &mockSMSVerifierForSettlement{verifyError: errors.New("SMS service unavailable")}
+		svc := NewSettlementServiceWithSMS(store, earningStore, auditStore, smsVerifier)
+
+		req := &WithdrawRequest{
+			Amount:         1000,
+			SMSCode:        "123456",
+			PaymentMethod:  PaymentMethodBank,
+			PaymentAccount: "1234567890",
+		}
+		result, err := svc.Withdraw(context.Background(), 1001, req)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to verify SMS code")
+	})
+
+	// 测试负数金额
+	t.Run("negative amount", func(t *testing.T) {
+		smsVerifier := &mockSMSVerifierForSettlement{verifyResult: true}
+		svc := NewSettlementServiceWithSMS(store, earningStore, auditStore, smsVerifier)
+
+		req := &WithdrawRequest{
+			Amount:         -100,
+			SMSCode:        "123456",
+			PaymentMethod:  PaymentMethodBank,
+			PaymentAccount: "1234567890",
+		}
+		result, err := svc.Withdraw(context.Background(), 1001, req)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "must be positive")
+	})
+
+	// 测试零金额
+	t.Run("zero amount", func(t *testing.T) {
+		smsVerifier := &mockSMSVerifierForSettlement{verifyResult: true}
+		svc := NewSettlementServiceWithSMS(store, earningStore, auditStore, smsVerifier)
+
+		req := &WithdrawRequest{
+			Amount:         0,
+			SMSCode:        "123456",
+			PaymentMethod:  PaymentMethodBank,
+			PaymentAccount: "1234567890",
+		}
+		result, err := svc.Withdraw(context.Background(), 1001, req)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "must be positive")
+	})
+
+	// 测试超过余额
+	t.Run("exceeds balance", func(t *testing.T) {
+		smsVerifier := &mockSMSVerifierForSettlement{verifyResult: true}
+		svc := NewSettlementServiceWithSMS(store, earningStore, auditStore, smsVerifier)
+
+		req := &WithdrawRequest{
+			Amount:         10000,
+			SMSCode:        "123456",
+			PaymentMethod:  PaymentMethodBank,
+			PaymentAccount: "1234567890",
+		}
+		result, err := svc.Withdraw(context.Background(), 1001, req)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "exceeds available balance")
+	})
+
+	// 测试成功提现
+	t.Run("success", func(t *testing.T) {
+		smsVerifier := &mockSMSVerifierForSettlement{verifyResult: true}
+		svc := NewSettlementServiceWithSMS(store, earningStore, auditStore, smsVerifier)
+
+		req := &WithdrawRequest{
+			Amount:         1000,
+			SMSCode:        "123456",
+			PaymentMethod:  PaymentMethodBank,
+			PaymentAccount: "1234567890",
+		}
+		result, err := svc.Withdraw(context.Background(), 1001, req)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, int64(1001), result.SupplierID)
+		assert.Equal(t, SettlementStatusPending, result.Status)
+		assert.Equal(t, 1000.0, result.TotalAmount)
+		assert.Equal(t, 10.0, result.FeeAmount)    // 1% fee
+		assert.Equal(t, 990.0, result.NetAmount)   // 99%
+	})
+}
+
+// TestSettlementService_Withdraw_AlreadyHasPending 测试已有待处理提现时拒绝新提现
+func TestSettlementService_Withdraw_AlreadyHasPending(t *testing.T) {
+	store := newMockSettlementStore()
+	earningStore := newMockEarningStore()
+	auditStore := &mockAuditStoreForSettlement{}
+	smsVerifier := &mockSMSVerifierForSettlement{verifyResult: true} // Mock SMS验证通过
+
+	// 设置已有待处理提现
+	store.hasPendingWithdraw = true
+
+	svc := NewSettlementServiceWithSMS(store, earningStore, auditStore, smsVerifier)
 
 	// 设置余额
 	store.balances[1001] = 5000.0
 
-	tests := []struct {
-		name    string
-		req     *WithdrawRequest
-		wantErr bool
-		errMsg  string
-	}{
-		{
-			name: "invalid sms code",
-			req: &WithdrawRequest{
-				Amount:         1000,
-				SMSCode:        "000000",
-				PaymentMethod:  PaymentMethodBank,
-				PaymentAccount: "1234567890",
-			},
-			wantErr: true,
-			errMsg:  "invalid sms code",
-		},
-		{
-			name: "negative amount",
-			req: &WithdrawRequest{
-				Amount:         -100,
-				SMSCode:        "123456",
-				PaymentMethod:  PaymentMethodBank,
-				PaymentAccount: "1234567890",
-			},
-			wantErr: true,
-			errMsg:  "must be positive",
-		},
-		{
-			name: "zero amount",
-			req: &WithdrawRequest{
-				Amount:         0,
-				SMSCode:        "123456",
-				PaymentMethod:  PaymentMethodBank,
-				PaymentAccount: "1234567890",
-			},
-			wantErr: true,
-			errMsg:  "must be positive",
-		},
-		{
-			name: "exceeds balance",
-			req: &WithdrawRequest{
-				Amount:         10000,
-				SMSCode:        "123456",
-				PaymentMethod:  PaymentMethodBank,
-				PaymentAccount: "1234567890",
-			},
-			wantErr: true,
-			errMsg:  "exceeds available balance",
-		},
-		{
-			name: "success",
-			req: &WithdrawRequest{
-				Amount:         1000,
-				SMSCode:        "123456",
-				PaymentMethod:  PaymentMethodBank,
-				PaymentAccount: "1234567890",
-			},
-			wantErr: false,
-		},
+	req := &WithdrawRequest{
+		Amount:         1000,
+		SMSCode:        "123456",
+		PaymentMethod:  PaymentMethodBank,
+		PaymentAccount: "1234567890",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := svc.Withdraw(context.Background(), 1001, tt.req)
-			if tt.wantErr {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errMsg)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, result)
-				assert.Equal(t, int64(1001), result.SupplierID)
-				assert.Equal(t, SettlementStatusPending, result.Status)
-				assert.Equal(t, 1000.0, result.TotalAmount)
-				assert.Equal(t, 10.0, result.FeeAmount)    // 1% fee
-				assert.Equal(t, 990.0, result.NetAmount)   // 99%
-			}
-		})
+	result, err := svc.Withdraw(context.Background(), 1001, req)
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "already processing")
+}
+
+// TestSettlementService_Withdraw_HasPendingCheckError 测试 HasPendingOrProcessingWithdraw 出错
+func TestSettlementService_Withdraw_HasPendingCheckError(t *testing.T) {
+	store := newMockSettlementStore()
+	earningStore := newMockEarningStore()
+	auditStore := &mockAuditStoreForSettlement{}
+	smsVerifier := &mockSMSVerifierForSettlement{verifyResult: true} // Mock SMS验证通过
+
+	// 设置 HasPendingOrProcessingWithdraw 返回错误
+	store.hasPendingWithdrawError = errors.New("database error")
+
+	svc := NewSettlementServiceWithSMS(store, earningStore, auditStore, smsVerifier)
+
+	// 设置余额
+	store.balances[1001] = 5000.0
+
+	req := &WithdrawRequest{
+		Amount:         1000,
+		SMSCode:        "123456",
+		PaymentMethod:  PaymentMethodBank,
+		PaymentAccount: "1234567890",
 	}
+
+	result, err := svc.Withdraw(context.Background(), 1001, req)
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "database error")
 }
 
 // TestSettlementService_Cancel 测试取消结算
