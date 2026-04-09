@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 )
@@ -31,6 +32,16 @@ func (m *mockCompensationStore) GetByBatchID(ctx context.Context, batchID string
 	var result []*BatchCompensation
 	for _, comp := range m.compensations {
 		if comp.BatchID == batchID {
+			result = append(result, comp)
+		}
+	}
+	return result, nil
+}
+
+func (m *mockCompensationStore) GetPending(ctx context.Context) ([]*BatchCompensation, error) {
+	var result []*BatchCompensation
+	for _, comp := range m.compensations {
+		if comp.Status == CompensationStatusPending || comp.Status == CompensationStatusRetrying {
 			result = append(result, comp)
 		}
 	}
@@ -186,4 +197,207 @@ func TestP007_Summary(t *testing.T) {
 	t.Log("  - 提供人工介入接口")
 	t.Log("")
 	t.Log("SQL脚本: sql/postgresql/outbox_pattern_v1.sql")
+}
+
+// TestCompensationProcessor_ProcessBatchCompensations_Success 测试处理成功
+func TestCompensationProcessor_ProcessBatchCompensations_Success(t *testing.T) {
+	store := newMockCompensationStore()
+	executor := &mockOperationExecutor{shouldFail: false}
+	stats := &mockCompensationStats{}
+
+	processor := NewCompensationProcessor(store, executor, stats)
+
+	// 添加补偿记录
+	payload, _ := json.Marshal(map[string]string{"key": "value"})
+	store.compensations[1] = &BatchCompensation{
+		ID:            1,
+		BatchID:       "batch_001",
+		OperationType: "account.create",
+		ItemPayload:   payload,
+		Status:        CompensationStatusPending,
+		MaxRetries:    3,
+		RetryCount:    0,
+	}
+
+	result, err := processor.ProcessBatchCompensations(context.Background(), "batch_001")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.SuccessCount != 1 {
+		t.Errorf("expected 1 success, got %d", result.SuccessCount)
+	}
+	if stats.resolvedCount != 1 {
+		t.Errorf("expected 1 resolved stat, got %d", stats.resolvedCount)
+	}
+}
+
+// TestCompensationProcessor_ProcessBatchCompensations_Retry 测试重试逻辑
+func TestCompensationProcessor_ProcessBatchCompensations_Retry(t *testing.T) {
+	store := newMockCompensationStore()
+	executor := &mockOperationExecutor{shouldFail: true, failError: errors.New("temporary failure")}
+	stats := &mockCompensationStats{}
+
+	processor := NewCompensationProcessor(store, executor, stats)
+
+	// 添加补偿记录（还有重试次数）
+	payload, _ := json.Marshal(map[string]string{"key": "value"})
+	store.compensations[1] = &BatchCompensation{
+		ID:            1,
+		BatchID:       "batch_002",
+		OperationType: "account.create",
+		ItemPayload:   payload,
+		Status:        CompensationStatusPending,
+		MaxRetries:    3,
+		RetryCount:    0, // 还没重试过
+	}
+
+	result, err := processor.ProcessBatchCompensations(context.Background(), "batch_002")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.RetryCount != 1 {
+		t.Errorf("expected 1 retry, got %d", result.RetryCount)
+	}
+	if result.ManualCount != 0 {
+		t.Errorf("expected 0 manual, got %d", result.ManualCount)
+	}
+	if stats.retryCount != 1 {
+		t.Errorf("expected 1 retry stat, got %d", stats.retryCount)
+	}
+}
+
+// TestCompensationProcessor_ProcessBatchCompensations_MaxRetriesExceeded 测试超过最大重试
+func TestCompensationProcessor_ProcessBatchCompensations_MaxRetriesExceeded(t *testing.T) {
+	store := newMockCompensationStore()
+	executor := &mockOperationExecutor{shouldFail: true, failError: errors.New("permanent failure")}
+	stats := &mockCompensationStats{}
+
+	processor := NewCompensationProcessor(store, executor, stats)
+
+	// 添加补偿记录（已达到最大重试次数）
+	payload, _ := json.Marshal(map[string]string{"key": "value"})
+	store.compensations[1] = &BatchCompensation{
+		ID:            1,
+		BatchID:       "batch_003",
+		OperationType: "account.create",
+		ItemPayload:   payload,
+		Status:        CompensationStatusPending,
+		MaxRetries:    3,
+		RetryCount:    3, // 已达最大重试次数
+	}
+
+	result, err := processor.ProcessBatchCompensations(context.Background(), "batch_003")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.ManualCount != 1 {
+		t.Errorf("expected 1 manual, got %d", result.ManualCount)
+	}
+	if stats.manualCount != 1 {
+		t.Errorf("expected 1 manual stat, got %d", stats.manualCount)
+	}
+}
+
+// TestCompensationProcessor_ProcessBatchCompensations_AlreadyProcessed 测试跳过已处理的记录
+func TestCompensationProcessor_ProcessBatchCompensations_AlreadyProcessed(t *testing.T) {
+	store := newMockCompensationStore()
+	executor := &mockOperationExecutor{shouldFail: false}
+	stats := &mockCompensationStats{}
+
+	processor := NewCompensationProcessor(store, executor, stats)
+
+	// 添加已解决的补偿记录
+	payload, _ := json.Marshal(map[string]string{"key": "value"})
+	store.compensations[1] = &BatchCompensation{
+		ID:            1,
+		BatchID:       "batch_004",
+		OperationType: "account.create",
+		ItemPayload:   payload,
+		Status:        CompensationStatusResolved, // 已解决
+		MaxRetries:    3,
+		RetryCount:    0,
+	}
+
+	result, err := processor.ProcessBatchCompensations(context.Background(), "batch_004")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.SuccessCount != 0 {
+		t.Errorf("expected 0 success, got %d", result.SuccessCount)
+	}
+	if executor.executionCount != 0 {
+		t.Errorf("expected 0 executions, got %d", executor.executionCount)
+	}
+}
+
+// TestNewCompensationProcessor 测试构造函数
+func TestNewCompensationProcessor(t *testing.T) {
+	store := newMockCompensationStore()
+	executor := &mockOperationExecutor{}
+	stats := &mockCompensationStats{}
+
+	processor := NewCompensationProcessor(store, executor, stats)
+
+	if processor == nil {
+		t.Fatal("expected processor, got nil")
+	}
+	if processor.store != store {
+		t.Error("store not set correctly")
+	}
+	if processor.operationExecutor != executor {
+		t.Error("executor not set correctly")
+	}
+	if processor.stats != stats {
+		t.Error("stats not set correctly")
+	}
+}
+
+// TestNoOpCompensationStats 测试NoOp实现
+func TestNoOpCompensationStats(t *testing.T) {
+	stats := &NoOpCompensationStats{}
+
+	// 这些调用不应该panic
+	stats.RecordCompensationRetry("test")
+	stats.RecordCompensationResolved("test")
+	stats.RecordCompensationManual("test")
+}
+
+// TestStartBackgroundWorker 测试启动后台worker（简单测试不panic）
+func TestStartBackgroundWorker(t *testing.T) {
+	store := newMockCompensationStore()
+	executor := &mockOperationExecutor{}
+	stats := &NoOpCompensationStats{}
+
+	processor := NewCompensationProcessor(store, executor, stats)
+	ctx := context.Background()
+
+	// 启动worker（会立即返回）
+	workerCtx := processor.StartBackgroundWorker(ctx, 100*time.Millisecond)
+
+	// 等待一下让worker运行
+	time.Sleep(50 * time.Millisecond)
+
+	// worker应该还在运行
+	select {
+	case <-workerCtx.Done():
+		t.Error("worker should still be running")
+	default:
+		// 正常
+	}
 }

@@ -245,3 +245,78 @@ func TestWithTimeoutMiddleware_Timeout(t *testing.T) {
 		t.Error("expected X-Timeout header to be set")
 	}
 }
+
+// TestTimeoutResponseWriter_EnsureStarted tests the ensureStarted method
+func TestTimeoutResponseWriter_EnsureStarted(t *testing.T) {
+	w := &TimeoutResponseWriter{
+		ResponseWriter: httptest.NewRecorder(),
+		timeout:        100 * time.Millisecond,
+	}
+
+	// Initially not started
+	if !w.started.IsZero() {
+		t.Error("started should be zero initially")
+	}
+
+	// Call ensureStarted
+	w.ensureStarted()
+
+	// Should be set now
+	if w.started.IsZero() {
+		t.Error("started should be set after ensureStarted")
+	}
+
+	// Calling again should not change it
+	startedBefore := w.started
+	w.ensureStarted()
+	if !w.started.Equal(startedBefore) {
+		t.Error("started should not change on second call")
+	}
+}
+
+// TestTimeoutResponseWriter_CheckTimeout tests the checkTimeout method
+func TestTimeoutResponseWriter_CheckTimeout(t *testing.T) {
+	w := &TimeoutResponseWriter{
+		ResponseWriter: httptest.NewRecorder(),
+		timeout:        50 * time.Millisecond,
+	}
+
+	// Not started - should return false
+	if w.checkTimeout() {
+		t.Error("checkTimeout should return false when not started")
+	}
+
+	// Start and check immediately - should return false
+	w.ensureStarted()
+	if w.checkTimeout() {
+		t.Error("checkTimeout should return false immediately after start")
+	}
+
+	// Wait and check - should return true
+	time.Sleep(60 * time.Millisecond)
+	if !w.checkTimeout() {
+		t.Error("checkTimeout should return true after timeout")
+	}
+}
+
+// TestTimeoutResponseWriter_SetTimeoutHeader tests the setTimeoutHeader method
+func TestTimeoutResponseWriter_SetTimeoutHeader(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	w := &TimeoutResponseWriter{
+		ResponseWriter: recorder,
+		timeout:        100 * time.Millisecond,
+	}
+
+	// Initially no timeout header
+	if recorder.Header().Get("X-Timeout") == "true" {
+		t.Error("X-Timeout should not be set initially")
+	}
+
+	// Set timeout header
+	w.setTimeoutHeader()
+
+	// Should be set now
+	if recorder.Header().Get("X-Timeout") != "true" {
+		t.Error("X-Timeout should be set after setTimeoutHeader")
+	}
+}

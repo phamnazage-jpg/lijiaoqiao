@@ -231,13 +231,19 @@ func (rl *RateLimitMiddleware) setRateLimitHeaders(w http.ResponseWriter, bucket
 
 // getTenantIDFromRequest 从请求获取租户ID
 func getTenantIDFromRequest(r *http.Request) int64 {
-	// 简化实现，实际应从token claims获取
+	// 从JWT claims获取租户ID
+	if claims := GetTokenClaims(r.Context()); claims != nil {
+		return claims.TenantID
+	}
 	return 0
 }
 
 // getUserIDFromRequest 从请求获取用户ID
 func getUserIDFromRequest(r *http.Request) string {
-	// 简化实现，实际应从token claims获取
+	// 从JWT claims获取用户ID
+	if claims := GetTokenClaims(r.Context()); claims != nil {
+		return claims.SubjectID
+	}
 	return "unknown"
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -46,6 +47,8 @@ type CompensationStore interface {
 	Create(ctx context.Context, comp *BatchCompensation) (int64, error)
 	// GetByBatchID 获取批次补偿列表
 	GetByBatchID(ctx context.Context, batchID string) ([]*BatchCompensation, error)
+	// GetPending 获取所有待处理的补偿记录
+	GetPending(ctx context.Context) ([]*BatchCompensation, error)
 	// UpdateStatus 更新状态
 	UpdateStatus(ctx context.Context, id int64, status string) error
 	// Resolve 解决补偿
@@ -56,9 +59,10 @@ type CompensationStore interface {
 
 // CompensationProcessor 补偿处理器
 type CompensationProcessor struct {
-	store         CompensationStore
+	store           CompensationStore
 	operationExecutor OperationExecutor
-	stats          CompensationStats
+	stats            CompensationStats
+	workerCancel     context.CancelFunc // 保存worker context的cancel函数
 }
 
 // OperationExecutor 操作执行器接口
@@ -173,6 +177,79 @@ type CompensationResult struct {
 	FailedCount   int    `json:"failed_count"`
 }
 
+// StartBackgroundWorker 启动后台补偿处理worker
+func (p *CompensationProcessor) StartBackgroundWorker(ctx context.Context, interval time.Duration) context.Context {
+	workerCtx, cancel := context.WithCancel(ctx)
+	p.workerCancel = cancel // 保存cancel函数以便后续停止worker
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-workerCtx.Done():
+				log.Println("补偿处理worker已停止")
+				return
+			case <-ticker.C:
+				p.processPendingCompensations(workerCtx)
+			}
+		}
+	}()
+	return workerCtx
+}
+
+// StopBackgroundWorker 停止后台补偿处理worker
+func (p *CompensationProcessor) StopBackgroundWorker() {
+	if p.workerCancel != nil {
+		p.workerCancel()
+		p.workerCancel = nil
+	}
+}
+
+// processPendingCompensations 处理所有待处理的补偿记录
+func (p *CompensationProcessor) processPendingCompensations(ctx context.Context) {
+	// 获取所有pending和retrying状态的补偿记录
+	compensations, err := p.store.GetPending(ctx)
+	if err != nil {
+		log.Printf("补偿处理worker: 获取待处理补偿失败: %v", err)
+		return
+	}
+
+	if len(compensations) == 0 {
+		return
+	}
+
+	log.Printf("补偿处理worker: 发现 %d 条待处理补偿记录", len(compensations))
+
+	for _, comp := range compensations {
+		// 重试执行
+		err := p.operationExecutor.Execute(ctx, comp.OperationType, comp.ItemPayload)
+		if err != nil {
+			comp.RetryCount++
+			comp.FailureReason = err.Error()
+
+			if comp.RetryCount >= comp.MaxRetries {
+				// 超过最大重试次数，标记需要人工介入
+				if markErr := p.store.MarkManualRequired(ctx, comp.ID, err.Error()); markErr != nil {
+					log.Printf("补偿处理worker: 标记人工介入失败 id=%d: %v", comp.ID, markErr)
+				}
+				p.stats.RecordCompensationManual(comp.OperationType)
+			} else {
+				// 继续重试
+				if updateErr := p.store.UpdateStatus(ctx, comp.ID, CompensationStatusRetrying); updateErr != nil {
+					log.Printf("补偿处理worker: 更新状态失败 id=%d: %v", comp.ID, updateErr)
+				}
+				p.stats.RecordCompensationRetry(comp.OperationType)
+			}
+		} else {
+			// 执行成功，标记解决
+			if resolveErr := p.store.Resolve(ctx, comp.ID, 0, "worker_auto_resolved"); resolveErr != nil {
+				log.Printf("补偿处理worker: 标记解决失败 id=%d: %v", comp.ID, resolveErr)
+			}
+			p.stats.RecordCompensationResolved(comp.OperationType)
+		}
+	}
+}
+
 // SQLCompensationStore SQL实现的补偿存储
 type SQLCompensationStore struct {
 	pool *pgxpool.Pool
@@ -207,6 +284,40 @@ func (s *SQLCompensationStore) GetByBatchID(ctx context.Context, batchID string)
 		WHERE batch_id = $1
 		ORDER BY item_index
 	`, batchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var compensations []*BatchCompensation
+	for rows.Next() {
+		comp := &BatchCompensation{}
+		err := rows.Scan(
+			&comp.ID, &comp.BatchID, &comp.OperationType, &comp.ItemIndex,
+			&comp.ItemPayload, &comp.FailureReason, &comp.Status,
+			&comp.RetryCount, &comp.MaxRetries, &comp.ResolvedAt,
+			&comp.ResolvedBy, &comp.ResolutionNotes, &comp.CreatedAt,
+			&comp.UpdatedAt, &comp.CreatedBy, &comp.Version,
+		)
+		if err != nil {
+			return nil, err
+		}
+		compensations = append(compensations, comp)
+	}
+	return compensations, rows.Err()
+}
+
+// GetPending 获取所有待处理的补偿记录
+func (s *SQLCompensationStore) GetPending(ctx context.Context) ([]*BatchCompensation, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, batch_id, operation_type, item_index, item_payload,
+			   failure_reason, status, retry_count, max_retries,
+			   resolved_at, resolved_by, resolution_notes,
+			   created_at, updated_at, created_by, version
+		FROM supply_batch_compensation
+		WHERE status IN ($1, $2)
+		ORDER BY created_at ASC
+	`, CompensationStatusPending, CompensationStatusRetrying)
 	if err != nil {
 		return nil, err
 	}
