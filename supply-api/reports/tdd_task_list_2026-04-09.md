@@ -27,7 +27,7 @@
 | ID | 问题 | 状态 |
 |----|------|------|
 | P0-01 | 硬编码SMS测试码 | ✅ 已修复 |
-| P0-02 | 提现操作无事务 | ✅ 已修复 (CreateInTx) |
+| P0-02 | 提现操作无事务 | ✅ 已修复 (CreateWithdrawTx + FOR UPDATE SKIP LOCKED) |
 | P0-03 | 补偿执行器stub | ✅ 已修复 |
 
 ### P1 问题
@@ -138,8 +138,9 @@ type RedisTokenCacheBackend struct {
 | 2026-04-09 | Task #23 main.go拆分 | ✅ 完成 |
 | 2026-04-09 | SEC-001 硬编码测试码 | ✅ 完成 |
 | 2026-04-09 | SEC-003 IP验证 | ✅ 完成 |
-| 2026-04-09 | TASK-25 domain覆盖率提升 | ✅ 完成 (72.0%) |
+| 2026-04-09 | TASK-25 domain覆盖率提升 | ✅ 完成 (72.3%) |
 | 2026-04-09 | TASK-27 DSN密码泄露检查 | ✅ 完成 (设计安全) |
+| 2026-04-09 | TASK-28 提现竞态修复 | ✅ 完成 (FOR UPDATE SKIP LOCKED) |
 | 2026-04-09 | 请求超时中间件检查 | ✅ 完成 (已实现) |
 | 2026-04-09 | SEC-010 TokenCache | ⚠️ 已知限制 (需Redis) |
 

@@ -165,6 +165,33 @@ func (s *InMemorySettlementStore) Create(ctx context.Context, settlement *domain
 	return nil
 }
 
+// CreateInTx 在事务中创建（内存存储不需要真实事务，直接调用Create）
+func (s *InMemorySettlementStore) CreateInTx(ctx context.Context, settlement *domain.Settlement) error {
+	return s.Create(ctx, settlement)
+}
+
+// CreateWithdrawTx 原子化提现创建（内存存储实现）
+// 注意：内存存储天然是串行的，不需要额外锁
+func (s *InMemorySettlementStore) CreateWithdrawTx(ctx context.Context, settlement *domain.Settlement) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 检查是否有pending的提现
+	for _, existing := range s.settlements {
+		if existing.SupplierID == settlement.SupplierID &&
+			(existing.Status == domain.SettlementStatusPending || existing.Status == domain.SettlementStatusProcessing) {
+			return errors.New("already has pending or processing withdrawal")
+		}
+	}
+
+	settlement.ID = s.nextID
+	s.nextID++
+	settlement.CreatedAt = time.Now()
+	settlement.UpdatedAt = time.Now()
+	s.settlements[settlement.ID] = settlement
+	return nil
+}
+
 func (s *InMemorySettlementStore) GetByID(ctx context.Context, supplierID, id int64) (*domain.Settlement, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

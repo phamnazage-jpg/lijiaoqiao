@@ -101,6 +101,14 @@ func (m *mockSettlementStoreForInvariant) Create(ctx context.Context, s *Settlem
 	return nil
 }
 
+func (m *mockSettlementStoreForInvariant) CreateWithdrawTx(ctx context.Context, s *Settlement) error {
+	return m.Create(ctx, s)
+}
+
+func (m *mockSettlementStoreForInvariant) CreateInTx(ctx context.Context, s *Settlement) error {
+	return m.Create(ctx, s)
+}
+
 func (m *mockSettlementStoreForInvariant) GetByID(ctx context.Context, supplierID, id int64) (*Settlement, error) {
 	if s, ok := m.settlements[id]; ok && s.SupplierID == supplierID {
 		return s, nil

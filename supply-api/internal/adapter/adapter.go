@@ -80,6 +80,11 @@ func (a *InMemorySettlementStoreAdapter) Create(ctx context.Context, s *domain.S
 	return a.store.Create(ctx, s)
 }
 
+// CreateWithdrawTx 内存存储的原子提现创建（简化实现，假设无并发）
+func (a *InMemorySettlementStoreAdapter) CreateWithdrawTx(ctx context.Context, s *domain.Settlement) error {
+	return a.store.CreateInTx(ctx, s)
+}
+
 func (a *InMemorySettlementStoreAdapter) CreateInTx(ctx context.Context, s *domain.Settlement) error {
 	return a.store.CreateInTx(ctx, s)
 }
@@ -196,7 +201,26 @@ func (s *DBSettlementStore) Create(ctx context.Context, settlement *domain.Settl
 	return s.repo.Create(ctx, settlement, "", "", "")
 }
 
-// CreateInTx 在事务中创建结算单
+// CreateWithdrawTx 原子化创建提现（带锁）
+// 使用 SELECT ... FOR UPDATE SKIP LOCKED 防止并发提现
+func (s *DBSettlementStore) CreateWithdrawTx(ctx context.Context, settlement *domain.Settlement) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if err := s.repo.CreateWithdrawTx(ctx, tx, settlement, "", "", ""); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return nil
+}
+
+// CreateInTx 在事务中创建结算单（非提现）
 func (s *DBSettlementStore) CreateInTx(ctx context.Context, settlement *domain.Settlement) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

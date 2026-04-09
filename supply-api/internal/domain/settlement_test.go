@@ -36,6 +36,15 @@ func (m *mockSettlementStore) Create(ctx context.Context, s *Settlement) error {
 	return nil
 }
 
+// CreateWithdrawTx 原子化提现创建（mock实现）
+func (m *mockSettlementStore) CreateWithdrawTx(ctx context.Context, s *Settlement) error {
+	// 检查是否有pending的提现
+	if m.hasPendingWithdraw {
+		return errors.New("already has pending or processing withdrawal")
+	}
+	return m.Create(ctx, s)
+}
+
 func (m *mockSettlementStore) CreateInTx(ctx context.Context, s *Settlement) error {
 	return m.Create(ctx, s)
 }

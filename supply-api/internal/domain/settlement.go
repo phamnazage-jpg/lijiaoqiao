@@ -136,7 +136,9 @@ type PlatformStat struct {
 // P1-005: 乐观锁支持 - Update需要expectedVersion参数防止并发更新
 type SettlementStore interface {
 	Create(ctx context.Context, s *Settlement) error
-	// CreateInTx 在事务中创建结算单
+	// CreateWithdrawTx 原子化创建提现（带锁防止并发）
+	CreateWithdrawTx(ctx context.Context, s *Settlement) error
+	// CreateInTx 在事务中创建结算单（非提现场景）
 	CreateInTx(ctx context.Context, s *Settlement) error
 	GetByID(ctx context.Context, supplierID, id int64) (*Settlement, error)
 	// Update 使用乐观锁，expectedVersion是更新前的版本号，如果版本不匹配返回ErrConcurrencyConflict
@@ -258,7 +260,9 @@ func (s *settlementService) Withdraw(ctx context.Context, supplierID int64, req 
 		UpdatedAt:      time.Now(),
 	}
 
-	if err := s.store.CreateInTx(ctx, settlement); err != nil {
+	// P0-02修复: 使用原子化提现创建（带锁）
+	// CreateWithdrawTx 使用 SELECT ... FOR UPDATE SKIP LOCKED 防止并发提现
+	if err := s.store.CreateWithdrawTx(ctx, settlement); err != nil {
 		return nil, err
 	}
 

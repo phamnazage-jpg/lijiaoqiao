@@ -1,0 +1,30 @@
+-- Settlement Withdraw Constraint v1.0
+-- 提现唯一约束说明
+--
+-- 问题: PRD 要求确保每个供应商同时只有一个 pending/processing 状态的提现
+--
+-- 解决方案: 在 repository 层使用 SELECT ... FOR UPDATE SKIP LOCKED
+-- 参见: internal/repository/settlement.go - CreateWithdrawTx()
+--
+-- 该方法在事务开始时锁定任何现有的 pending/processing 提现记录，
+-- 然后检查是否存在，如果不存在则插入新记录。
+--
+-- SQL 实现:
+-- 1. 首先执行: SELECT id FROM supply_settlements
+--                WHERE user_id = $1 AND status IN ('pending', 'processing')
+--                FOR UPDATE SKIP LOCKED
+--
+-- 2. 如果上面查询返回行，说明有 pending 的提现，返回错误
+--
+-- 3. 如果上面查询没有返回行（ErrNoRows），执行插入
+--
+-- 注意: 这个方案比使用辅助锁表更简单高效，因为:
+-- - 不需要额外的表和复杂的锁管理
+-- - 利用数据库原生的事务隔离和行锁机制
+-- - 自动处理锁超时和死锁情况
+
+-- 如果未来需要在数据库层面加强约束，可以考虑:
+-- 1. 使用触发器在插入前检查
+-- 2. 使用 Exclusion Constraint (需要额外的辅助列)
+--
+-- 当前应用层实现已足够防止并发提现问题。

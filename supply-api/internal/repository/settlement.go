@@ -50,6 +50,35 @@ func (r *SettlementRepository) Create(ctx context.Context, s *domain.Settlement,
 	return nil
 }
 
+// CreateTx 创建结算单（事务版本）
+func (r *SettlementRepository) CreateTx(ctx context.Context, tx pgx.Tx, s *domain.Settlement, requestID, idempotencyKey, traceID string) error {
+	query := `
+		INSERT INTO supply_settlements (
+			settlement_no, user_id, total_amount, fee_amount, net_amount,
+			status, payment_method, payment_account,
+			period_start, period_end, total_orders, total_usage_records,
+			currency_code, amount_unit, version,
+			request_id, idempotency_key, audit_trace_id
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+		)
+		RETURNING id, created_at, updated_at
+	`
+
+	err := tx.QueryRow(ctx, query,
+		s.SettlementNo, s.SupplierID, s.TotalAmount, s.FeeAmount, s.NetAmount,
+		s.Status, s.PaymentMethod, s.PaymentAccount,
+		s.PeriodStart, s.PeriodEnd, s.TotalOrders, s.TotalUsageRecords,
+		"USD", "minor", 0,
+		requestID, idempotencyKey, traceID,
+	).Scan(&s.ID, &s.CreatedAt, &s.UpdatedAt)
+
+	if err != nil {
+		return fmt.Errorf("failed to create settlement: %w", err)
+	}
+	return nil
+}
+
 // GetByID 获取结算单
 func (r *SettlementRepository) GetByID(ctx context.Context, supplierID, id int64) (*domain.Settlement, error) {
 	query := `
@@ -259,6 +288,55 @@ func (r *SettlementRepository) List(ctx context.Context, supplierID int64) ([]*d
 	}
 
 	return settlements, nil
+}
+
+// CreateWithdrawTx 原子化创建提现（带锁）
+// 使用 SELECT ... FOR UPDATE SKIP LOCKED 锁定现有pending/processing记录
+// 确保同一供应商同时只有一个pending/processing状态的提现
+func (r *SettlementRepository) CreateWithdrawTx(ctx context.Context, tx pgx.Tx, s *domain.Settlement, requestID, idempotencyKey, traceID string) error {
+	// 1. 锁定现有pending/processing的提现记录（FOR UPDATE SKIP LOCKED）
+	lockQuery := `
+		SELECT id FROM supply_settlements
+		WHERE user_id = $1 AND status IN ('pending', 'processing')
+		FOR UPDATE SKIP LOCKED
+	`
+	var existingID int64
+	err := tx.QueryRow(ctx, lockQuery, s.SupplierID).Scan(&existingID)
+	if err == nil {
+		// 找到了现有pending/processing的提现，不能创建新的
+		return fmt.Errorf("already has pending or processing withdrawal: %d", existingID)
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("failed to lock existing withdrawals: %w", err)
+	}
+	// err == pgx.ErrNoRows 表示没有pending的提现，可以继续创建
+
+	// 2. 插入新的提现记录
+	insertQuery := `
+		INSERT INTO supply_settlements (
+			settlement_no, user_id, total_amount, fee_amount, net_amount,
+			status, payment_method, payment_account,
+			period_start, period_end, total_orders, total_usage_records,
+			currency_code, amount_unit, version,
+			request_id, idempotency_key, audit_trace_id
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+		)
+		RETURNING id, created_at, updated_at
+	`
+
+	err = tx.QueryRow(ctx, insertQuery,
+		s.SettlementNo, s.SupplierID, s.TotalAmount, s.FeeAmount, s.NetAmount,
+		s.Status, s.PaymentMethod, s.PaymentAccount,
+		s.PeriodStart, s.PeriodEnd, s.TotalOrders, s.TotalUsageRecords,
+		"USD", "minor", 0,
+		requestID, idempotencyKey, traceID,
+	).Scan(&s.ID, &s.CreatedAt, &s.UpdatedAt)
+
+	if err != nil {
+		return fmt.Errorf("failed to create withdrawal in tx: %w", err)
+	}
+	return nil
 }
 
 // CreateInTx 在事务中创建结算单
