@@ -353,6 +353,81 @@ database:
 
 ---
 
+## 测试验证规范（2026-04-09）
+
+### 1. 数据库连接配置
+```bash
+# Unix socket 连接（推荐开发环境）
+export SUPPLY_API_DB_HOST="/var/run/postgresql"
+export SUPPLY_API_DB_USER="long"
+export SUPPLY_API_DB_PASSWORD=""
+export SUPPLY_API_DB_NAME="supply_test"
+
+# TCP 连接
+export SUPPLY_API_DB_HOST="localhost"
+export SUPPLY_API_DB_PORT="5432"
+```
+
+### 2. 测试运行命令
+```bash
+# 单元测试（跳过集成测试）
+go test -short ./...
+
+# 集成测试（需真实数据库）
+go test -tags=integration ./...
+
+# 性能基准测试
+go test -tags=slow -bench=. -benchmem ./internal/benchmark/...
+
+# 完整测试（含集成）
+go test -tags=integration,benchmark ./...
+
+# E2E 测试
+go test -tags=e2e ./e2e/...
+
+# 覆盖率报告
+go test -cover ./...
+```
+
+### 3. 服务启动
+```bash
+# 使用配置文件
+/tmp/supply-api -env=dev
+
+# 服务运行端口
+# http://localhost:18082
+```
+
+### 4. 健康检查端点
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/actuator/health` | GET | 综合健康检查 |
+| `/actuator/health/live` | GET | 存活探针 |
+| `/actuator/health/ready` | GET | 就绪探针 |
+
+### 5. 性能基准（参考值）
+| 操作 | 性能 |
+|------|------|
+| AccountService_Create | ~680 ns/op |
+| AccountService_Verify | ~3.6 ns/op |
+| PackageService_CreateDraft | ~510 ns/op |
+| SettlementService_Withdraw | ~630 ns/op |
+| LoggingMiddleware | ~1.8 μs/op |
+| TracingMiddleware | ~1.9 μs/op |
+
+### 6. 测试覆盖率目标
+| 模块 | 当前覆盖率 | 目标覆盖率 |
+|------|-----------|-----------|
+| audit/events | 97.6% | 95%+ |
+| audit/model | 93.8% | 90%+ |
+| audit/service | 83.0% | 80%+ |
+| audit/sanitizer | 84.3% | 80%+ |
+| security | 88.8% | 80%+ |
+| domain | 61.2% | 70%+ |
+| middleware | 53.9% | 70%+ |
+
+---
+
 ## 文件结构
 
 ```
@@ -374,5 +449,31 @@ supply-api/
 │   ├── config/                  # 配置管理
 │   └── pkg/                     # 公共包
 ├── sql/postgresql/              # 数据库 DDL 脚本
-└── docs/                        # 设计文档
+├── e2e/                         # E2E 测试
+├── docs/                        # 设计文档
+└── deploy/                      # 部署配置
 ```
+
+---
+
+## 常见问题与解决方案
+
+### Q1: 如何处理跨模块命名不一致？
+**A**: 建立字段命名标准文档，所有模块遵循 W3C 和行业通用命名。
+
+### Q2: 何时使用乐观锁 vs 悲观锁？
+**A**:
+- 乐观锁：读多写少，低冲突场景
+- 悲观锁：高并发写，财务类敏感操作
+
+### Q3: 如何避免中间件代码重复？
+**A**: 使用统一的 Handler 模式，集中管理公共逻辑。
+
+### Q4: 审计日志的性能影响如何控制？
+**A**: 采样策略 + 异步写入 + 批量处理。
+
+### Q5: E2E 测试编译失败如何处理？
+**A**: 检查未使用的导入和变量，确保 `ctx` 变量被正确使用或声明为 `_`。
+
+### Q6: 基准测试无法运行？
+**A**: 基准测试需要 `-tags=slow` 标记，且 `testing.Short()` 返回 false 时才运行。

@@ -372,19 +372,127 @@ git rm $(git status --short | grep "^ D " | sed 's/^ D //')
 
 ---
 
-## 八、改进建议
+## 八、测试验证经验（2026-04-09）
 
-### 8.1 短期改进
-1. [ ] 完善单元测试覆盖率（当前 75% → 目标 85%）
-2. [ ] 补充集成测试
-3. [ ] 添加 API 文档（OpenAPI/Swagger）
+### 8.1 集成测试环境配置
 
-### 8.2 中期改进
+**Unix Socket vs TCP 连接**：
+```bash
+# Unix socket（开发环境推荐）
+export SUPPLY_API_DB_HOST="/var/run/postgresql"
+dsn = "postgres://user:password@/dbname?host=/var/run/postgresql&sslmode=disable"
+
+# TCP 连接（生产环境）
+dsn = "postgres://user:password@localhost:5432/dbname?sslmode=disable"
+```
+
+**常见错误**：
+- `password authentication failed` - 检查 pg_hba.conf 或使用 Unix socket
+- `database does not exist` - DSN 路径解析错误
+- `server error (FATAL)` - 主机名解析问题
+
+### 8.2 测试覆盖率要求
+
+| 模块 | 当前覆盖率 | 最低要求 | 优秀 |
+|------|-----------|---------|------|
+| audit/events | 97.6% | 80% | 95%+ |
+| audit/handler | 79.6% | 75% | 85%+ |
+| audit/model | 93.8% | 80% | 90%+ |
+| audit/sanitizer | 84.3% | 80% | 90%+ |
+| audit/service | 83.0% | 80% | 85%+ |
+| security | 88.8% | 80% | 90%+ |
+| domain | 61.2% | 70% | 80%+ |
+| middleware | 53.9% | 70% | 80%+ |
+
+### 8.3 性能基准测试
+
+**运行方式**：
+```bash
+go test -tags=slow -bench=. -benchmem -run=^$ ./internal/benchmark/...
+```
+
+**参考性能数据**：
+| 操作 | 性能 | Allocation |
+|------|------|-----------|
+| AccountService_Create | 678.7 ns/op | 601 B/op, 5 allocs |
+| AccountService_Verify | 3.6 ns/op | 0 B/op, 0 allocs |
+| PackageService_CreateDraft | 508.8 ns/op | 462 B/op, 1 allocs |
+| SettlementService_Withdraw | 625.7 ns/op | 463 B/op, 2 allocs |
+| ConcurrentAccountAccess | 3.5 ns/op | 0 B/op, 0 allocs |
+| LoggingMiddleware | 1.8 μs/op | 5.4 KB/op, 18 allocs |
+| TracingMiddleware | 1.9 μs/op | 5.7 KB/op, 19 allocs |
+
+### 8.4 E2E 测试常见问题
+
+**编译错误**：
+```go
+// 错误：导入但未使用
+import (
+    "context"                    // ❌ 未使用
+    "github.com/stretchr/testify/assert"  // ❌ 未使用
+)
+
+// 修复
+import (
+    _ "context"  // 使用空白导入或删除
+)
+```
+
+**变量声明未使用**：
+```go
+// 错误
+ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+defer cancel()
+
+// 修复
+_, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+defer cancel()
+_ = ctx  // 如果确实需要 ctx
+```
+
+### 8.5 数据库表验证
+
+**验证步骤**：
+1. 连接数据库：`psql` 或 `pg_isready`
+2. 列出所有表：`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
+3. 验证字段：`SELECT column_name FROM information_schema.columns WHERE table_name = 'xxx'`
+4. 验证索引：`SELECT indexname FROM pg_indexes WHERE tablename = 'xxx'`
+
+**核心表结构验证通过**：
+- `supply_accounts` - 包含 `version` 字段（乐观锁）
+- `supply_packages` - 包含 `available_quota`、`version` 字段
+- `supply_settlements` - 支持 `FOR UPDATE SKIP LOCKED`、`NOWAIT`
+
+### 8.6 中间件鲁棒性验证
+
+**TimeoutMiddleware 并发问题**：
+- 主 goroutine 和 handler goroutine 不能同时持有锁
+- 使用 `sync.Once` 或互斥锁 + 标志位确保响应只发送一次
+- 超时设置必须足够长（建议 >100ms）
+
+**性能测试注意**：
+- 基准测试在 short mode 下会被跳过
+- `testing.Short()` 返回 true 时不运行基准测试
+- 使用 `-short=false` 覆盖默认行为
+
+---
+
+## 九、改进建议
+
+### 9.1 短期改进
+1. [x] 补充集成测试（43个测试已通过）
+2. [x] 修复 E2E 测试编译错误
+3. [x] 建立基准测试套件
+4. [ ] 完善 API 文档（OpenAPI/Swagger）
+5. [ ] 补充 middleware 模块测试覆盖率（当前 53.9%）
+
+### 9.2 中期改进
 1. [ ] 实现数据库连接池监控
 2. [ ] 添加 Redis 缓存命中率指标
 3. [ ] 完善错误码体系文档
+4. [ ] 补充 domain 模块测试覆盖率（当前 61.2%）
 
-### 8.3 长期改进
+### 9.3 长期改进
 1. [ ] 迁移到 gRPC
 2. [ ] 实现服务网格
 3. [ ] 添加 A/B 测试框架
