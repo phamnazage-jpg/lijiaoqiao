@@ -101,9 +101,11 @@ func (m *MockPackageStore) List(ctx context.Context, supplierID int64) ([]*domai
 
 // MockSettlementStore 结算存储 mock
 type MockSettlementStore struct {
-	Settlements map[int64]*domain.Settlement
-	NextID      int64
-	Balance     float64
+	Settlements              map[int64]*domain.Settlement
+	NextID                   int64
+	Balance                  float64
+	HasPendingWithdraw       bool                 // 控制 HasPendingOrProcessingWithdraw 返回值
+	HasPendingWithdrawError  error                // 控制 HasPendingOrProcessingWithdraw 错误
 }
 
 // NewMockSettlementStore 创建结算存储 mock
@@ -152,7 +154,10 @@ func (m *MockSettlementStore) GetWithdrawableBalance(ctx context.Context, suppli
 }
 
 func (m *MockSettlementStore) HasPendingOrProcessingWithdraw(ctx context.Context, supplierID int64) (bool, error) {
-	return false, nil // 默认允许提现
+	if m.HasPendingWithdrawError != nil {
+		return false, m.HasPendingWithdrawError
+	}
+	return m.HasPendingWithdraw, nil
 }
 
 // MockEarningStore 收益存储 mock

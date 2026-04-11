@@ -23,6 +23,7 @@ func TestMED09_ErrorMessageShouldNotLeakInternalDetails(t *testing.T) {
 		config: AuthConfig{
 			SecretKey: secretKey,
 			Issuer:    issuer,
+			Enabled:   true, // 确保鉴权启用
 		},
 		tokenCache: NewTokenCache(),
 		// Intentionally no tokenBackend - to simulate error scenario

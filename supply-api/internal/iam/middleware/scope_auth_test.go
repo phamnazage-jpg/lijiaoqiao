@@ -748,3 +748,112 @@ func TestHasAnyScope_False(t *testing.T) {
 	assert.False(t, hasAnyScope([]string{"platform:read"}, []string{"platform:admin", "supply:write"}))
 	assert.False(t, hasAnyScope([]string{"tenant:read"}, []string{"platform:admin"}))
 }
+
+// TestMigrateClaims_NilInput 测试MigrateClaims处理nil输入
+func TestMigrateClaims_NilInput(t *testing.T) {
+	// act
+	result := MigrateClaims(nil)
+
+	// assert
+	assert.Nil(t, result, "MigrateClaims with nil input should return nil")
+}
+
+// TestMigrateClaims_ValidClaims 测试MigrateClaims处理有效claims
+func TestMigrateClaims_ValidClaims(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:test",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+		Version:   0,
+	}
+
+	// act
+	result := MigrateClaims(claims)
+
+	// assert
+	assert.NotNil(t, result, "MigrateClaims should return non-nil for valid claims")
+	assert.Equal(t, ClaimsVersion, result.Version, "Version should be updated to ClaimsVersion")
+	assert.Equal(t, "user:test", result.SubjectID, "SubjectID should be preserved")
+}
+
+// TestValidateClaims_NilClaims 测试ValidateClaims处理nil claims
+func TestValidateClaims_NilClaims(t *testing.T) {
+	// act
+	err := ValidateClaims(nil)
+
+	// assert
+	assert.Error(t, err, "ValidateClaims should return error for nil claims")
+	assert.Equal(t, ErrInvalidClaims, err, "Error should be ErrInvalidClaims")
+}
+
+// TestValidateClaims_EmptySubjectID 测试ValidateClaims处理空SubjectID
+func TestValidateClaims_EmptySubjectID(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "", // empty
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+
+	// act
+	err := ValidateClaims(claims)
+
+	// assert
+	assert.Error(t, err, "ValidateClaims should return error for empty SubjectID")
+	assert.Equal(t, ErrInvalidSubjectID, err, "Error should be ErrInvalidSubjectID")
+}
+
+// TestValidateClaims_ValidClaims 测试ValidateClaims处理有效claims
+func TestValidateClaims_ValidClaims(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:test",
+		Role:      "viewer",
+		Scope:     []string{"platform:read"},
+		TenantID:  1,
+	}
+
+	// act
+	err := ValidateClaims(claims)
+
+	// assert
+	assert.NoError(t, err, "ValidateClaims should not return error for valid claims")
+}
+
+// TestLogWildcardScopeAccess_NilClaims 测试logWildcardScopeAccess处理nil claims
+func TestLogWildcardScopeAccess_NilClaims(t *testing.T) {
+	// act - should not panic
+	logWildcardScopeAccess(context.Background(), nil, "platform:read")
+}
+
+// TestLogWildcardScopeAccess_WithWildcard 测试logWildcardScopeAccess记录通配符访问
+func TestLogWildcardScopeAccess_WithWildcard(t *testing.T) {
+	// arrange
+	claims := &IAMTokenClaims{
+		SubjectID: "user:admin",
+		Role:      "super_admin",
+		Scope:     []string{"*"},
+		TenantID:  1,
+	}
+
+	// act - should not panic and should log
+	logWildcardScopeAccess(context.Background(), claims, "platform:read")
+}
+
+// TestHasWildcardScope_True 测试hasWildcardScope - 有通配符
+func TestHasWildcardScope_True(t *testing.T) {
+	// act & assert
+	assert.True(t, hasWildcardScope([]string{"*"}), "wildcard scope should return true")
+	assert.True(t, hasWildcardScope([]string{"platform:read", "*"}), "mixed with wildcard should return true")
+}
+
+// TestHasWildcardScope_False 测试hasWildcardScope - 无通配符
+func TestHasWildcardScope_False(t *testing.T) {
+	// act & assert
+	assert.False(t, hasWildcardScope([]string{"platform:read"}), "regular scope should return false")
+	assert.False(t, hasWildcardScope([]string{"platform:read", "platform:write"}), "multiple regular scopes should return false")
+	assert.False(t, hasWildcardScope([]string{}), "empty scopes should return false")
+}
