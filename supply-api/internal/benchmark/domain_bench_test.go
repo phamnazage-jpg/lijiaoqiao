@@ -340,6 +340,14 @@ func (m *mockSettlementStoreForBenchmark) Create(ctx context.Context, s *domain.
 	return nil
 }
 
+func (m *mockSettlementStoreForBenchmark) CreateWithdrawTx(ctx context.Context, s *domain.Settlement) error {
+	return m.Create(ctx, s)
+}
+
+func (m *mockSettlementStoreForBenchmark) CreateInTx(ctx context.Context, s *domain.Settlement) error {
+	return m.Create(ctx, s)
+}
+
 func (m *mockSettlementStoreForBenchmark) GetByID(ctx context.Context, supplierID, id int64) (*domain.Settlement, error) {
 	if s, ok := m.settlements[id]; ok && s.SupplierID == supplierID {
 		return s, nil
