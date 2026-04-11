@@ -1,8 +1,8 @@
 # 审计日志增强设计方案（P1）
 
-- 版本：v1.0
-- 日期：2026-04-02
-- 状态：草稿
+- 版本：v2.0
+- 日期：2026-04-03
+- 状态：已定稿
 - 目标：为 M-013~M-016 指标提供完整的审计基础设施支撑
 
 ---
@@ -82,10 +82,68 @@ type Event struct {
 
 ### 2.2 非功能目标
 
-- 审计写入延迟 < 10ms
+- 审计写入延迟 < 50ms（半同步模式）
 - 查询响应时间 < 500ms（1000条记录）
-- 支持至少 10000 TPS 写入
+- 支持 **5,000-8,000 TPS** 写入
 - 数据保留 365 天
+
+#### TPS 达成路径（简化架构）
+
+**架构原则**：保持单体服务，聚焦核心，去除过度工程化
+
+| 阶段 | 策略 | 预期TPS | 组件 | 说明 |
+|------|------|---------|------|------|
+| **Phase 1 (立即)** | 单条INSERT + 连接池 | ~3,000 | PostgreSQL + pgx | 当前基线，验证功能 |
+| **Phase 2 (1-2周)** | 批量写入(50条/批) | ~5,000-6,000 | BatchBuffer + pgx | 核心性能优化 |
+| **Phase 3 (按需)** | Go Channel异步 + 批量 | ~6,000-8,000 | goroutine + channel | 无Kafka，零额外运维 |
+
+**为什么不需要 Kafka**：
+1. **运维成本高**：需要集群管理、监控、调优
+2. **Go channel足够**：内存队列 + 后台worker实现异步写入
+3. **按需升级**：只有TPS持续超过8K时才考虑消息队列
+
+**关键技术**：
+1. **批量写入API**：`POST /api/v1/audit/events/batch` 支持最多50条/批次
+2. **异步写入队列**：Go Channel + 后台goroutine（无Kafka）
+3. **PgBouncer连接池**：减少连接建立开销
+4. **暂不考虑分区**：数据量超过1000万再加分区
+
+#### 简化架构图
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                      单体服务架构                                  │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│   ┌─────────────┐     ┌──────────────┐     ┌──────────────────┐ │
+│   │   Client    │────▶│   Gateway    │────▶│  Audit Handler    │ │
+│   └─────────────┘     └──────────────┘     └────────┬─────────┘ │
+│                                                       │            │
+│                                                       ▼            │
+│   ┌───────────────────────────────────────────────────────────┐  │
+│   │                     AuditService                         │  │
+│   │  ┌────────────────┐    ┌────────────────┐              │  │
+│   │  │ Sync Path      │    │ Async Channel │              │  │
+│   │  │ (<50 events/s) │    │ (>50 events/s)│              │  │
+│   │  └───────┬────────┘    └───────┬────────┘              │  │
+│   │          └──────────┬───────────┘                          │  │
+│   │                     ▼                                      │  │
+│   │          ┌─────────────────────┐                          │  │
+│   │          │   BatchBuffer      │                          │  │
+│   │          │   (50条/批, 5ms)  │                          │  │
+│   │          └──────────┬──────────┘                          │  │
+│   └─────────────────────┼────────────────────────────────────┘  │
+│                         ▼                                        │
+│   ┌────────────────────────────────────────────────────────┐  │
+│   │           PostgreSQL + pgx连接池                        │  │
+│   │           批量INSERT (50条/批)                          │  │
+│   │           专用索引 (M-013~M-016)                       │  │
+│   └────────────────────────────────────────────────────────┘  │
+│                                                                   │
+│   **无Kafka | 无Redis | 无分区表 | 无额外中间件**              │
+│                                                                   │
+└──────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -392,7 +450,14 @@ CREATE INDEX IF NOT EXISTS idx_audit_credential_type ON audit_events(credential_
 CREATE INDEX IF NOT EXISTS idx_audit_object ON audit_events(object_type, object_id);
 CREATE INDEX IF NOT EXISTS idx_audit_success ON audit_events(success) WHERE NOT success;
 CREATE INDEX IF NOT EXISTS idx_audit_risk_score ON audit_events(risk_score) WHERE risk_score > 50;
-CREATE INDEX IF NOT EXISTS idx_audit_security_flags ON audit_events((security_flags->>'credential_exposed')) WHERE security_flags->>'credential_exposed' = 'true';
+
+-- 安全标记索引（使用冗余布尔字段，替代JSONB表达式索引以提升性能）
+-- 注意：应用层需要在写入时同步更新 has_credential_exposed 字段
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS has_credential_exposed BOOLEAN DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_audit_cred_exposed ON audit_events(has_credential_exposed) WHERE has_credential_exposed = TRUE;
+
+-- GIN索引（备选方案，如果需要全文搜索JSONB字段）
+-- CREATE INDEX IF NOT EXISTS idx_audit_security_flags_gin ON audit_events USING GIN (security_flags);
 
 -- M-013 专用索引
 CREATE INDEX IF NOT EXISTS idx_audit_cred_exposure ON audit_events(event_name, timestamp DESC) WHERE event_name LIKE 'CRED-EXPOSE%';
@@ -1094,43 +1159,83 @@ FROM query_key_stats;
 ```bash
 #!/bin/bash
 # scripts/ci/audit_metrics_gate.sh
+# 生产级Gate脚本：带重试、超时、错误处理
 
 set -e
 
+# 数据库连接配置（从环境变量读取，支持CI/CD secrets）
+PGHOST=${PGHOST:-localhost}
+PGPORT=${PGPORT:-5432}
+PGUSER=${PGUSER:-audit_service}
+PGDATABASE=${PGDATABASE:-audit_db}
+export PGPASSWORD=${PGPASSWORD:-}
+
+# 时间范围（默认昨天）
 METRICS_START_DATE=${METRICS_START_DATE:-$(date -d '1 day ago' +%Y-%m-%d)}
 METRICS_END_DATE=${METRICS_END_DATE:-$(date +%Y-%m-%d)}
 
+# SQL超时设置（30秒）
+SQL_TIMEOUT="SET statement_timeout = '30s';"
+
+# 数据库连接重试函数
+retry_psql() {
+    local max_attempts=3
+    local attempt=1
+    while [ $attempt -le $max_attempts ]; do
+        if result=$(PGPASSWORD="$PGPASSWORD" psql -t -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -c "$@" 2>/dev/null); then
+            echo "$result"
+            return 0
+        fi
+        echo "警告: psql尝试 $attempt/$max_attempts 失败，等待5秒后重试..."
+        attempt=$((attempt + 1))
+        sleep 5
+    done
+    echo "错误: psql在 $max_attempts 次尝试后失败"
+    return 1
+}
+
+# 比较函数（使用awk替代bc，兼容更多环境）
+compare_lt() {
+    local a=$1
+    local b=$2
+   awk "BEGIN { exit !($a < $b) }"
+}
+
 echo "=== M-013 凭证泄露事件数检查 ==="
-M013_COUNT=$(psql -t -c "SELECT COUNT(*) FROM audit_events WHERE event_name LIKE 'CRED-EXPOSE%' AND timestamp >= '$METRICS_START_DATE' AND timestamp < '$METRICS_END_DATE';")
+M013_COUNT=$(retry_psql "$SQL_TIMEOUT SELECT COUNT(*) FROM audit_events WHERE event_name LIKE 'CRED-EXPOSE%' AND timestamp >= '$METRICS_START_DATE' AND timestamp < '$METRICS_END_DATE';")
+M013_COUNT=$(echo "$M013_COUNT" | tr -d '[:space:]')
 echo "M-013 凭证暴露事件数: $M013_COUNT"
-if [ "$M013_COUNT" -gt 0 ]; then
+if [ -n "$M013_COUNT" ] && [ "$M013_COUNT" -gt 0 ]; then
     echo "FAIL: M-013 超标 (要求 = 0)"
     exit 1
 fi
 echo "PASS: M-013"
 
 echo "=== M-014 平台凭证覆盖率检查 ==="
-M014_RATE=$(psql -t -c "WITH stats AS (SELECT COUNT(*) FILTER (WHERE credential_type = 'platform_token') as p, COUNT(*) as t FROM audit_events WHERE event_category = 'CRED' AND event_sub_category = 'INGRESS' AND timestamp >= '$METRICS_START_DATE' AND timestamp < '$METRICS_END_DATE') SELECT CASE WHEN t = 0 THEN 100.0 ELSE (p::DECIMAL / t::DECIMAL) * 100 END FROM stats;")
+M014_RATE=$(retry_psql "$SQL_TIMEOUT WITH stats AS (SELECT COUNT(*) FILTER (WHERE credential_type = 'platform_token') as p, COUNT(*) as t FROM audit_events WHERE event_category = 'CRED' AND event_sub_category = 'INGRESS' AND timestamp >= '$METRICS_START_DATE' AND timestamp < '$METRICS_END_DATE') SELECT CASE WHEN t = 0 THEN 100.0 ELSE (p::DECIMAL / t::DECIMAL) * 100 END FROM stats;")
+M014_RATE=$(echo "$M014_RATE" | tr -d '[:space:]' | awk '{printf "%.2f", $0}')
 echo "M-014 平台凭证覆盖率: $M014_RATE%"
-if [ "$(echo "$M014_RATE < 100" | bc)" -eq 1 ]; then
+if [ -n "$M014_RATE" ] && compare_lt "$M014_RATE" "100"; then
     echo "FAIL: M-014 不达标 (要求 = 100%)"
     exit 1
 fi
 echo "PASS: M-014"
 
 echo "=== M-015 直连绕过事件数检查 ==="
-M015_COUNT=$(psql -t -c "SELECT COUNT(*) FROM audit_events WHERE target_direct = TRUE AND timestamp >= '$METRICS_START_DATE' AND timestamp < '$METRICS_END_DATE';")
+M015_COUNT=$(retry_psql "$SQL_TIMEOUT SELECT COUNT(*) FROM audit_events WHERE target_direct = TRUE AND timestamp >= '$METRICS_START_DATE' AND timestamp < '$METRICS_END_DATE';")
+M015_COUNT=$(echo "$M015_COUNT" | tr -d '[:space:]')
 echo "M-015 直连事件数: $M015_COUNT"
-if [ "$M015_COUNT" -gt 0 ]; then
+if [ -n "$M015_COUNT" ] && [ "$M015_COUNT" -gt 0 ]; then
     echo "FAIL: M-015 超标 (要求 = 0)"
     exit 1
 fi
 echo "PASS: M-015"
 
 echo "=== M-016 query key 拒绝率检查 ==="
-M016_RATE=$(psql -t -c "WITH stats AS (SELECT COUNT(*) FILTER (WHERE event_name = 'AUTH-QUERY-KEY') as t, COUNT(*) FILTER (WHERE event_name = 'AUTH-QUERY-REJECT') as r FROM audit_events WHERE event_name LIKE 'AUTH-QUERY%' AND timestamp >= '$METRICS_START_DATE' AND timestamp < '$METRICS_END_DATE') SELECT CASE WHEN t = 0 THEN 100.0 ELSE (r::DECIMAL / t::DECIMAL) * 100 END FROM stats;")
+M016_RATE=$(retry_psql "$SQL_TIMEOUT WITH stats AS (SELECT COUNT(*) FILTER (WHERE event_name = 'AUTH-QUERY-KEY') as t, COUNT(*) FILTER (WHERE event_name = 'AUTH-QUERY-REJECT') as r FROM audit_events WHERE event_name LIKE 'AUTH-QUERY%' AND timestamp >= '$METRICS_START_DATE' AND timestamp < '$METRICS_END_DATE') SELECT CASE WHEN t = 0 THEN 100.0 ELSE (r::DECIMAL / t::DECIMAL) * 100 END FROM stats;")
+M016_RATE=$(echo "$M016_RATE" | tr -d '[:space:]' | awk '{printf "%.2f", $0}')
 echo "M-016 query key 拒绝率: $M016_RATE%"
-if [ "$(echo "$M016_RATE < 100" | bc)" -eq 1 ]; then
+if [ -n "$M016_RATE" ] && compare_lt "$M016_RATE" "100"; then
     echo "FAIL: M-016 不达标 (要求 = 100%)"
     exit 1
 fi
@@ -1138,6 +1243,13 @@ echo "PASS: M-016"
 
 echo "=== 所有 M-013~M-016 检查通过 ==="
 ```
+
+**生产级改进说明**：
+1. **使用awk替代bc**：避免bc命令依赖问题，awk是POSIX标准
+2. **数据库连接重试**：最多3次重试，每次间隔5秒
+3. **SQL超时控制**：statement_timeout = '30s' 防止查询无限阻塞
+4. **NULL/空值处理**：检查变量是否为空
+5. **环境变量配置**：支持CI/CD secrets注入
 
 ### 9.2 测试用例
 

@@ -120,3 +120,33 @@ onRequest(req):
 1. 与 `TOK-001` 角色、状态机、审计字段一致。
 2. 与 `M-014/M-016` 指标定义一致。
 3. 与 OpenAPI token 契约草案字段一致。
+
+---
+
+## 9. 变更日志（Changelog）
+
+### v1.1 - 2026-04-07 P0修复同步
+
+**修复内容**：
+
+1. **事件命名与实现对齐**
+   - supply-api 实现已统一使用 `token.*` 格式（TOK-002原生格式）
+   - 映射关系：
+     - `AUTH-TOKEN-OK` → `token.authn.success`
+     - `AUTH-TOKEN-FAIL` → `token.authn.fail`
+     - `AUTH-SCOPE-DENY` → `token.authz.denied`
+     - `AUTH-QUERY-REJECT` → `token.query_key.rejected`
+
+2. **M-016 指标口径修正**
+   - 分母：所有 query key 请求事件（含 `token.query_key` 和 `token.query_key.rejected`）
+   - 分子：仅 `token.query_key.rejected` 事件
+   - 拒绝率 = 分子 / 分母 × 100%
+
+3. **M-014/M-016 边界明确**
+   - M-014：平台凭证入站覆盖率（仅 `platform_token` 类型）
+   - M-016：query key 外部拒绝率（所有 query key 请求）
+   - 两者互不干扰，独立计算
+
+**相关文档**：
+- `audit_log_enhancement_design_v1_2026-04-02.md` - 审计日志增强设计（含P0修复）
+- `audit_log_enhancement_design_fix_summary_2026-04-02.md` - 修复总结报告
