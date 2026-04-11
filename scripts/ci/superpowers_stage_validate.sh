@@ -130,6 +130,12 @@ if [[ -z "${GO_BIN}" ]]; then
 fi
 
 run_step \
+  "PHASE-00" \
+  "Backend critical verification gate" \
+  "cd \"${ROOT_DIR}\" && bash \"scripts/ci/backend-verify.sh\"" \
+  "${ART_DIR}/phase00_backend_verify.log"
+
+run_step \
   "PHASE-01" \
   "TOK runtime code tests" \
   "cd \"${ROOT_DIR}/platform-token-runtime\" && export PATH=\"$(dirname "${GO_BIN}"):\$PATH\" && export GOCACHE=\"${ROOT_DIR}/.tools/go-cache\" && export GOPATH=\"${ROOT_DIR}/.tools/go\" && \"${GO_BIN}\" test ./..." \
@@ -170,7 +176,7 @@ run_step_allow_deferred \
   "Real staging precheck (expected deferred before real secrets)" \
   "cd \"${ROOT_DIR}\" && bash \"scripts/supply-gate/staging_precheck_and_run.sh\" \"${STAGING_ENV_FILE}\"" \
   "${ART_DIR}/phase07_staging_precheck.log" \
-  "placeholder token detected|placeholder API_BASE_URL|missing env var"
+  "placeholder token detected|placeholder API_BASE_URL|missing env var|API_BASE_URL unreachable"
 
 run_step \
   "PHASE-08" \

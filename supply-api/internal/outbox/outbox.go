@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"time"
@@ -13,7 +14,7 @@ import (
 
 // OutboxProcessorRunner Outbox处理器运行器
 type OutboxProcessorRunner struct {
-	repo      *repository.OutboxRepository
+	repo      outboxRepository
 	msgBroker messaging.MessageBroker
 	stats     messaging.OutboxStats
 	stopCh    chan struct{}
@@ -21,9 +22,16 @@ type OutboxProcessorRunner struct {
 	interval  time.Duration
 }
 
+type outboxRepository interface {
+	FetchAndLock(ctx context.Context, limit int) ([]*repository.OutboxEvent, error)
+	MarkCompleted(ctx context.Context, eventID string) error
+	MarkFailed(ctx context.Context, eventID string, errorMsg string, nextRetryAt *time.Time) error
+	MoveToDeadLetter(ctx context.Context, event *repository.OutboxEvent, errorMsg string) error
+}
+
 // NewOutboxProcessorRunner 创建Outbox处理器运行器
 func NewOutboxProcessorRunner(
-	repo *repository.OutboxRepository,
+	repo outboxRepository,
 	msgBroker messaging.MessageBroker,
 	stats messaging.OutboxStats,
 ) *OutboxProcessorRunner {
@@ -66,6 +74,10 @@ func (r *OutboxProcessorRunner) Stop() {
 
 // process 处理一批Outbox事件
 func (r *OutboxProcessorRunner) process(ctx context.Context) error {
+	if r.msgBroker == nil {
+		return fmt.Errorf("outbox message broker is unavailable")
+	}
+
 	// 获取待处理事件
 	events, err := r.repo.FetchAndLock(ctx, r.batchSize)
 	if err != nil {
@@ -85,7 +97,7 @@ func (r *OutboxProcessorRunner) process(ctx context.Context) error {
 			EventType:     event.EventType,
 			EventID:       event.EventID,
 			Payload:       event.Payload,
-			Status:       string(event.Status),
+			Status:        string(event.Status),
 			RetryCount:    event.RetryCount,
 			MaxRetries:    event.MaxRetries,
 			ErrorMessage:  event.ErrorMessage,

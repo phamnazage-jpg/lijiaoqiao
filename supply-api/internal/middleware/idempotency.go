@@ -278,6 +278,11 @@ func getTenantID(ctx context.Context) int64 {
 	return 0
 }
 
+// GetTenantID 公开函数，从context获取租户ID
+func GetTenantID(ctx context.Context) int64 {
+	return getTenantID(ctx)
+}
+
 func getOperatorID(ctx context.Context) int64 {
 	if v := ctx.Value(operatorIDKey); v != nil {
 		if id, ok := v.(int64); ok {

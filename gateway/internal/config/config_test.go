@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -110,7 +111,7 @@ func TestAlertConfig_Struct(t *testing.T) {
 	cfg := AlertConfig{
 		Enabled: true,
 		Email: EmailConfig{
-			Enabled:  false,
+			Enabled: false,
 			Host:    "smtp.example.com",
 			Port:    587,
 			From:    "alert@example.com",
@@ -344,10 +345,10 @@ func TestConfig_AllFields(t *testing.T) {
 			PoolSize: 10,
 		},
 		Router: RouterConfig{
-			Strategy:        "latency",
-			Timeout:         30 * time.Second,
-			MaxRetries:      3,
-			RetryDelay:      1 * time.Second,
+			Strategy:            "latency",
+			Timeout:             30 * time.Second,
+			MaxRetries:          3,
+			RetryDelay:          1 * time.Second,
 			HealthCheckInterval: 10 * time.Second,
 		},
 		RateLimit: RateLimitConfig{
@@ -360,7 +361,7 @@ func TestConfig_AllFields(t *testing.T) {
 		Alert: AlertConfig{
 			Enabled: true,
 			Email: EmailConfig{
-				Enabled:  false,
+				Enabled: false,
 				Host:    "smtp.example.com",
 				Port:    587,
 			},
@@ -403,5 +404,32 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 
 	if cfg.Alert.Email.Host != "custom.smtp.com" {
 		t.Errorf("expected custom.smtp.com, got %s", cfg.Alert.Email.Host)
+	}
+}
+
+func TestLoadConfig_ProdRejectsInMemoryTokenRuntime(t *testing.T) {
+	t.Setenv("GATEWAY_ENV", "prod")
+	t.Setenv("GATEWAY_TOKEN_RUNTIME_MODE", "inmemory")
+
+	_, err := LoadConfig("")
+	if err == nil {
+		t.Fatal("expected prod config with in-memory token runtime to return error")
+	}
+	if !strings.Contains(err.Error(), "inmemory") {
+		t.Fatalf("expected error to mention inmemory runtime, got %v", err)
+	}
+}
+
+func TestLoadConfig_ProdRequiresTokenRuntimeURL(t *testing.T) {
+	t.Setenv("GATEWAY_ENV", "prod")
+	t.Setenv("GATEWAY_TOKEN_RUNTIME_MODE", "remote_introspection")
+	t.Setenv("GATEWAY_TOKEN_RUNTIME_URL", "")
+
+	_, err := LoadConfig("")
+	if err == nil {
+		t.Fatal("expected prod config without token runtime URL to return error")
+	}
+	if !strings.Contains(err.Error(), "TOKEN_RUNTIME_URL") {
+		t.Fatalf("expected error to mention TOKEN_RUNTIME_URL, got %v", err)
 	}
 }

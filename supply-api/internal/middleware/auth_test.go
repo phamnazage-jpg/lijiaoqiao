@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,15 @@ import (
 
 	"lijiaoqiao/supply-api/internal/iam/model"
 )
+
+type stubTokenStatusBackend struct {
+	status string
+	err    error
+}
+
+func (b *stubTokenStatusBackend) CheckTokenStatus(ctx context.Context, tokenID string) (string, error) {
+	return b.status, b.err
+}
 
 func TestTokenVerify(t *testing.T) {
 	secretKey := "test-secret-key-12345678901234567890"
@@ -428,6 +438,38 @@ func TestMED02_TokenCacheMiss_ShouldNotAssumeActive(t *testing.T) {
 	// 修复后：缓存未命中且没有后端时返回错误
 	if err == nil {
 		t.Errorf("MED-02: cache miss without backend should return error, got status='%s'", status)
+	}
+}
+
+func TestTokenVerifyMiddleware_BackendErrorShouldReject(t *testing.T) {
+	secretKey := "test-secret-key-12345678901234567890"
+	issuer := "test-issuer"
+
+	authMiddleware := NewAuthMiddleware(AuthConfig{
+		SecretKey: secretKey,
+		Issuer:    issuer,
+		Enabled:   true,
+	}, NewTokenCache(), &stubTokenStatusBackend{err: errors.New("database unavailable")}, nil)
+
+	nextCalled := false
+	handler := authMiddleware.TokenVerifyMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+	}))
+
+	req := httptest.NewRequest("GET", "/api/v1/supply/accounts", nil)
+	req = req.WithContext(context.WithValue(req.Context(), bearerTokenKey, createTestToken(secretKey, issuer, "subject:1", "org_admin", time.Now().Add(time.Hour))))
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if nextCalled {
+		t.Fatal("expected request to be rejected when token backend is unavailable")
+	}
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "AUTH_TOKEN_STATUS_UNAVAILABLE") {
+		t.Fatalf("expected response to contain AUTH_TOKEN_STATUS_UNAVAILABLE, got %s", w.Body.String())
 	}
 }
 

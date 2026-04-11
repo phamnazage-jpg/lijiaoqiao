@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +16,10 @@ import (
 
 func main() {
 	addr := envOrDefault("TOKEN_RUNTIME_ADDR", ":18081")
+	env := strings.ToLower(envOrDefault("TOKEN_RUNTIME_ENV", "dev"))
+	if env == "prod" || env == "staging" {
+		log.Fatalf("in-memory token runtime is not allowed in %s", env)
+	}
 
 	runtime := service.NewInMemoryTokenRuntime(nil)
 	auditor := service.NewMemoryAuditEmitter()

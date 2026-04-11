@@ -14,11 +14,11 @@ import (
 
 // MockTokenStatusRepository mock Token状态仓储
 type MockTokenStatusRepository struct {
-	mu                   sync.RWMutex
-	tokenStatuses        map[string]string
-	tokenReasons         map[string]string
-	verificationCounts   map[string]int
-	subjectTokens        map[int64][]string
+	mu                 sync.RWMutex
+	tokenStatuses      map[string]string
+	tokenReasons       map[string]string
+	verificationCounts map[string]int
+	subjectTokens      map[int64][]string
 }
 
 func NewMockTokenStatusRepository() *MockTokenStatusRepository {
@@ -84,9 +84,9 @@ func (m *MockTokenStatusRepository) ListActiveBySubjectID(ctx context.Context, s
 
 // MockRedisCache mock Redis缓存
 type MockRedisCache struct {
-	mu           sync.RWMutex
-	tokenCache   map[string]*cache.TokenStatus
-	subscribers  []func(event *cache.TokenRevokedCacheEvent)
+	mu          sync.RWMutex
+	tokenCache  map[string]*cache.TokenStatus
+	subscribers []func(event *cache.TokenRevokedCacheEvent)
 }
 
 func NewMockRedisCache() *MockRedisCache {
@@ -136,7 +136,7 @@ func (m *MockRedisCache) PublishRevocation(tokenID string, reason string) {
 	for _, handler := range handlers {
 		handler(&cache.TokenRevokedCacheEvent{
 			TokenID: tokenID,
-			Reason: reason,
+			Reason:  reason,
 		})
 	}
 }
@@ -165,9 +165,9 @@ type TokenStatusRepositoryInterface interface {
 
 // DBTokenStatusBackendForTest 用于测试的DBTokenStatusBackend
 type DBTokenStatusBackendForTest struct {
-	repo        TokenStatusRepositoryInterface
-	redisCache  *MockRedisCache
-	cacheTTL    time.Duration
+	repo       TokenStatusRepositoryInterface
+	redisCache *MockRedisCache
+	cacheTTL   time.Duration
 }
 
 func NewDBTokenStatusBackendForTest(repo TokenStatusRepositoryInterface, redisCache *MockRedisCache, cacheTTL time.Duration) *DBTokenStatusBackendForTest {
@@ -373,6 +373,31 @@ func TestDBTokenStatusBackend_RevokeBySubjectID(t *testing.T) {
 	repo.mu.RUnlock()
 }
 
+func TestDBTokenStatusBackend_RevokeBySubjectID_InvalidatesCachedTokens(t *testing.T) {
+	repo := NewMockTokenStatusRepository()
+	redisCache := NewMockRedisCache()
+
+	repo.subjectTokens[123] = []string{"token1", "token2"}
+	redisCache.tokenCache["token1"] = &cache.TokenStatus{TokenID: "token1", Status: "active"}
+	redisCache.tokenCache["token2"] = &cache.TokenStatus{TokenID: "token2", Status: "active"}
+
+	backend := NewDBTokenStatusBackend(repo, redisCache, 10*time.Second)
+
+	err := backend.RevokeBySubjectID(context.Background(), 123, "bulk revocation")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	redisCache.mu.RLock()
+	defer redisCache.mu.RUnlock()
+	if _, ok := redisCache.tokenCache["token1"]; ok {
+		t.Fatal("expected token1 cache to be invalidated")
+	}
+	if _, ok := redisCache.tokenCache["token2"]; ok {
+		t.Fatal("expected token2 cache to be invalidated")
+	}
+}
+
 func TestDBTokenStatusBackend_RevokeBySubjectID_NoTokens(t *testing.T) {
 	repo := NewMockTokenStatusRepository()
 	redisCache := NewMockRedisCache()
@@ -412,10 +437,10 @@ func TestDBTokenStatusBackend_InterfaceCompliance(t *testing.T) {
 
 	// 测试各种状态转换
 	tests := []struct {
-		name        string
-		tokenID     string
-		initialStatus string
-		action      func() error
+		name           string
+		tokenID        string
+		initialStatus  string
+		action         func() error
 		expectedStatus string
 	}{
 		{
@@ -780,7 +805,7 @@ func TestDBTokenStatusBackend_StartRevocationSubscriber_NoRedisCache(t *testing.
 
 // MockTokenRevocationBackend mock TokenRevocationBackend
 type MockTokenRevocationBackend struct {
-	mu           sync.RWMutex
+	mu            sync.RWMutex
 	revokedTokens map[string]string
 }
 

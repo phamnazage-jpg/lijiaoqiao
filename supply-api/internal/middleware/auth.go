@@ -2,9 +2,12 @@ package middleware
 
 import (
 	"context"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log"
@@ -30,21 +33,23 @@ type TokenClaims struct {
 
 // AuthConfig 鉴权中间件配置
 type AuthConfig struct {
-	SecretKey       string
-	Issuer          string
-	CacheTTL        time.Duration // token状态缓存TTL
-	Enabled         bool          // 是否启用鉴权
-	TrustedProxies  []string      // 可信代理IP列表CIDR，如 "10.0.0.0/8"
+	SecretKey      string
+	PublicKey      string
+	Algorithm      string
+	Issuer         string
+	CacheTTL       time.Duration // token状态缓存TTL
+	Enabled        bool          // 是否启用鉴权
+	TrustedProxies []string      // 可信代理IP列表CIDR，如 "10.0.0.0/8"
 }
 
 // AuthMiddleware 鉴权中间件
 type AuthMiddleware struct {
-	config          AuthConfig
-	tokenCache      *TokenCache
-	tokenBackend    TokenStatusBackend
-	auditEmitter    AuditEmitter
-	bruteForce      *BruteForceProtection // 暴力破解保护
-	trustedProxies  []string              // 可信代理列表
+	config         AuthConfig
+	tokenCache     *TokenCache
+	tokenBackend   TokenStatusBackend
+	auditEmitter   AuditEmitter
+	bruteForce     *BruteForceProtection // 暴力破解保护
+	trustedProxies []string              // 可信代理列表
 }
 
 // TokenStatusBackend Token状态后端查询接口
@@ -200,6 +205,11 @@ func (b *BruteForceProtection) Len() int {
 // 对应M-016指标
 func (m *AuthMiddleware) QueryKeyRejectMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if shouldBypassAuth(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// 检查query string中的可疑参数
 		queryParams := r.URL.Query()
 
@@ -257,6 +267,11 @@ func (m *AuthMiddleware) QueryKeyRejectMiddleware(next http.Handler) http.Handle
 // BearerExtractMiddleware 提取Bearer Token
 func (m *AuthMiddleware) BearerExtractMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if shouldBypassAuth(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		authHeader := r.Header.Get("Authorization")
 
 		if authHeader == "" {
@@ -299,6 +314,11 @@ func (m *AuthMiddleware) BearerExtractMiddleware(next http.Handler) http.Handler
 // MED-12: 添加暴力破解保护
 func (m *AuthMiddleware) TokenVerifyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if shouldBypassAuth(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// 如果鉴权被禁用（仅用于开发环境），直接跳过验证
 		if !m.config.Enabled {
 			// 在开发模式下，虽然跳过JWT验证，但仍记录警告日志
@@ -356,7 +376,25 @@ func (m *AuthMiddleware) TokenVerifyMiddleware(next http.Handler) http.Handler {
 
 		// 检查token状态（是否被吊销）
 		status, err := m.checkTokenStatus(r.Context(), claims.ID)
-		if err == nil && status != "active" {
+		if err != nil {
+			if m.auditEmitter != nil {
+				m.auditEmitter.Emit(r.Context(), AuditEvent{
+					EventName:  "token.authn.fail",
+					RequestID:  getRequestID(r),
+					TokenID:    claims.ID,
+					SubjectID:  claims.SubjectID,
+					Route:      sanitizeRoute(r.URL.Path),
+					ResultCode: "AUTH_TOKEN_STATUS_UNAVAILABLE",
+					ClientIP:   getClientIP(r),
+					CreatedAt:  time.Now(),
+				})
+			}
+
+			writeAuthError(w, http.StatusUnauthorized, "AUTH_TOKEN_STATUS_UNAVAILABLE",
+				"token status backend is unavailable")
+			return
+		}
+		if status != "active" {
 			if m.auditEmitter != nil {
 				m.auditEmitter.Emit(r.Context(), AuditEvent{
 					EventName:  "token.authn.fail",
@@ -435,10 +473,10 @@ func (m *AuthMiddleware) ScopeRoleAuthzMiddleware(requiredScope string) func(htt
 			// viewer: level 10, operator: level 30, org_admin: level 50
 			routeRoles := map[string]string{
 				"/api/v1/supply/accounts":    "org_admin",
-				"/api/v1/supply/packages":     "org_admin",
-				"/api/v1/supply/settlements":  "org_admin",
-				"/api/v1/supply/billing":      "viewer",
-				"/api/v1/supplier/billing":    "viewer",
+				"/api/v1/supply/packages":    "org_admin",
+				"/api/v1/supply/settlements": "org_admin",
+				"/api/v1/supply/billing":     "viewer",
+				"/api/v1/supplier/billing":   "viewer",
 			}
 
 			for path, requiredRole := range routeRoles {
@@ -458,12 +496,16 @@ func (m *AuthMiddleware) ScopeRoleAuthzMiddleware(requiredScope string) func(htt
 
 // verifyToken 校验JWT token
 func (m *AuthMiddleware) verifyToken(tokenString string) (*TokenClaims, error) {
+	expectedAlgorithm := strings.ToUpper(strings.TrimSpace(m.config.Algorithm))
+	if expectedAlgorithm == "" {
+		expectedAlgorithm = jwt.SigningMethodHS256.Alg()
+	}
+
 	token, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
-		// 严格验证算法：只接受HS256
-		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+		if token.Method.Alg() != expectedAlgorithm {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return []byte(m.config.SecretKey), nil
+		return m.signingKey(expectedAlgorithm)
 	})
 
 	if err != nil {
@@ -490,6 +532,53 @@ func (m *AuthMiddleware) verifyToken(tokenString string) (*TokenClaims, error) {
 	}
 
 	return nil, errors.New("invalid token")
+}
+
+func (m *AuthMiddleware) signingKey(algorithm string) (interface{}, error) {
+	switch algorithm {
+	case jwt.SigningMethodHS256.Alg(), jwt.SigningMethodHS384.Alg(), jwt.SigningMethodHS512.Alg():
+		if strings.TrimSpace(m.config.SecretKey) == "" {
+			return nil, errors.New("missing token secret key")
+		}
+		return []byte(m.config.SecretKey), nil
+	case jwt.SigningMethodRS256.Alg(), jwt.SigningMethodRS384.Alg(), jwt.SigningMethodRS512.Alg():
+		return parseRSAPublicKey(m.config.PublicKey)
+	default:
+		return nil, fmt.Errorf("unsupported signing method: %s", algorithm)
+	}
+}
+
+func parseRSAPublicKey(publicKeyPEM string) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode([]byte(strings.TrimSpace(publicKeyPEM)))
+	if block == nil {
+		return nil, errors.New("invalid RSA public key: PEM decode failed")
+	}
+
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err == nil {
+		rsaPub, ok := pub.(*rsa.PublicKey)
+		if !ok {
+			return nil, errors.New("invalid RSA public key type")
+		}
+		return rsaPub, nil
+	}
+
+	cert, certErr := x509.ParseCertificate(block.Bytes)
+	if certErr == nil {
+		rsaPub, ok := cert.PublicKey.(*rsa.PublicKey)
+		if !ok {
+			return nil, errors.New("invalid RSA certificate public key type")
+		}
+		return rsaPub, nil
+	}
+
+	return nil, fmt.Errorf("invalid RSA public key: %w", err)
+}
+
+func shouldBypassAuth(path string) bool {
+	return path == "/actuator/health" ||
+		path == "/actuator/health/live" ||
+		path == "/actuator/health/ready"
 }
 
 // checkTokenStatus 检查token状态（从缓存或数据库）

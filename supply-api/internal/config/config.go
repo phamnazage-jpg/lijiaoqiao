@@ -12,11 +12,12 @@ import (
 
 // Config 应用配置
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Redis    RedisConfig
-	Token    TokenConfig
-	Audit    AuditConfig
+	Server     ServerConfig
+	Database   DatabaseConfig
+	Redis      RedisConfig
+	Token      TokenConfig
+	Settlement SettlementConfig
+	Audit      AuditConfig
 }
 
 // ServerConfig HTTP服务配置
@@ -63,6 +64,11 @@ type TokenConfig struct {
 	RevocationCacheTTL time.Duration
 }
 
+// SettlementConfig 结算与提现能力配置
+type SettlementConfig struct {
+	WithdrawEnabled bool
+}
+
 // AuditConfig 审计配置
 type AuditConfig struct {
 	BufferSize    int
@@ -90,6 +96,15 @@ func (r *RedisConfig) Addr() string {
 
 // Load 加载配置
 func Load(env string) (*Config, error) {
+	return load(env, "")
+}
+
+// LoadFromPath 从指定路径加载配置
+func LoadFromPath(env, configPath string) (*Config, error) {
+	return load(env, configPath)
+}
+
+func load(env, configPath string) (*Config, error) {
 	v := viper.New()
 
 	// 设置环境变量前缀
@@ -100,17 +115,24 @@ func Load(env string) (*Config, error) {
 	setDefaults(v)
 
 	// 加载配置文件
-	configFile := fmt.Sprintf("config.%s.yaml", env)
-	v.SetConfigName(configFile)
-	v.SetConfigType("yaml")
-	v.AddConfigPath(".")
-	v.AddConfigPath("./config")
+	if strings.TrimSpace(configPath) != "" {
+		v.SetConfigFile(configPath)
+	} else {
+		configFile := fmt.Sprintf("config.%s.yaml", env)
+		v.SetConfigName(configFile)
+		v.SetConfigType("yaml")
+		v.AddConfigPath(".")
+		v.AddConfigPath("./config")
+	}
 
 	// 允许环境变量覆盖
 	v.AutomaticEnv()
 
 	// 读取配置文件
 	if err := v.ReadInConfig(); err != nil {
+		if strings.TrimSpace(configPath) != "" {
+			return nil, fmt.Errorf("failed to read config: %w", err)
+		}
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("failed to read config: %w", err)
 		}
@@ -163,6 +185,13 @@ func Load(env string) (*Config, error) {
 	cfg.Audit.FlushInterval = v.GetDuration("audit.flush_interval")
 	cfg.Audit.ExportTimeout = v.GetDuration("audit.export_timeout")
 
+	// Settlement配置
+	cfg.Settlement.WithdrawEnabled = v.GetBool("settlement.withdraw_enabled")
+
+	if err := validateForEnv(env, &cfg); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
 }
 
@@ -202,6 +231,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("token.revocation_cache_ttl", 30*time.Second)
 	v.SetDefault("token.algorithm", "HS256") // 默认HS256，可配置RS256
 
+	// Settlement defaults
+	v.SetDefault("settlement.withdraw_enabled", false)
+
 	// Audit defaults
 	v.SetDefault("audit.buffer_size", 1000)
 	v.SetDefault("audit.flush_interval", 5*time.Second)
@@ -228,6 +260,10 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("redis.db", "SUPPLY_REDIS_DB")
 
 	_ = v.BindEnv("token.secret_key", "SUPPLY_TOKEN_SECRET_KEY")
+	_ = v.BindEnv("token.public_key", "SUPPLY_TOKEN_PUBLIC_KEY")
+	_ = v.BindEnv("token.algorithm", "SUPPLY_TOKEN_ALGORITHM")
+	_ = v.BindEnv("token.issuer", "SUPPLY_TOKEN_ISSUER")
+	_ = v.BindEnv("settlement.withdraw_enabled", "SUPPLY_SETTLEMENT_WITHDRAW_ENABLED")
 }
 
 // MustLoad 加载配置，失败时panic
@@ -247,6 +283,46 @@ func GetEnvInt(key string, defaultVal int) int {
 		}
 	}
 	return defaultVal
+}
+
+func validateForEnv(env string, cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+
+	cfg.Token.Algorithm = strings.ToUpper(strings.TrimSpace(cfg.Token.Algorithm))
+	if cfg.Token.Algorithm == "" {
+		cfg.Token.Algorithm = "HS256"
+	}
+
+	if env != "prod" {
+		return nil
+	}
+
+	if cfg.Server.DefaultSupplierID != 0 {
+		return fmt.Errorf("invalid prod config: server.default_supplier_id must be 0 to disable static supplier fallback")
+	}
+	if strings.TrimSpace(cfg.Token.Issuer) == "" {
+		return fmt.Errorf("invalid prod config: token.issuer is required")
+	}
+	if cfg.Settlement.WithdrawEnabled {
+		return fmt.Errorf("invalid prod config: settlement.withdraw_enabled cannot be true until SMS integration is production-ready")
+	}
+
+	switch cfg.Token.Algorithm {
+	case "HS256", "HS384", "HS512":
+		if strings.TrimSpace(cfg.Token.SecretKey) == "" {
+			return fmt.Errorf("invalid prod config: token.secret_key is required for %s", cfg.Token.Algorithm)
+		}
+	case "RS256", "RS384", "RS512":
+		if strings.TrimSpace(cfg.Token.PublicKey) == "" {
+			return fmt.Errorf("invalid prod config: token.public_key is required for %s", cfg.Token.Algorithm)
+		}
+	default:
+		return fmt.Errorf("invalid prod config: unsupported token.algorithm %q", cfg.Token.Algorithm)
+	}
+
+	return nil
 }
 
 // GetEnvDuration 获取环境变量duration值

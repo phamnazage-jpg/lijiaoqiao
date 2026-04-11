@@ -34,9 +34,9 @@ type TokenCacheBackend interface {
 // DBTokenStatusBackend DB-backed Token状态后端（P0-03修复）
 // 同时实现 TokenStatusBackend 和 TokenRevocationBackend 接口
 type DBTokenStatusBackend struct {
-	repo        TokenRepository
-	redisCache  TokenCacheBackend
-	cacheTTL    time.Duration
+	repo       TokenRepository
+	redisCache TokenCacheBackend
+	cacheTTL   time.Duration
 }
 
 // NewDBTokenStatusBackend 创建DB-backed Token状态后端
@@ -119,6 +119,17 @@ func (b *DBTokenStatusBackend) GetTokenStatus(ctx context.Context, tokenID strin
 
 // RevokeBySubjectID 根据SubjectID吊销所有Token
 func (b *DBTokenStatusBackend) RevokeBySubjectID(ctx context.Context, subjectID int64, reason string) error {
+	var tokenIDs []string
+	if b.redisCache != nil {
+		records, err := b.repo.ListActiveBySubjectID(ctx, subjectID)
+		if err == nil {
+			tokenIDs = make([]string, 0, len(records))
+			for _, record := range records {
+				tokenIDs = append(tokenIDs, record.TokenID)
+			}
+		}
+	}
+
 	// 1. 批量更新数据库
 	count, err := b.repo.RevokeBySubjectID(ctx, subjectID, reason)
 	if err != nil {
@@ -132,13 +143,8 @@ func (b *DBTokenStatusBackend) RevokeBySubjectID(ctx context.Context, subjectID 
 	// 2. 失效所有相关缓存（这里需要查询后逐个失效）
 	// 注意：生产环境建议使用Redis的pattern删除或发布事件通知
 	if b.redisCache != nil {
-		// 查询所有活跃token并失效
-		records, err := b.repo.ListActiveBySubjectID(ctx, subjectID)
-		if err != nil {
-			return nil // 不影响主流程
-		}
-		for _, record := range records {
-			_ = b.redisCache.InvalidateToken(ctx, record.TokenID)
+		for _, tokenID := range tokenIDs {
+			_ = b.redisCache.InvalidateToken(ctx, tokenID)
 		}
 	}
 

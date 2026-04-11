@@ -6,7 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -17,33 +19,41 @@ var encryptionKey = []byte(getEnv("PASSWORD_ENCRYPTION_KEY", "default-key-32-byt
 
 // Config 网关配置
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Redis    RedisConfig
-	Router   RouterConfig
+	Server    ServerConfig
+	Database  DatabaseConfig
+	Redis     RedisConfig
+	Auth      AuthConfig
+	Router    RouterConfig
 	RateLimit RateLimitConfig
-	Alert    AlertConfig
+	Alert     AlertConfig
 	Providers []ProviderConfig
 }
 
 // ServerConfig 服务配置
 type ServerConfig struct {
-	Host string
-	Port int
-	ReadTimeout time.Duration
+	Host         string
+	Port         int
+	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
-	IdleTimeout time.Duration
+	IdleTimeout  time.Duration
+}
+
+// AuthConfig 鉴权运行时配置
+type AuthConfig struct {
+	Env              string
+	TokenRuntimeMode string
+	TokenRuntimeURL  string
 }
 
 // DatabaseConfig 数据库配置
 type DatabaseConfig struct {
-	Host               string
-	Port               int
-	User               string
-	Password           string // 兼容旧版本，仍可直接使用明文密码（不推荐）
-	EncryptedPassword  string // 加密后的密码，优先级高于Password字段
-	Database           string
-	MaxConns           int
+	Host              string
+	Port              int
+	User              string
+	Password          string // 兼容旧版本，仍可直接使用明文密码（不推荐）
+	EncryptedPassword string // 加密后的密码，优先级高于Password字段
+	Database          string
+	MaxConns          int
 }
 
 // GetPassword 返回解密后的数据库密码
@@ -62,12 +72,12 @@ func (c *DatabaseConfig) GetPassword() string {
 
 // RedisConfig Redis配置
 type RedisConfig struct {
-	Host               string
-	Port               int
-	Password           string // 兼容旧版本
-	EncryptedPassword  string // 加密后的密码
-	DB                 int
-	PoolSize           int
+	Host              string
+	Port              int
+	Password          string // 兼容旧版本
+	EncryptedPassword string // 加密后的密码
+	DB                int
+	PoolSize          int
 }
 
 // GetPassword 返回解密后的Redis密码
@@ -84,28 +94,28 @@ func (c *RedisConfig) GetPassword() string {
 
 // RouterConfig 路由配置
 type RouterConfig struct {
-	Strategy        string // "latency", "cost", "availability", "weighted"
-	Timeout         time.Duration
-	MaxRetries      int
-	RetryDelay      time.Duration
+	Strategy            string // "latency", "cost", "availability", "weighted"
+	Timeout             time.Duration
+	MaxRetries          int
+	RetryDelay          time.Duration
 	HealthCheckInterval time.Duration
 }
 
 // RateLimitConfig 限流配置
 type RateLimitConfig struct {
-	Enabled       bool
-	Algorithm     string // "token_bucket", "sliding_window", "fixed_window"
-	DefaultRPM    int    // 请求数/分钟
-	DefaultTPM    int    // Token数/分钟
+	Enabled         bool
+	Algorithm       string // "token_bucket", "sliding_window", "fixed_window"
+	DefaultRPM      int    // 请求数/分钟
+	DefaultTPM      int    // Token数/分钟
 	BurstMultiplier float64
 }
 
 // AlertConfig 告警配置
 type AlertConfig struct {
-	Enabled    bool
-	Email      EmailConfig
-	DingTalk   DingTalkConfig
-	Feishu     FeishuConfig
+	Enabled  bool
+	Email    EmailConfig
+	DingTalk DingTalkConfig
+	Feishu   FeishuConfig
 }
 
 // EmailConfig 邮件配置
@@ -135,11 +145,11 @@ type FeishuConfig struct {
 
 // ProviderConfig Provider配置
 type ProviderConfig struct {
-	Name    string
-	Type    string // "openai", "anthropic", "google", "custom"
-	BaseURL string
-	APIKey  string
-	Models  []string
+	Name     string
+	Type     string // "openai", "anthropic", "google", "custom"
+	BaseURL  string
+	APIKey   string
+	Models   []string
 	Priority int
 	Weight   float64
 }
@@ -155,26 +165,31 @@ func LoadConfig(path string) (*Config, error) {
 			WriteTimeout: 30 * time.Second,
 			IdleTimeout:  120 * time.Second,
 		},
+		Auth: AuthConfig{
+			Env:              strings.ToLower(getEnv("GATEWAY_ENV", "dev")),
+			TokenRuntimeMode: strings.ToLower(getEnv("GATEWAY_TOKEN_RUNTIME_MODE", "inmemory")),
+			TokenRuntimeURL:  strings.TrimSpace(getEnv("GATEWAY_TOKEN_RUNTIME_URL", "")),
+		},
 		Router: RouterConfig{
-			Strategy:        "latency",
-			Timeout:         30 * time.Second,
-			MaxRetries:      3,
-			RetryDelay:      1 * time.Second,
+			Strategy:            "latency",
+			Timeout:             30 * time.Second,
+			MaxRetries:          3,
+			RetryDelay:          1 * time.Second,
 			HealthCheckInterval: 10 * time.Second,
 		},
 		RateLimit: RateLimitConfig{
-			Enabled:       true,
-			Algorithm:     "token_bucket",
-			DefaultRPM:    60,
-			DefaultTPM:    60000,
+			Enabled:         true,
+			Algorithm:       "token_bucket",
+			DefaultRPM:      60,
+			DefaultTPM:      60000,
 			BurstMultiplier: 1.5,
 		},
 		Alert: AlertConfig{
 			Enabled: true,
 			Email: EmailConfig{
 				Enabled: false,
-				Host:   getEnv("SMTP_HOST", "smtp.example.com"),
-				Port:   587,
+				Host:    getEnv("SMTP_HOST", "smtp.example.com"),
+				Port:    587,
 			},
 			DingTalk: DingTalkConfig{
 				Enabled: getEnv("DINGTALK_ENABLED", "false") == "true",
@@ -189,7 +204,31 @@ func LoadConfig(path string) (*Config, error) {
 		},
 	}
 
+	if err := validateAuthConfig(cfg.Auth); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+func validateAuthConfig(cfg AuthConfig) error {
+	mode := strings.ToLower(strings.TrimSpace(cfg.TokenRuntimeMode))
+	env := strings.ToLower(strings.TrimSpace(cfg.Env))
+
+	switch mode {
+	case "inmemory", "remote_introspection":
+	default:
+		return fmt.Errorf("unsupported token runtime mode %q", cfg.TokenRuntimeMode)
+	}
+
+	if (env == "prod" || env == "staging") && mode == "inmemory" {
+		return fmt.Errorf("inmemory token runtime is not allowed in %s, use remote_introspection", env)
+	}
+	if mode == "remote_introspection" && strings.TrimSpace(cfg.TokenRuntimeURL) == "" {
+		return errors.New("GATEWAY_TOKEN_RUNTIME_URL is required when token runtime mode is remote_introspection")
+	}
+
+	return nil
 }
 
 func getEnv(key, defaultValue string) string {

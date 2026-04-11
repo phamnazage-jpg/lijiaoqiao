@@ -77,18 +77,36 @@ func main() {
 		auditor = middleware.NewMemoryAuditEmitter()
 	}
 
-	// 初始化 token 运行时（内存实现）
-	tokenRuntime := middleware.NewInMemoryTokenRuntime(time.Now)
+	// 初始化 token 运行时
+	var tokenRuntime interface {
+		middleware.TokenVerifier
+		middleware.TokenStatusResolver
+	}
+	switch cfg.Auth.TokenRuntimeMode {
+	case "inmemory":
+		tokenRuntime = middleware.NewInMemoryTokenRuntime(time.Now)
+	case "remote_introspection":
+		tokenRuntime = middleware.NewRemoteTokenRuntime(cfg.Auth.TokenRuntimeURL, http.DefaultClient, time.Now)
+	default:
+		log.Fatalf("unsupported token runtime mode: %s", cfg.Auth.TokenRuntimeMode)
+	}
 
 	// 构建认证中间件配置
 	authMiddlewareConfig := middleware.AuthMiddlewareConfig{
-		Verifier:          tokenRuntime,
-		StatusResolver:    tokenRuntime,
-		Authorizer:        middleware.NewScopeRoleAuthorizer(),
-		Auditor:           auditor,
-		ProtectedPrefixes: []string{"/api/v1/supply", "/api/v1/platform"},
-		ExcludedPrefixes:  []string{"/health", "/healthz", "/metrics", "/readyz"},
-		Now:               time.Now,
+		Verifier:       tokenRuntime,
+		StatusResolver: tokenRuntime,
+		Authorizer:     middleware.NewScopeRoleAuthorizer(),
+		Auditor:        auditor,
+		ProtectedPrefixes: []string{
+			"/v1/chat/completions",
+			"/v1/completions",
+			"/api/v1/chat/completions",
+			"/api/v1/completions",
+			"/api/v1/supply",
+			"/api/v1/platform",
+		},
+		ExcludedPrefixes: []string{"/health", "/healthz", "/metrics", "/readyz"},
+		Now:              time.Now,
 	}
 
 	// 初始化Handler
@@ -132,33 +150,38 @@ func main() {
 func createMux(h *handler.Handler, limiter *ratelimit.Middleware, authConfig middleware.AuthMiddlewareConfig) http.Handler {
 	mux := http.NewServeMux()
 
-	// 创建认证处理链
-	authHandler := middleware.BuildTokenAuthChain(authConfig, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.ChatCompletionsHandle(w, r)
-	}))
+	chatHandler := middleware.BuildTokenAuthChain(authConfig, http.HandlerFunc(h.ChatCompletionsHandle))
+	completionsHandler := middleware.BuildTokenAuthChain(authConfig, http.HandlerFunc(h.CompletionsHandle))
 
-	// Chat Completions - 应用限流和认证
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
-		limiter.Limit(authHandler.ServeHTTP)(w, r)
+		limitHandler(limiter, chatHandler).ServeHTTP(w, r)
 	})
 
-	// Completions - 应用限流和认证
 	mux.HandleFunc("/v1/completions", func(w http.ResponseWriter, r *http.Request) {
-		limiter.Limit(authHandler.ServeHTTP)(w, r)
+		limitHandler(limiter, completionsHandler).ServeHTTP(w, r)
 	})
 
-	// Models - 公开接口
 	mux.HandleFunc("/v1/models", h.ModelsHandle)
 
-	// 旧版路径兼容
 	mux.HandleFunc("/api/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
-		h.ChatCompletionsHandle(w, r)
+		limitHandler(limiter, chatHandler).ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/api/v1/completions", func(w http.ResponseWriter, r *http.Request) {
+		limitHandler(limiter, completionsHandler).ServeHTTP(w, r)
 	})
 
-	// Health - 排除认证
 	mux.HandleFunc("/health", h.HealthHandle)
 	mux.HandleFunc("/healthz", h.HealthHandle)
 	mux.HandleFunc("/readyz", h.HealthHandle)
 
-	return mux
+	return middleware.CORSMiddleware(middleware.DefaultCORSConfig())(mux)
+}
+
+func limitHandler(limiter *ratelimit.Middleware, next http.Handler) http.Handler {
+	if limiter == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limiter.Limit(next.ServeHTTP)(w, r)
+	})
 }
