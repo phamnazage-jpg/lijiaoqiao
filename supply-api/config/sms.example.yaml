@@ -1,0 +1,47 @@
+# SMS Service Configuration
+# 短信服务配置
+
+sms:
+  # 是否启用SMS服务；默认 false 时运行时会拒绝验证码校验
+  enabled: false
+
+  # SMS服务提供商: tencent (腾讯云) 或 aliyun (阿里云)
+  provider: tencent
+
+  # 运行时读取扁平字段，而不是按 provider 分组的嵌套字段
+  app_id: "1400123456"             # 腾讯云: SDK AppID；阿里云: AccessKey ID
+  app_secret: "your_app_key"       # 腾讯云: AppKey；阿里云: AccessKey Secret
+  sign_name: "供应链平台"           # 短信签名
+  template_code: "SMS_123456789"   # 短信模板 CODE
+  region: "ap-guangzhou"           # 腾讯云区域；阿里云可忽略
+  endpoint: ""                     # 自定义 endpoint，可选
+
+  # 通用配置
+  code_length: 6        # 验证码长度，默认6位
+  code_expire_mins: 5   # 验证码有效期(分钟)，默认5分钟
+
+# 示例：启用腾讯云SMS
+# sms:
+#   enabled: true
+#   provider: tencent
+#   app_id: "1400123456"
+#   app_secret: "a1b2c3d4e5f6g7h8i9j0"
+#   sign_name: "供应链平台"
+#   template_code: "SMS_123456789"
+#   region: "ap-guangzhou"
+#   code_length: 6
+#   code_expire_mins: 5
+
+# 示例：启用阿里云SMS
+# sms:
+#   enabled: true
+#   provider: aliyun
+#   app_id: "LTAI5tXXXXXXXXXXXX"
+#   app_secret: |
+#     -----BEGIN PRIVATE KEY-----
+#     MIIEvQIBADANBgkqhkiG9w0BAQEFAASC...
+#     -----END PRIVATE KEY-----
+#   sign_name: "供应链平台"
+#   template_code: "SMS_123456789"
+#   code_length: 6
+#   code_expire_mins: 5
