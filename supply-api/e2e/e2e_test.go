@@ -125,6 +125,13 @@ func (s *e2eSettlementService) List(ctx context.Context, supplierID int64) ([]*d
 	return []*domain.Settlement{{ID: 1, SupplierID: supplierID, Status: domain.SettlementStatusPending, CreatedAt: now, UpdatedAt: now}}, nil
 }
 
+func (s *e2eSettlementService) GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*domain.BillingSummary, error) {
+	return &domain.BillingSummary{
+		Period:  domain.BillingPeriod{Start: startDate, End: endDate},
+		Summary: domain.BillingTotal{TotalRevenue: 100, TotalOrders: 1, TotalUsage: 1000, TotalRequests: 10, AvgSuccessRate: 1, NetEarnings: 95},
+	}, nil
+}
+
 type e2eEarningService struct{}
 
 func (s *e2eEarningService) ListRecords(ctx context.Context, supplierID int64, startDate, endDate string, page, pageSize int) ([]*domain.EarningRecord, int, error) {
@@ -367,8 +374,9 @@ func TestE2E_Withdraw_DisabledBeforeSMSIntegration(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected error body, got %v", payload["error"])
 	}
-	if errBody["code"] != "FEATURE_DISABLED" {
-		t.Fatalf("expected FEATURE_DISABLED, got %v", errBody["code"])
+	// 验证功能禁用错误码（SUP_HTTP_5030 = FEATURE_DISABLED）
+	if errBody["code"] != httpapi.CodeFeatureDisabled {
+		t.Fatalf("expected %s, got %v", httpapi.CodeFeatureDisabled, errBody["code"])
 	}
 }
 
