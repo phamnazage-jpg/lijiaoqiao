@@ -605,3 +605,19 @@ func TestGenerateSettlementNo(t *testing.T) {
 	// 格式为时间戳 20060102150405
 	assert.Equal(t, 14, len(no))
 }
+
+// TestSettlementService_GetBillingSummary 测试通过结算服务获取账单摘要
+func TestSettlementService_GetBillingSummary(t *testing.T) {
+	store := newMockSettlementStore()
+	earningStore := newMockEarningStore()
+	auditStore := &mockAuditStoreForSettlement{}
+
+	svc := NewSettlementService(store, earningStore, auditStore)
+
+	summary, err := svc.GetBillingSummary(context.Background(), 1001, "2024-01-01", "2024-01-31")
+	assert.NoError(t, err)
+	assert.NotNil(t, summary)
+	assert.Equal(t, "2024-01-01", summary.Period.Start)
+	assert.Equal(t, "2024-01-31", summary.Period.End)
+	assert.Equal(t, float64(1000), summary.Summary.TotalRevenue)
+}

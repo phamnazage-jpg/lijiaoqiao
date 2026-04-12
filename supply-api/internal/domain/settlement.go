@@ -86,6 +86,7 @@ type SettlementService interface {
 	Cancel(ctx context.Context, supplierID, settlementID int64) (*Settlement, error)
 	GetByID(ctx context.Context, supplierID, settlementID int64) (*Settlement, error)
 	List(ctx context.Context, supplierID int64) ([]*Settlement, error)
+	GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*BillingSummary, error)
 }
 
 // 收益服务接口
