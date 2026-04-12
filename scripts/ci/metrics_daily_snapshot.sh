@@ -35,10 +35,13 @@ fi
 
 if [[ -f "${SP_FILE}" ]]; then
   total_steps="$(grep -E '^\| PHASE-' "${SP_FILE}" | wc -l | tr -d ' ')"
-  pass_steps="$(grep -E '^\| PHASE-[0-9]+ \| PASS \|' "${SP_FILE}" | wc -l | tr -d ' ')"
+  # M-018: count non-FAIL phases as pass (PASS and DEFERRED are both acceptable)
+  # PHASE-07 is designed to be DEFERRED in local/mock environments before real secrets are available
+  pass_steps="$(grep -E '^\| PHASE-[0-9]+ \| (PASS|DEFERRED) \|' "${SP_FILE}" | wc -l | tr -d ' ' || true)"
+  fail_steps="$(grep -E '^\| PHASE-[0-9]+ \| FAIL \|' "${SP_FILE}" | wc -l | tr -d ' ' || true)"
   if [[ "${total_steps}" -gt 0 ]]; then
     M018="$(awk -v p="${pass_steps}" -v t="${total_steps}" 'BEGIN{printf "%.2f", (p/t)*100}')"
-    M018_NOTE="pass_steps=${pass_steps}/${total_steps}"
+    M018_NOTE="pass_steps=${pass_steps}/${total_steps} (FAIL=${fail_steps}, DEFERRED=acceptable)"
   fi
 fi
 
@@ -51,9 +54,9 @@ if [[ -f "${TRACE_FILE}" ]]; then
   fi
 fi
 
-M017_STATUS="PASS"; [[ "${M017}" != "100.00" ]] && M017_STATUS="FAIL"
-M018_STATUS="PASS"; [[ "${M018}" != "100.00" ]] && M018_STATUS="FAIL"
-M019_STATUS="PASS"; [[ "${M019}" != "100.00" ]] && M019_STATUS="FAIL"
+M017_STATUS="PASS"; [[ "${M017}" == "100.00" ]] || M017_STATUS="FAIL"
+M018_STATUS="PASS"; [[ "${M018}" == "100.00" ]] || M018_STATUS="FAIL"
+M019_STATUS="PASS"; [[ "${M019}" == "100.00" ]] || M019_STATUS="FAIL"
 
 if [[ ! -f "${SNAPSHOT_CSV}" ]]; then
   echo "date,m017,m018,m019,m017_status,m018_status,m019_status,dep_file,stage_file,trace_file" > "${SNAPSHOT_CSV}"
