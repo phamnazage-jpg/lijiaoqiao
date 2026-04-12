@@ -2,6 +2,7 @@ package logging
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"time"
 )
@@ -142,6 +143,32 @@ func (l *jsonLogger) Fatal(msg string, fields ...map[string]interface{}) {
 		f = fields[0]
 	}
 	l.log(LogLevelFatal, msg, f)
+}
+
+// Infof 格式化信息日志
+func (l *jsonLogger) Infof(format string, args ...interface{}) {
+	l.Info(fmt.Sprintf(format, args...), nil)
+}
+
+// Errorf 格式化错误日志
+func (l *jsonLogger) Errorf(format string, args ...interface{}) {
+	l.Error(fmt.Sprintf(format, args...), nil)
+}
+
+// Warnf 格式化警告日志
+func (l *jsonLogger) Warnf(format string, args ...interface{}) {
+	l.Warn(fmt.Sprintf(format, args...), nil)
+}
+
+// Debugf 格式化调试日志
+func (l *jsonLogger) Debugf(format string, args ...interface{}) {
+	l.Debug(fmt.Sprintf(format, args...), nil)
+}
+
+// Fatalf 格式化致命日志
+func (l *jsonLogger) Fatalf(format string, args ...interface{}) {
+	l.Fatal(fmt.Sprintf(format, args...), nil)
+	os.Exit(1)
 }
 
 // sanitizeFields 敏感字段脱敏

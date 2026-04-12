@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -36,18 +35,17 @@ func main() {
 		*configPath = "./config/config." + *env + ".yaml"
 	}
 
-	// 加载配置
-	cfg, err := config.LoadFromPath(*env, *configPath)
-	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
-	}
-
-	log.Printf("starting supply-api in %s mode", *env)
-	isProd := *env == "prod"
-
 	// P1-010修复: 初始化结构化日志
 	jsonLogger := logging.NewLogger("supply-api", logging.LogLevelInfo)
 
+	// 加载配置
+	cfg, err := config.LoadFromPath(*env, *configPath)
+	if err != nil {
+		jsonLogger.Fatalf("failed to load config: %v", err)
+	}
+
+	jsonLogger.Infof("starting supply-api in %s mode", *env)
+	isProd := *env == "prod"
 	rootCtx, stop := context.WithCancel(context.Background())
 	defer stop()
 
@@ -58,12 +56,12 @@ func main() {
 	db, err := repository.NewDB(initCtx, cfg.Database)
 	if err != nil {
 		if isProd {
-			log.Fatalf("production startup requirement failed: database unavailable: %v", err)
+			jsonLogger.Fatalf("production startup requirement failed: database unavailable: %v", err)
 		}
-		log.Printf("warning: failed to connect to database: %v (using in-memory store)", err)
+		jsonLogger.Infof("warning: failed to connect to database: %v (using in-memory store)", err)
 		db = nil
 	} else {
-		log.Printf("connected to database at %s:%d", cfg.Database.Host, cfg.Database.Port)
+		jsonLogger.Infof("connected to database at %s:%d", cfg.Database.Host, cfg.Database.Port)
 		defer db.Close()
 	}
 
@@ -71,13 +69,13 @@ func main() {
 	redisCache, err := cache.NewRedisCache(cfg.Redis)
 	if err != nil {
 		if isProd {
-			log.Printf("warning: redis unavailable at startup: %v", err)
+			jsonLogger.Infof("warning: redis unavailable at startup: %v", err)
 		} else {
-			log.Printf("warning: failed to connect to redis: %v (caching disabled)", err)
+			jsonLogger.Infof("warning: failed to connect to redis: %v (caching disabled)", err)
 		}
 		redisCache = nil
 	} else {
-		log.Printf("connected to redis at %s:%d", cfg.Redis.Host, cfg.Redis.Port)
+		jsonLogger.Infof("connected to redis at %s:%d", cfg.Redis.Host, cfg.Redis.Port)
 		defer redisCache.Close()
 	}
 
@@ -118,19 +116,19 @@ func main() {
 	var auditStore audit.AuditStore
 	if auditRepo != nil {
 		auditStore = audit.NewPostgresAuditStore(auditRepo)
-		log.Println("审计存储: 使用PostgreSQL (DB-backed)")
+		jsonLogger.Info("审计存储: 使用PostgreSQL (DB-backed)")
 	} else {
 		auditStore = audit.NewMemoryAuditStore()
-		log.Println("警告: 审计存储使用内存实现 (生产环境不应使用)")
+		jsonLogger.Info("警告: 审计存储使用内存实现 (生产环境不应使用)")
 	}
 
 	// P0-09修复: 初始化外键校验器
 	var fkValidator *repository.ForeignKeyValidator
 	if db != nil {
 		fkValidator = repository.NewForeignKeyValidator(db.Pool)
-		log.Println("外键校验器: 已初始化 (PostgreSQL-backed)")
+		jsonLogger.Info("外键校验器: 已初始化 (PostgreSQL-backed)")
 	} else {
-		log.Println("警告: 外键校验器未启用 (db不可用)")
+		jsonLogger.Info("警告: 外键校验器未启用 (db不可用)")
 	}
 
 	// 初始化不变量检查器
@@ -160,21 +158,21 @@ func main() {
 	var tokenBackend middleware.TokenStatusBackend
 	if tokenStatusRepo != nil {
 		tokenBackend = middleware.NewDBTokenStatusBackend(tokenStatusRepo, redisCache, cfg.Token.RevocationCacheTTL)
-		log.Println("Token状态后端: 使用PostgreSQL (DB-backed)")
+		jsonLogger.Info("Token状态后端: 使用PostgreSQL (DB-backed)")
 
 		// 启动主动吊销订阅机制（仅在Redis可用时）
 		if redisCache != nil {
 			if dbTokenBackend, ok := tokenBackend.(*middleware.DBTokenStatusBackend); ok {
 				if err := dbTokenBackend.StartRevocationSubscriber(rootCtx); err != nil {
-					log.Printf("警告: 启动主动吊销订阅失败: %v", err)
+					jsonLogger.Infof("警告: 启动主动吊销订阅失败: %v", err)
 				} else {
-					log.Println("主动吊销机制: 已启动 (Redis Pub/Sub)")
+					jsonLogger.Info("主动吊销机制: 已启动 (Redis Pub/Sub)")
 				}
 			}
 		}
 	} else {
 		tokenBackend = adapter.NewMemoryTokenBackend()
-		log.Println("警告: Token状态后端使用内存实现 (生产环境不应使用)")
+		jsonLogger.Info("警告: Token状态后端使用内存实现 (生产环境不应使用)")
 	}
 
 	// 初始化审计事件适配器（NEW-P1-03修复）
@@ -199,15 +197,15 @@ func main() {
 			TTL:     24 * time.Hour,
 			Enabled: *env != "dev",
 		})
-		log.Println("幂等中间件已启用（DB-backed）")
+		jsonLogger.Info("幂等中间件已启用（DB-backed）")
 	} else {
-		log.Println("警告：幂等中间件未启用（db或repo不可用）- 使用内联幂等逻辑作为替代")
+		jsonLogger.Info("警告：幂等中间件未启用（db或repo不可用）- 使用内联幂等逻辑作为替代")
 	}
 
 	// P0-05修复: 初始化限流中间件
 	rateLimitConfig := middleware.DefaultRateLimitConfig()
 	rateLimitConfig.Enabled = *env != "dev" // 生产环境启用
-	log.Println("限流中间件已初始化")
+	jsonLogger.Info("限流中间件已初始化")
 
 	// 初始化HTTP API处理器
 	// P0-P4修复: 使用DB-backed幂等中间件替代内联幂等存储
@@ -288,7 +286,7 @@ func main() {
 
 	serverErrCh := make(chan error, 1)
 	go func() {
-		log.Printf("starting HTTP server on %s", cfg.Server.Addr)
+		jsonLogger.Infof("starting HTTP server on %s", cfg.Server.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErrCh <- err
 		}
@@ -306,22 +304,22 @@ func main() {
 		}
 		if msgBroker == nil {
 			if isProd {
-				log.Fatalf("production startup requirement failed: outbox message broker unavailable")
+				jsonLogger.Fatalf("production startup requirement failed: outbox message broker unavailable")
 			}
-			log.Println("警告: OutboxProcessor未启动 (message broker不可用)")
+			jsonLogger.Info("警告: OutboxProcessor未启动 (message broker不可用)")
 		} else {
 			stats := &messaging.NoOpOutboxStats{}
 			outboxProcessor = outbox.NewOutboxProcessorRunner(outboxRepo, msgBroker, stats)
 			go outboxProcessor.Start(rootCtx)
-			log.Println("OutboxProcessor已启动")
+			jsonLogger.Info("OutboxProcessor已启动")
 		}
 
 		// 分区维护：确保未来分区已创建
 		partitionManager := repository.NewPartitionManager(db.Pool)
 		if err := partitionManager.EnsureFuturePartitions(initCtx); err != nil {
-			log.Printf("警告: 预创建未来分区失败: %v", err)
+			jsonLogger.Infof("警告: 预创建未来分区失败: %v", err)
 		} else {
-			log.Println("分区管理: 未来分区已确保存在")
+			jsonLogger.Info("分区管理: 未来分区已确保存在")
 		}
 
 		// 启动后台分区维护goroutine（每小时检查一次）
@@ -334,12 +332,12 @@ func main() {
 					return
 				case <-ticker.C:
 					if err := partitionManager.EnsureFuturePartitions(context.Background()); err != nil {
-						log.Printf("分区维护: 预创建未来分区失败: %v", err)
+						jsonLogger.Infof("分区维护: 预创建未来分区失败: %v", err)
 					}
 					// 清理过期分区（仅在需要时）
 					for _, tableName := range []string{"audit_events", "supply_usage_records", "supply_idempotency_records"} {
 						if _, err := partitionManager.DropOldPartitions(context.Background(), tableName); err != nil {
-							log.Printf("分区维护: 清理过期分区失败 (%s): %v", tableName, err)
+							jsonLogger.Infof("分区维护: 清理过期分区失败 (%s): %v", tableName, err)
 						}
 					}
 				}
@@ -351,11 +349,11 @@ func main() {
 		compensationStats := &domain.NoOpCompensationStats{}
 		compensationExecutor := compensation.NewDefaultCompensationExecutor()
 		compensationProcessor := domain.NewCompensationProcessor(compensationStore, compensationExecutor, compensationStats)
-		log.Println("批量补偿处理器: 已初始化")
+		jsonLogger.Info("批量补偿处理器: 已初始化")
 
 		// 启动后台补偿处理goroutine
 		compensationProcessor.StartBackgroundWorker(rootCtx, 5*time.Minute)
-		log.Println("批量补偿处理器: 后台worker已启动 (每5分钟检查一次)")
+		jsonLogger.Info("批量补偿处理器: 后台worker已启动 (每5分钟检查一次)")
 	}
 
 	// 优雅关闭
@@ -363,21 +361,21 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	select {
 	case sig := <-sigCh:
-		log.Printf("received signal %s", sig)
+		jsonLogger.Infof("received signal %s", sig)
 	case err := <-serverErrCh:
-		log.Fatalf("server failed: %v", err)
+		jsonLogger.Fatalf("server failed: %v", err)
 	}
 
 	stop()
 
-	log.Println("shutting down...")
+	jsonLogger.Info("shutting down...")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("graceful shutdown failed: %v", err)
+		jsonLogger.Infof("graceful shutdown failed: %v", err)
 	}
 
-	log.Println("shutdown complete")
+	jsonLogger.Info("shutdown complete")
 }
