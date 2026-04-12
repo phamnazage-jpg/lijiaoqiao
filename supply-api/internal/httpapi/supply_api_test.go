@@ -160,6 +160,10 @@ func (m *mockSettlementService) List(ctx context.Context, supplierID int64) ([]*
 	return nil, nil
 }
 
+func (m *mockSettlementService) GetBillingSummary(ctx context.Context, supplierID int64, startDate, endDate string) (*domain.BillingSummary, error) {
+	return nil, nil
+}
+
 // mockEarningService Mock收益服务
 type mockEarningService struct {
 	records       []*domain.EarningRecord

@@ -85,9 +85,9 @@ func (b *DBTokenStatusBackend) CheckTokenStatus(ctx context.Context, tokenID str
 		_ = b.redisCache.SetTokenStatus(ctx, tokenStatus, b.cacheTTL)
 	}
 
-	// 4. 异步更新验证计数（不阻塞验证流程）
+	// 4. 异步更新验证计数（传递 context 以保持链路追踪）
 	go func() {
-		_ = b.repo.UpdateVerificationCount(context.Background(), tokenID)
+		_ = b.repo.UpdateVerificationCount(ctx, tokenID)
 	}()
 
 	return status, nil

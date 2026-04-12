@@ -42,7 +42,7 @@ func (a *AlertAPI) handleAlert(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		a.alertHandler.ListAlerts(w, r)
 	default:
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 	}
 }
 
@@ -56,7 +56,7 @@ func (a *AlertAPI) handleAlertByID(w http.ResponseWriter, r *http.Request) {
 
 	parts := splitPath(path)
 	if len(parts) < 5 {
-		writeError(w, http.StatusBadRequest, "INVALID_PATH", "invalid path")
+		writeError(w, http.StatusBadRequest, CodeInvalidPath, "invalid path")
 		return
 	}
 
@@ -67,7 +67,7 @@ func (a *AlertAPI) handleAlertByID(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			a.alertHandler.ResolveAlert(w, r)
 		} else {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 		}
 		return
 	}
@@ -100,7 +100,7 @@ func (a *AlertAPI) handleAlertByID(w http.ResponseWriter, r *http.Request) {
 		r.URL.RawQuery = query.Encode()
 		a.alertHandler.DeleteAlert(w, r)
 	default:
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 	}
 }
 

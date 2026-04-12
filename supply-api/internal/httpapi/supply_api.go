@@ -101,7 +101,7 @@ func (a *SupplyAPI) resolveSupplierID(ctx context.Context) (int64, error) {
 func (a *SupplyAPI) requireSupplierID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	supplierID, err := a.resolveSupplierID(r.Context())
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "AUTH_CONTEXT_MISSING", err.Error())
+		writeError(w, http.StatusUnauthorized, CodeAuthContextMissing, err.Error())
 		return 0, false
 	}
 	return supplierID, true
@@ -118,20 +118,20 @@ type VerifyAccountRequest struct {
 
 func (a *SupplyAPI) handleVerifyAccount(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		writeError(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
 	}
 	defer r.Body.Close()
 
 	var req VerifyAccountRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		writeError(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
 	}
 
@@ -146,7 +146,7 @@ func (a *SupplyAPI) handleVerifyAccount(w http.ResponseWriter, r *http.Request) 
 		req.CredentialInput)
 
 	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "VERIFY_FAILED", err.Error())
+		writeError(w, http.StatusUnprocessableEntity, CodeVerifyFailed, err.Error())
 		return
 	}
 
@@ -158,7 +158,7 @@ func (a *SupplyAPI) handleVerifyAccount(w http.ResponseWriter, r *http.Request) 
 
 func (a *SupplyAPI) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -177,13 +177,13 @@ func (a *SupplyAPI) createAccountHandler(ctx context.Context, w http.ResponseWri
 	requestID := r.Header.Get("X-Request-Id")
 	supplierID, err := a.resolveSupplierID(ctx)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "AUTH_CONTEXT_MISSING", err.Error())
+		writeError(w, http.StatusUnauthorized, CodeAuthContextMissing, err.Error())
 		return err
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		writeError(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return err
 	}
 	defer r.Body.Close()
@@ -198,14 +198,14 @@ func (a *SupplyAPI) createAccountHandler(ctx context.Context, w http.ResponseWri
 	}
 
 	if err := json.Unmarshal(body, &rawReq); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		writeError(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return err
 	}
 
 	// P0-09修复: 创建账户前校验外键引用
 	if a.fkValidator != nil {
 		if err := a.fkValidator.ValidateSupplyAccountOwner(ctx, supplierID); err != nil {
-			writeError(w, http.StatusUnprocessableEntity, "FK_VALIDATION_FAILED", "supplier does not exist")
+			writeError(w, http.StatusUnprocessableEntity, CodeFKValidationFailed, "supplier does not exist")
 			return err
 		}
 	}
@@ -221,7 +221,7 @@ func (a *SupplyAPI) createAccountHandler(ctx context.Context, w http.ResponseWri
 
 	account, err := a.accountService.Create(ctx, createReq)
 	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "CREATE_FAILED", err.Error())
+		writeError(w, http.StatusUnprocessableEntity, CodeCreateFailed, err.Error())
 		return err
 	}
 
@@ -244,13 +244,13 @@ func (a *SupplyAPI) handleAccountActions(w http.ResponseWriter, r *http.Request)
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/supply/accounts/")
 	parts := strings.Split(path, "/")
 	if len(parts) < 2 {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
+		writeError(w, http.StatusNotFound, CodeNotFound, "route not found")
 		return
 	}
 
 	accountID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid account_id")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "invalid account_id")
 		return
 	}
 
@@ -259,30 +259,30 @@ func (a *SupplyAPI) handleAccountActions(w http.ResponseWriter, r *http.Request)
 	switch action {
 	case "activate":
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 			return
 		}
 		a.handleActivateAccount(w, r, accountID)
 	case "suspend":
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 			return
 		}
 		a.handleSuspendAccount(w, r, accountID)
 	case "delete":
 		if r.Method != http.MethodDelete {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 			return
 		}
 		a.handleDeleteAccount(w, r, accountID)
 	case "audit-logs":
 		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 			return
 		}
 		a.handleAccountAuditLogs(w, r, accountID)
 	default:
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
+		writeError(w, http.StatusNotFound, CodeNotFound, "route not found")
 	}
 }
 
@@ -295,9 +295,9 @@ func (a *SupplyAPI) handleActivateAccount(w http.ResponseWriter, r *http.Request
 	account, err := a.accountService.Activate(r.Context(), supplierID, accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "SUP_ACC") {
-			writeError(w, http.StatusConflict, "CONFLICT", err.Error())
+			writeError(w, http.StatusConflict, CodeConflict, err.Error())
 		} else {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 		}
 		return
 	}
@@ -321,9 +321,9 @@ func (a *SupplyAPI) handleSuspendAccount(w http.ResponseWriter, r *http.Request,
 	account, err := a.accountService.Suspend(r.Context(), supplierID, accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "SUP_ACC") {
-			writeError(w, http.StatusConflict, "CONFLICT", err.Error())
+			writeError(w, http.StatusConflict, CodeConflict, err.Error())
 		} else {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 		}
 		return
 	}
@@ -347,9 +347,9 @@ func (a *SupplyAPI) handleDeleteAccount(w http.ResponseWriter, r *http.Request, 
 	err := a.accountService.Delete(r.Context(), supplierID, accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "SUP_ACC") {
-			writeError(w, http.StatusConflict, "CONFLICT", err.Error())
+			writeError(w, http.StatusConflict, CodeConflict, err.Error())
 		} else {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 		}
 		return
 	}
@@ -384,7 +384,7 @@ func (a *SupplyAPI) handleAccountAuditLogs(w http.ResponseWriter, r *http.Reques
 		Limit:      pageSize,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "QUERY_FAILED", err.Error())
+		writeError(w, http.StatusInternalServerError, CodeQueryFailed, err.Error())
 		return
 	}
 
@@ -417,13 +417,13 @@ func (a *SupplyAPI) handleAccountAuditLogs(w http.ResponseWriter, r *http.Reques
 
 func (a *SupplyAPI) handleCreatePackageDraft(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		writeError(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
 	}
 	defer r.Body.Close()
@@ -440,7 +440,7 @@ func (a *SupplyAPI) handleCreatePackageDraft(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		writeError(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
 	}
 
@@ -452,7 +452,7 @@ func (a *SupplyAPI) handleCreatePackageDraft(w http.ResponseWriter, r *http.Requ
 	// P0-09修复: 创建套餐前校验外键引用
 	if a.fkValidator != nil {
 		if err := a.fkValidator.ValidatePackageSupplyAccount(r.Context(), req.SupplyAccountID); err != nil {
-			writeError(w, http.StatusUnprocessableEntity, "FK_VALIDATION_FAILED", "supply account does not exist")
+			writeError(w, http.StatusUnprocessableEntity, CodeFKValidationFailed, "supply account does not exist")
 			return
 		}
 	}
@@ -471,7 +471,7 @@ func (a *SupplyAPI) handleCreatePackageDraft(w http.ResponseWriter, r *http.Requ
 
 	pkg, err := a.packageService.CreateDraft(r.Context(), supplierID, createReq)
 	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "CREATE_FAILED", err.Error())
+		writeError(w, http.StatusUnprocessableEntity, CodeCreateFailed, err.Error())
 		return
 	}
 
@@ -494,7 +494,7 @@ func (a *SupplyAPI) handlePackageActions(w http.ResponseWriter, r *http.Request)
 	parts := strings.Split(path, "/")
 
 	if len(parts) < 1 {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
+		writeError(w, http.StatusNotFound, CodeNotFound, "route not found")
 		return
 	}
 
@@ -506,12 +506,12 @@ func (a *SupplyAPI) handlePackageActions(w http.ResponseWriter, r *http.Request)
 
 	packageID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid package_id")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "invalid package_id")
 		return
 	}
 
 	if len(parts) < 2 {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
+		writeError(w, http.StatusNotFound, CodeNotFound, "route not found")
 		return
 	}
 
@@ -520,30 +520,30 @@ func (a *SupplyAPI) handlePackageActions(w http.ResponseWriter, r *http.Request)
 	switch action {
 	case "publish":
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 			return
 		}
 		a.handlePublishPackage(w, r, packageID)
 	case "pause":
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 			return
 		}
 		a.handlePausePackage(w, r, packageID)
 	case "unlist":
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 			return
 		}
 		a.handleUnlistPackage(w, r, packageID)
 	case "clone":
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 			return
 		}
 		a.handleClonePackage(w, r, packageID)
 	default:
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
+		writeError(w, http.StatusNotFound, CodeNotFound, "route not found")
 	}
 }
 
@@ -556,9 +556,9 @@ func (a *SupplyAPI) handlePublishPackage(w http.ResponseWriter, r *http.Request,
 	pkg, err := a.packageService.Publish(r.Context(), supplierID, packageID)
 	if err != nil {
 		if strings.Contains(err.Error(), "SUP_PKG") {
-			writeError(w, http.StatusConflict, "CONFLICT", err.Error())
+			writeError(w, http.StatusConflict, CodeConflict, err.Error())
 		} else {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 		}
 		return
 	}
@@ -582,9 +582,9 @@ func (a *SupplyAPI) handlePausePackage(w http.ResponseWriter, r *http.Request, p
 	pkg, err := a.packageService.Pause(r.Context(), supplierID, packageID)
 	if err != nil {
 		if strings.Contains(err.Error(), "SUP_PKG") {
-			writeError(w, http.StatusConflict, "CONFLICT", err.Error())
+			writeError(w, http.StatusConflict, CodeConflict, err.Error())
 		} else {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 		}
 		return
 	}
@@ -608,9 +608,9 @@ func (a *SupplyAPI) handleUnlistPackage(w http.ResponseWriter, r *http.Request, 
 	pkg, err := a.packageService.Unlist(r.Context(), supplierID, packageID)
 	if err != nil {
 		if strings.Contains(err.Error(), "SUP_PKG") {
-			writeError(w, http.StatusConflict, "CONFLICT", err.Error())
+			writeError(w, http.StatusConflict, CodeConflict, err.Error())
 		} else {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 		}
 		return
 	}
@@ -633,7 +633,7 @@ func (a *SupplyAPI) handleClonePackage(w http.ResponseWriter, r *http.Request, p
 
 	pkg, err := a.packageService.Clone(r.Context(), supplierID, packageID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+		writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 		return
 	}
 
@@ -651,13 +651,13 @@ func (a *SupplyAPI) handleClonePackage(w http.ResponseWriter, r *http.Request, p
 
 func (a *SupplyAPI) handleBatchUpdatePrice(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		writeError(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
 	}
 	defer r.Body.Close()
@@ -671,7 +671,7 @@ func (a *SupplyAPI) handleBatchUpdatePrice(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := json.Unmarshal(body, &rawReq); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		writeError(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
 	}
 
@@ -693,7 +693,7 @@ func (a *SupplyAPI) handleBatchUpdatePrice(w http.ResponseWriter, r *http.Reques
 
 	resp, err := a.packageService.BatchUpdatePrice(r.Context(), supplierID, req)
 	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "BATCH_UPDATE_FAILED", err.Error())
+		writeError(w, http.StatusUnprocessableEntity, CodeBatchUpdateFailed, err.Error())
 		return
 	}
 
@@ -707,7 +707,7 @@ func (a *SupplyAPI) handleBatchUpdatePrice(w http.ResponseWriter, r *http.Reques
 
 func (a *SupplyAPI) handleGetBilling(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -721,7 +721,7 @@ func (a *SupplyAPI) handleGetBilling(w http.ResponseWriter, r *http.Request) {
 
 	summary, err := a.earningService.GetBillingSummary(r.Context(), supplierID, startDate, endDate)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "QUERY_FAILED", err.Error())
+		writeError(w, http.StatusInternalServerError, CodeQueryFailed, err.Error())
 		return
 	}
 
@@ -735,11 +735,11 @@ func (a *SupplyAPI) handleGetBilling(w http.ResponseWriter, r *http.Request) {
 
 func (a *SupplyAPI) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 	if !a.withdrawEnabled {
-		writeError(w, http.StatusServiceUnavailable, "FEATURE_DISABLED", "withdraw is disabled until SMS verification is integrated")
+		writeError(w, http.StatusServiceUnavailable, CodeFeatureDisabled, "withdraw is disabled until SMS verification is integrated")
 		return
 	}
 
@@ -758,13 +758,13 @@ func (a *SupplyAPI) withdrawHandler(ctx context.Context, w http.ResponseWriter, 
 	requestID := r.Header.Get("X-Request-Id")
 	supplierID, err := a.resolveSupplierID(ctx)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "AUTH_CONTEXT_MISSING", err.Error())
+		writeError(w, http.StatusUnauthorized, CodeAuthContextMissing, err.Error())
 		return err
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		writeError(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return err
 	}
 	defer r.Body.Close()
@@ -777,7 +777,7 @@ func (a *SupplyAPI) withdrawHandler(ctx context.Context, w http.ResponseWriter, 
 	}
 
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		writeError(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return err
 	}
 
@@ -791,9 +791,9 @@ func (a *SupplyAPI) withdrawHandler(ctx context.Context, w http.ResponseWriter, 
 	settlement, err := a.settlementService.Withdraw(ctx, supplierID, withdrawReq)
 	if err != nil {
 		if strings.Contains(err.Error(), "SUP_SET") {
-			writeError(w, http.StatusConflict, "WITHDRAW_FAILED", err.Error())
+			writeError(w, http.StatusConflict, CodeWithdrawFailed, err.Error())
 		} else {
-			writeError(w, http.StatusUnprocessableEntity, "WITHDRAW_FAILED", err.Error())
+			writeError(w, http.StatusUnprocessableEntity, CodeWithdrawFailed, err.Error())
 		}
 		return err
 	}
@@ -819,13 +819,13 @@ func (a *SupplyAPI) handleSettlementActions(w http.ResponseWriter, r *http.Reque
 	parts := strings.Split(path, "/")
 
 	if len(parts) < 2 {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
+		writeError(w, http.StatusNotFound, CodeNotFound, "route not found")
 		return
 	}
 
 	settlementID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid settlement_id")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "invalid settlement_id")
 		return
 	}
 
@@ -834,18 +834,18 @@ func (a *SupplyAPI) handleSettlementActions(w http.ResponseWriter, r *http.Reque
 	switch action {
 	case "cancel":
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 			return
 		}
 		a.handleCancelSettlement(w, r, settlementID)
 	case "statement":
 		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 			return
 		}
 		a.handleGetStatement(w, r, settlementID)
 	default:
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
+		writeError(w, http.StatusNotFound, CodeNotFound, "route not found")
 	}
 }
 
@@ -858,9 +858,9 @@ func (a *SupplyAPI) handleCancelSettlement(w http.ResponseWriter, r *http.Reques
 	settlement, err := a.settlementService.Cancel(r.Context(), supplierID, settlementID)
 	if err != nil {
 		if strings.Contains(err.Error(), "SUP_SET") {
-			writeError(w, http.StatusConflict, "CONFLICT", err.Error())
+			writeError(w, http.StatusConflict, CodeConflict, err.Error())
 		} else {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 		}
 		return
 	}
@@ -883,7 +883,7 @@ func (a *SupplyAPI) handleGetStatement(w http.ResponseWriter, r *http.Request, s
 
 	settlement, err := a.settlementService.GetByID(r.Context(), supplierID, settlementID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+		writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 		return
 	}
 
@@ -902,7 +902,7 @@ func (a *SupplyAPI) handleGetStatement(w http.ResponseWriter, r *http.Request, s
 
 func (a *SupplyAPI) handleGetEarningRecords(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -929,7 +929,7 @@ func (a *SupplyAPI) handleGetEarningRecords(w http.ResponseWriter, r *http.Reque
 
 	records, total, err := a.earningService.ListRecords(r.Context(), supplierID, startDate, endDate, page, pageSize)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "QUERY_FAILED", err.Error())
+		writeError(w, http.StatusInternalServerError, CodeQueryFailed, err.Error())
 		return
 	}
 
@@ -994,7 +994,7 @@ func (a *SupplyAPI) handleAuditEvent(w http.ResponseWriter, r *http.Request) {
 	// 提取 event_id
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/audit/events/")
 	if path == "" || path == r.URL.Path {
-		writeError(w, http.StatusBadRequest, "MISSING_PARAM", "event_id is required")
+		writeError(w, http.StatusBadRequest, CodeMissingParam, "event_id is required")
 		return
 	}
 
@@ -1003,10 +1003,10 @@ func (a *SupplyAPI) handleAuditEvent(w http.ResponseWriter, r *http.Request) {
 		event, err := a.auditStore.GetByID(r.Context(), path)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
-				writeError(w, http.StatusNotFound, "NOT_FOUND", "event not found")
+				writeError(w, http.StatusNotFound, CodeNotFound, "event not found")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, "GET_FAILED", err.Error())
+			writeError(w, http.StatusInternalServerError, CodeGetFailed, err.Error())
 			return
 		}
 
@@ -1027,5 +1027,5 @@ func (a *SupplyAPI) handleAuditEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+	writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 }
