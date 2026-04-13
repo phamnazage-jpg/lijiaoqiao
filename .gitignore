@@ -27,6 +27,7 @@ reports/archive/gate_verification/token_runtime_bin_*
 reports/archive/gates/
 reports/archive/metrics_daily_snapshots.csv
 reports/archive/minimax_upstream_daily_snapshots.csv
+reports/archive/gate_verification/tok006_release_decision_onepager_template_v1_2026-03-30.md
 
 # Local build output
 platform-token-runtime/platform-token-runtime

@@ -48,7 +48,7 @@
 
 - `reports/gates/` 工作区文件数为 0，Git 中也已无已跟踪文件。
 - `reports/archive/gate_verification/` 当前已有 235 个已跟踪 canonical 归档文件。
-- `reports/archive/gate_verification/` 仍有 62 个未跟踪摘要文件待审计。
+- `reports/archive/gate_verification/` 仍有 59 个未跟踪文件，其中 58 个是真实新增快照，1 个是模板文件。
 - `reports/archive/gates/` 与根目录平铺 CSV 仍是未跟踪重复来源。
 - 此前缺失的 `metrics_daily_snapshots.csv`、`minimax_upstream_daily_snapshots.csv` 已补齐到 canonical 目录。
 
@@ -61,6 +61,7 @@
 - `reports/archive/gate_verification/tok006_gate_bundle_*`
 - `reports/archive/gates/` 重复归档树
 - `reports/archive/metrics_daily_snapshots.csv` 与 `reports/archive/minimax_upstream_daily_snapshots.csv` 平铺副本
+- `reports/archive/gate_verification/tok006_release_decision_onepager_template_v1_2026-03-30.md` 模板文件
 
 结论：核心历史摘要已经补回 canonical 归档，下一步应处理剩余 62 个新增快照和第二套重复来源，而不是继续描述为“根仓库删除待提交”。
 
