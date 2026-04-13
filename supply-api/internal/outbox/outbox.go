@@ -3,7 +3,6 @@ package outbox
 import (
 	"context"
 	"fmt"
-	"math"
 	"time"
 
 	"lijiaoqiao/supply-api/internal/domain"
@@ -147,8 +146,8 @@ func (r *OutboxProcessorRunner) handleFailure(ctx context.Context, event *domain
 		}
 	} else {
 		// 计算下次重试时间（指数退避）
-		backoffSeconds := CalculateOutboxBackoff(event.RetryCount, event.MaxRetries)
-		nextRetry := time.Now().Add(time.Duration(backoffSeconds) * time.Second)
+			backoffSeconds := domain.CalculateOutboxBackoff(event.RetryCount, event.MaxRetries)
+			nextRetry := time.Now().Add(time.Duration(backoffSeconds) * time.Second)
 
 		if err := r.repo.MarkFailed(ctx, event.EventID, publishErr.Error(), &nextRetry); err != nil {
 			r.stats.RecordOutboxFailure("mark_failed_failed")
@@ -156,15 +155,4 @@ func (r *OutboxProcessorRunner) handleFailure(ctx context.Context, event *domain
 			r.stats.RecordOutboxRetry(event.EventType)
 		}
 	}
-}
-
-// CalculateOutboxBackoff 计算指数退避时间
-func CalculateOutboxBackoff(retryCount, maxRetries int) int {
-	initialBackoff := 1.0
-	maxBackoff := 60.0
-	backoff := initialBackoff * math.Pow(2, float64(retryCount-1))
-	if backoff > maxBackoff {
-		backoff = maxBackoff
-	}
-	return int(backoff)
 }

@@ -56,7 +56,7 @@ func (m *mockOutboxEventStore) MarkFailed(ctx context.Context, eventID string, e
 	if e, ok := m.events[eventID]; ok {
 		e.Status = OutboxStatusFailed
 		e.ErrorMessage = errorMsg
-		backoff := calculateBackoff(e.RetryCount, e.MaxRetries)
+		backoff := CalculateOutboxBackoff(e.RetryCount, e.MaxRetries)
 		nextRetry := time.Now().Add(time.Duration(backoff) * time.Second)
 		e.NextRetryAt = &nextRetry
 		m.failed = append(m.failed, e)
@@ -269,7 +269,7 @@ func TestP006_ExponentialBackoff(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		backoff := calculateBackoff(tt.retryCount, tt.maxRetries)
+		backoff := CalculateOutboxBackoff(tt.retryCount, tt.maxRetries)
 		if backoff < tt.expectedMin || backoff > tt.expectedMax {
 			t.Errorf("retry %d: expected backoff %d-%d, got %d",
 				tt.retryCount, tt.expectedMin, tt.expectedMax, backoff)
@@ -280,7 +280,7 @@ func TestP006_ExponentialBackoff(t *testing.T) {
 // TestP006_MaxBackoffCap 验证退避时间上限
 func TestP006_MaxBackoffCap(t *testing.T) {
 	// 即使重试很多次，退避时间也不应超过60秒
-	backoff := calculateBackoff(100, 100)
+	backoff := CalculateOutboxBackoff(100, 100)
 	if backoff > DefaultMaxBackoffSeconds {
 		t.Errorf("backoff should be capped at %d, got %d", DefaultMaxBackoffSeconds, backoff)
 	}

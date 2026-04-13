@@ -148,8 +148,8 @@ func (p *OutboxProcessor) handleFailure(ctx context.Context, event *OutboxEvent,
 		}
 	} else {
 		// 计算下次重试时间（指数退避）
-		backoffSeconds := calculateBackoff(event.RetryCount, event.MaxRetries)
-		nextRetry := time.Now().Add(time.Duration(backoffSeconds) * time.Second)
+			backoffSeconds := CalculateOutboxBackoff(event.RetryCount, event.MaxRetries)
+			nextRetry := time.Now().Add(time.Duration(backoffSeconds) * time.Second)
 
 		// 在存储层更新重试状态（这里简化处理）
 		if err := p.eventStore.MarkFailed(ctx, event.EventID, publishErr.Error()); err != nil {
@@ -162,8 +162,8 @@ func (p *OutboxProcessor) handleFailure(ctx context.Context, event *OutboxEvent,
 	}
 }
 
-// calculateBackoff 计算指数退避时间
-func calculateBackoff(retryCount, maxRetries int) int {
+// CalculateOutboxBackoff 计算指数退避时间
+func CalculateOutboxBackoff(retryCount, maxRetries int) int {
 	backoff := DefaultInitialBackoffSeconds * int(math.Pow(2, float64(retryCount-1)))
 	if backoff > DefaultMaxBackoffSeconds {
 		backoff = DefaultMaxBackoffSeconds
