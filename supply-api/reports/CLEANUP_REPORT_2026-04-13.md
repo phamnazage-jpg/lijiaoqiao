@@ -48,9 +48,9 @@
 
 - `reports/gates/` 工作区文件数为 0。
 - `reports/gates/*` staged deletion 共 365 条。
-- `reports/archive/gate_verification/` 本地文件数为 1459。
+- `reports/archive/gate_verification/` 本地文件数现已补齐到 1461。
 - `reports/archive/` 当前整体仍是未跟踪目录。
-- 已确认缺失同名归档的文件至少有 2 个：`metrics_daily_snapshots.csv`、`minimax_upstream_daily_snapshots.csv`。
+- 此前缺失的 `metrics_daily_snapshots.csv`、`minimax_upstream_daily_snapshots.csv` 已按 `HEAD:reports/gates/*` 内容补档。
 
 因此，以下内容仍不能直接宣称“已归档完成”：
 
@@ -61,7 +61,7 @@
 - `reports/gates/metrics_daily_snapshot_*.md`
 - `reports/gates/metrics_trend_7d_*.md`
 
-结论：必须先补齐根仓库归档索引，并明确哪些归档文件族要正式入库、哪些删除存在缺口，再决定是否提交这批删除。
+结论：索引和两个 CSV 缺口已补齐，下一步应核定哪些归档文件族正式纳入 Git，然后才能提交根仓库 `reports/gates/*` 的删除批次。
 
 #### 3.2 本机配置和伪文档仍需隔离
 
