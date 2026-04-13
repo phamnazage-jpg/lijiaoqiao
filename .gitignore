@@ -1,4 +1,7 @@
 .tools/
+.claude/
+.codex
+supply-api/.serena/
 
 # Local/sensitive env files
 scripts/supply-gate/.env
@@ -10,6 +13,12 @@ tests/supply/artifacts/
 reports/gates/*.log
 reports/gates/*.out.log
 reports/gates/*.pid
+reports/gates/*.log.audit.json
+reports/gates/*.log.issue.json
+reports/gates/*.log.server
+reports/gates/token_runtime_bin_*
 
 # Local build output
 platform-token-runtime/platform-token-runtime
+supply-api/reports/gates/*.log
+supply-api/reports/gates/coverage.out

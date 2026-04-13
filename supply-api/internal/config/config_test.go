@@ -7,6 +7,38 @@ import (
 	"testing"
 )
 
+func TestDatabaseConfigDSN_UsesUnixSocketFormat(t *testing.T) {
+	cfg := DatabaseConfig{
+		Host:     "/var/run/postgresql",
+		Port:     5432,
+		User:     "long",
+		Password: "secret",
+		Database: "supply_api",
+	}
+
+	got := cfg.DSN()
+	want := "host=/var/run/postgresql user=long dbname=supply_api sslmode=disable"
+	if got != want {
+		t.Fatalf("expected DSN %q, got %q", want, got)
+	}
+}
+
+func TestDatabaseConfigSafeDSN_UsesUnixSocketFormat(t *testing.T) {
+	cfg := DatabaseConfig{
+		Host:     "/var/run/postgresql",
+		Port:     5432,
+		User:     "long",
+		Password: "secret",
+		Database: "supply_api",
+	}
+
+	got := cfg.SafeDSN()
+	want := "host=/var/run/postgresql user=long dbname=supply_api sslmode=disable"
+	if got != want {
+		t.Fatalf("expected safe DSN %q, got %q", want, got)
+	}
+}
+
 func TestLoadFromPath(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "custom.yaml")
@@ -74,6 +106,15 @@ token:
 }
 
 func TestLoadFromPath_ProdRejectsMissingHS256SecretKey(t *testing.T) {
+	// 清除环境变量以确保测试隔离
+	origVal := os.Getenv("SUPPLY_TOKEN_SECRET_KEY")
+	os.Unsetenv("SUPPLY_TOKEN_SECRET_KEY")
+	defer func() {
+		if origVal != "" {
+			os.Setenv("SUPPLY_TOKEN_SECRET_KEY", origVal)
+		}
+	}()
+
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "prod.yaml")
 	content := []byte(`

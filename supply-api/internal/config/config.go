@@ -78,6 +78,11 @@ type AuditConfig struct {
 
 // DSN 返回数据库连接字符串（包含明文密码，仅限内部使用）
 func (d *DatabaseConfig) DSN() string {
+	// Unix socket 连接（host 以 / 开头）
+	if strings.HasPrefix(d.Host, "/") {
+		return fmt.Sprintf("host=%s user=%s dbname=%s sslmode=disable",
+			d.Host, d.User, d.Database)
+	}
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		d.User, d.Password, d.Host, d.Port, d.Database)
 }
@@ -85,6 +90,11 @@ func (d *DatabaseConfig) DSN() string {
 // SafeDSN 返回脱敏的数据库连接字符串（密码被替换为***），用于日志记录
 // P2-05: 避免在日志中泄露数据库密码
 func (d *DatabaseConfig) SafeDSN() string {
+	// Unix socket 连接（host 以 / 开头）
+	if strings.HasPrefix(d.Host, "/") {
+		return fmt.Sprintf("host=%s user=%s dbname=%s sslmode=disable",
+			d.Host, d.User, d.Database)
+	}
 	return fmt.Sprintf("postgres://%s:***@%s:%d/%s?sslmode=disable",
 		d.User, d.Host, d.Port, d.Database)
 }
