@@ -7,6 +7,7 @@ supply-api/.serena/
 scripts/supply-gate/.env
 scripts/supply-gate/.env.*
 !scripts/supply-gate/.env.example
+supply-api/config/config.local.yaml
 
 # Generated raw artifacts and process files
 tests/supply/artifacts/

@@ -140,6 +140,15 @@ redis:
   db: 0
 ```
 
+本机专用配置不要直接写入 `config/config.dev.yaml`。如果需要使用 Unix socket、本机数据库名或本机用户，请改用单独的本机覆盖文件：
+
+```bash
+cp ./config/config.local.example.yaml ./config/config.local.yaml
+go run ./cmd/supply-api -env=dev -config ./config/config.local.yaml
+```
+
+仓库中的 `config/config.dev.yaml` 保持为可复现样例，`config/config.local.yaml` 只用于本机环境，已加入忽略规则。
+
 ## 构建和运行
 
 ```bash

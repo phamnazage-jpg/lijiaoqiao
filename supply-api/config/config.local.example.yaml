@@ -1,0 +1,41 @@
+# Supply API Local Override Example
+# 使用方式:
+#   go run ./cmd/supply-api -env=dev -config ./config/config.local.yaml
+# 这个文件只演示本机覆盖写法，不作为仓库默认样例。
+
+server:
+  addr: ":18082"
+  read_timeout: 10s
+  write_timeout: 15s
+  idle_timeout: 30s
+  shutdown_timeout: 5s
+
+database:
+  host: "/var/run/postgresql"
+  port: 5432
+  user: "long"
+  password: ""
+  database: "supply_api"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 1h
+  conn_max_idle_time: 10m
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 10
+
+token:
+  secret_key: "test-secret-key-for-development-only"
+  issuer: "lijiaoqiao/supply-api"
+  access_token_ttl: 1h
+  refresh_token_ttl: 168h
+  revocation_cache_ttl: 30s
+
+audit:
+  buffer_size: 1000
+  flush_interval: 5s
+  export_timeout: 30s
