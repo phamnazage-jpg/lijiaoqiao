@@ -1,1 +1,0 @@
-{"data":{"items":[{"client_ip":"","created_at":"2026-03-31T12:31:53.566943101+08:00","event_id":"evt_f6474c2a9c3b289d","event_name":"token.issue.success","request_id":"req-smoke-issue","result_code":"OK","route":"/api/v1/platform/tokens/issue","subject_id":"smoke-user","token_id":"tok_fab6f495496bd553"}],"total":1},"request_id":"req-smoke-audit"}
