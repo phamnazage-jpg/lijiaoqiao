@@ -11,7 +11,7 @@
 |------|------|
 | `supply-api/docs/archive/` | 存在真实的文档归档动作，可作为首批可提交内容的一部分 |
 | `supply-api/reports/archive/` | 可保留，但必须明确“历史快照”与“门禁证据”的区别 |
-| 根仓库 `reports/gates/` | 当前是大规模删除，不是完成迁移，不能直接提交 |
+| 根仓库 `reports/gates/` | 历史摘要删除已入提交历史，当前问题转为 canonical admission 与重复来源收口 |
 | `config.dev.yaml` | 已被本机 Unix socket 配置污染，不应作为仓库样例直接提交 |
 | `internal/outbox` / `internal/domain/outbox.go` | 不是可直接二选一的重复实现 |
 | `internal/compensation` / `internal/domain/compensation.go` | 不是可直接二选一的重复实现 |
@@ -42,26 +42,27 @@
 
 #### 3.1 根仓库门禁证据仍处于“删除待处理”状态
 
-复核后确认：根仓库本地已经存在 `reports/archive/gate_verification/` 归档树，但它此前既没有索引文件，也没有被仓库正式跟踪；同时 `reports/gates/` 的删除已进入暂存区，导致“本地归档存在”和“仓库可审计迁移”之间脱节。
+复核后确认：根仓库 `reports/gates/` 的历史摘要删除已经入提交历史，`reports/archive/gate_verification/` 也已开始按批次 admission。当前风险不再是“删除待处理”，而是“canonical admission 尚未覆盖所有新增快照，同时还存在第二套重复归档来源”。
 
 截至 2026-04-13 的真实状态是：
 
-- `reports/gates/` 工作区文件数为 0。
-- `reports/gates/*` staged deletion 共 365 条。
-- `reports/archive/gate_verification/` 本地文件数现已补齐到 1461。
-- `reports/archive/` 当前整体仍是未跟踪目录。
-- 此前缺失的 `metrics_daily_snapshots.csv`、`minimax_upstream_daily_snapshots.csv` 已按 `HEAD:reports/gates/*` 内容补档。
+- `reports/gates/` 工作区文件数为 0，Git 中也已无已跟踪文件。
+- `reports/archive/gate_verification/` 当前已有 235 个已跟踪 canonical 归档文件。
+- `reports/archive/gate_verification/` 仍有 62 个未跟踪摘要文件待审计。
+- `reports/archive/gates/` 与根目录平铺 CSV 仍是未跟踪重复来源。
+- 此前缺失的 `metrics_daily_snapshots.csv`、`minimax_upstream_daily_snapshots.csv` 已补齐到 canonical 目录。
 
 因此，以下内容仍不能直接宣称“已归档完成”：
 
-- `reports/gates/backend_verify_*.md`
-- `reports/gates/superpowers_stage_validation_*.md`
-- `reports/gates/token_runtime_readiness_*.md`
-- `reports/gates/token_runtime_smoke_*.log.*`
-- `reports/gates/metrics_daily_snapshot_*.md`
-- `reports/gates/metrics_trend_7d_*.md`
+- `reports/archive/gate_verification/backend_verify_2026-04-11..2026-04-13` 新增批次
+- `reports/archive/gate_verification/superpowers_stage_validation_2026-04-11..2026-04-13` 新增批次
+- `reports/archive/gate_verification/token_runtime_readiness_2026-04-11..2026-04-13` 新增批次
+- `reports/archive/gate_verification/tok005_dryrun_*`
+- `reports/archive/gate_verification/tok006_gate_bundle_*`
+- `reports/archive/gates/` 重复归档树
+- `reports/archive/metrics_daily_snapshots.csv` 与 `reports/archive/minimax_upstream_daily_snapshots.csv` 平铺副本
 
-结论：索引和两个 CSV 缺口已补齐，下一步应核定哪些归档文件族正式纳入 Git，然后才能提交根仓库 `reports/gates/*` 的删除批次。
+结论：核心历史摘要已经补回 canonical 归档，下一步应处理剩余 62 个新增快照和第二套重复来源，而不是继续描述为“根仓库删除待提交”。
 
 #### 3.2 本机配置和伪文档仍需隔离
 

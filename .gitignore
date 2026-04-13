@@ -24,6 +24,9 @@ reports/archive/gate_verification/*.log.audit.json
 reports/archive/gate_verification/*.log.issue.json
 reports/archive/gate_verification/*.log.server
 reports/archive/gate_verification/token_runtime_bin_*
+reports/archive/gates/
+reports/archive/metrics_daily_snapshots.csv
+reports/archive/minimax_upstream_daily_snapshots.csv
 
 # Local build output
 platform-token-runtime/platform-token-runtime
