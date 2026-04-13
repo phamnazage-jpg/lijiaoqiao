@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/netip"
 	"time"
 
 	"lijiaoqiao/supply-api/internal/audit"
+	"lijiaoqiao/supply-api/internal/pkg/logging"
 )
 
 // 账号状态
@@ -145,8 +145,13 @@ func NewAccountService(store AccountStore, auditStore audit.AuditStore) AccountS
 // emitAudit 安全记录审计日志（失败只记录错误，不影响主流程）
 func (s *accountService) emitAudit(ctx context.Context, event audit.Event) {
 	if err := s.auditStore.Emit(ctx, event); err != nil {
-		log.Printf("[AUDIT_ERROR] failed to emit audit event: %v, object_type=%s, object_id=%d, action=%s",
-			err, event.ObjectType, event.ObjectID, event.Action)
+		logger := logging.NewLogger("supply-api", logging.LogLevelError)
+		logger.Error("failed to emit audit event", map[string]interface{}{
+			"error":       err.Error(),
+			"object_type": event.ObjectType,
+			"object_id":   event.ObjectID,
+			"action":      event.Action,
+		})
 	}
 }
 

@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"lijiaoqiao/supply-api/internal/pkg/logging"
 )
 
 // ==================== P0-07 批量补偿策略 ====================
@@ -187,7 +188,8 @@ func (p *CompensationProcessor) StartBackgroundWorker(ctx context.Context, inter
 		for {
 			select {
 			case <-workerCtx.Done():
-				log.Println("补偿处理worker已停止")
+				logger := logging.NewLogger("supply-api", logging.LogLevelInfo)
+				logger.Info("compensation worker stopped", nil)
 				return
 			case <-ticker.C:
 				p.processPendingCompensations(workerCtx)
@@ -210,7 +212,10 @@ func (p *CompensationProcessor) processPendingCompensations(ctx context.Context)
 	// 获取所有pending和retrying状态的补偿记录
 	compensations, err := p.store.GetPending(ctx)
 	if err != nil {
-		log.Printf("补偿处理worker: 获取待处理补偿失败: %v", err)
+		logger := logging.NewLogger("supply-api", logging.LogLevelError)
+		logger.Error("compensation worker: failed to get pending compensations", map[string]interface{}{
+			"error": err.Error(),
+		})
 		return
 	}
 
@@ -218,7 +223,10 @@ func (p *CompensationProcessor) processPendingCompensations(ctx context.Context)
 		return
 	}
 
-	log.Printf("补偿处理worker: 发现 %d 条待处理补偿记录", len(compensations))
+	logger := logging.NewLogger("supply-api", logging.LogLevelInfo)
+	logger.Info("compensation worker: found pending compensations", map[string]interface{}{
+		"count": len(compensations),
+	})
 
 	for _, comp := range compensations {
 		// 重试执行
@@ -230,20 +238,32 @@ func (p *CompensationProcessor) processPendingCompensations(ctx context.Context)
 			if comp.RetryCount >= comp.MaxRetries {
 				// 超过最大重试次数，标记需要人工介入
 				if markErr := p.store.MarkManualRequired(ctx, comp.ID, err.Error()); markErr != nil {
-					log.Printf("补偿处理worker: 标记人工介入失败 id=%d: %v", comp.ID, markErr)
+					logger := logging.NewLogger("supply-api", logging.LogLevelError)
+					logger.Error("compensation worker: failed to mark manual required", map[string]interface{}{
+						"id":    comp.ID,
+						"error": markErr.Error(),
+					})
 				}
 				p.stats.RecordCompensationManual(comp.OperationType)
 			} else {
 				// 继续重试
 				if updateErr := p.store.UpdateStatus(ctx, comp.ID, CompensationStatusRetrying); updateErr != nil {
-					log.Printf("补偿处理worker: 更新状态失败 id=%d: %v", comp.ID, updateErr)
+					logger := logging.NewLogger("supply-api", logging.LogLevelError)
+					logger.Error("compensation worker: failed to update status", map[string]interface{}{
+						"id":    comp.ID,
+						"error": updateErr.Error(),
+					})
 				}
 				p.stats.RecordCompensationRetry(comp.OperationType)
 			}
 		} else {
 			// 执行成功，标记解决
 			if resolveErr := p.store.Resolve(ctx, comp.ID, 0, "worker_auto_resolved"); resolveErr != nil {
-				log.Printf("补偿处理worker: 标记解决失败 id=%d: %v", comp.ID, resolveErr)
+				logger := logging.NewLogger("supply-api", logging.LogLevelError)
+				logger.Error("compensation worker: failed to resolve", map[string]interface{}{
+					"id":    comp.ID,
+					"error": resolveErr.Error(),
+				})
 			}
 			p.stats.RecordCompensationResolved(comp.OperationType)
 		}

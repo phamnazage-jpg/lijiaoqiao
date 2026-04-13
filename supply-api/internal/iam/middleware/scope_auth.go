@@ -3,11 +3,11 @@ package middleware
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 
 	"lijiaoqiao/supply-api/internal/iam/model"
 	"lijiaoqiao/supply-api/internal/middleware"
+	"lijiaoqiao/supply-api/internal/pkg/logging"
 )
 
 // IAM token claims context key
@@ -242,8 +242,14 @@ func logWildcardScopeAccess(ctx context.Context, claims *IAMTokenClaims, require
 	// 检查是否使用了通配符scope
 	if hasWildcardScope(claims.Scope) {
 		// 记录审计日志
-		log.Printf("[AUDIT] P2-01 WILDCARD_SCOPE_ACCESS: subject_id=%s, role=%s, required_scope=%s, tenant_id=%d, user_type=%s",
-			claims.SubjectID, claims.Role, requiredScope, claims.TenantID, claims.UserType)
+		logger := logging.NewLogger("supply-api", logging.LogLevelWarn)
+		logger.Warn("P2-01 WILDCARD_SCOPE_ACCESS", map[string]interface{}{
+			"subject_id":    claims.SubjectID,
+			"role":          claims.Role,
+			"required_scope": requiredScope,
+			"tenant_id":     claims.TenantID,
+			"user_type":     claims.UserType,
+		})
 	}
 }
 

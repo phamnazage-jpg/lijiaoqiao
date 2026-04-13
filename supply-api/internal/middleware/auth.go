@@ -10,7 +10,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"lijiaoqiao/supply-api/internal/iam/model"
+	"lijiaoqiao/supply-api/internal/pkg/logging"
 )
 
 // TokenClaims JWT token claims
@@ -322,7 +322,11 @@ func (m *AuthMiddleware) TokenVerifyMiddleware(next http.Handler) http.Handler {
 		// 如果鉴权被禁用（仅用于开发环境），直接跳过验证
 		if !m.config.Enabled {
 			// 在开发模式下，虽然跳过JWT验证，但仍记录警告日志
-			log.Printf("[AUTH_WARNING] Authentication is disabled (dev mode) for %s %s", r.Method, r.URL.Path)
+			logger := logging.NewLogger("supply-api", logging.LogLevelWarn)
+			logger.Warn("Authentication is disabled (dev mode)", map[string]interface{}{
+				"method": r.Method,
+				"path":   r.URL.Path,
+			})
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -626,7 +630,11 @@ func writeAuthError(w http.ResponseWriter, status int, code, message string) {
 	}
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		// 记录编码错误（响应已经开始发送，无法回退）
-		log.Printf("[AUTH_ERROR] failed to encode error response: %v, code=%s", err, code)
+		logger := logging.NewLogger("supply-api", logging.LogLevelError)
+		logger.Error("failed to encode error response", map[string]interface{}{
+			"error": err.Error(),
+			"code":  code,
+		})
 	}
 }
 

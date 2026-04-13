@@ -3,12 +3,12 @@ package outbox
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"time"
 
 	"lijiaoqiao/supply-api/internal/domain"
 	"lijiaoqiao/supply-api/internal/messaging"
+	"lijiaoqiao/supply-api/internal/pkg/logging"
 	"lijiaoqiao/supply-api/internal/repository"
 )
 
@@ -47,21 +47,27 @@ func NewOutboxProcessorRunner(
 
 // Start 启动Outbox处理器
 func (r *OutboxProcessorRunner) Start(ctx context.Context) {
-	log.Println("OutboxProcessor started")
+	logger := logging.NewLogger("supply-api", logging.LogLevelInfo)
+	logger.Info("OutboxProcessor started", nil)
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("OutboxProcessor stopping due to context cancellation")
+			logger := logging.NewLogger("supply-api", logging.LogLevelInfo)
+			logger.Info("OutboxProcessor stopping due to context cancellation", nil)
 			return
 		case <-r.stopCh:
-			log.Println("OutboxProcessor stopping")
+			logger := logging.NewLogger("supply-api", logging.LogLevelInfo)
+			logger.Info("OutboxProcessor stopping", nil)
 			return
 		case <-ticker.C:
 			if err := r.process(ctx); err != nil {
-				log.Printf("OutboxProcessor error: %v", err)
+				logger := logging.NewLogger("supply-api", logging.LogLevelError)
+				logger.Error("OutboxProcessor error", map[string]interface{}{
+					"error": err.Error(),
+				})
 			}
 		}
 	}

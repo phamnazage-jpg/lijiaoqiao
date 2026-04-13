@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"log"
+	"fmt"
 	"net/http"
 	"runtime/debug"
 
@@ -13,7 +13,14 @@ func Recovery(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("panic recovered: %v\n%s", err, debug.Stack())
+				// 使用结构化日志记录 panic
+				logger := logging.NewLogger("supply-api", logging.LogLevelError)
+				logger.Error("panic recovered", map[string]interface{}{
+					"error": fmt.Sprintf("%v", err),
+					"stack": string(debug.Stack()),
+					"path":  r.URL.Path,
+					"method": r.Method,
+				})
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}
 		}()
