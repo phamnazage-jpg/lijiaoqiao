@@ -18,6 +18,12 @@ reports/gates/*.log.audit.json
 reports/gates/*.log.issue.json
 reports/gates/*.log.server
 reports/gates/token_runtime_bin_*
+reports/archive/gate_verification/*.log
+reports/archive/gate_verification/*.out.log
+reports/archive/gate_verification/*.log.audit.json
+reports/archive/gate_verification/*.log.issue.json
+reports/archive/gate_verification/*.log.server
+reports/archive/gate_verification/token_runtime_bin_*
 
 # Local build output
 platform-token-runtime/platform-token-runtime
