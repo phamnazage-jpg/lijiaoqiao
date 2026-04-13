@@ -42,7 +42,17 @@
 
 #### 3.1 根仓库门禁证据仍处于“删除待处理”状态
 
-当前暂存区对根仓库 `reports/gates/` 的操作是批量删除，而不是完整迁移。复核时未发现与之对应的 `reports/archive/gate_verification/` 索引和成体系归档，因此以下内容不能宣称“已归档完成”：
+复核后确认：根仓库本地已经存在 `reports/archive/gate_verification/` 归档树，但它此前既没有索引文件，也没有被仓库正式跟踪；同时 `reports/gates/` 的删除已进入暂存区，导致“本地归档存在”和“仓库可审计迁移”之间脱节。
+
+截至 2026-04-13 的真实状态是：
+
+- `reports/gates/` 工作区文件数为 0。
+- `reports/gates/*` staged deletion 共 365 条。
+- `reports/archive/gate_verification/` 本地文件数为 1459。
+- `reports/archive/` 当前整体仍是未跟踪目录。
+- 已确认缺失同名归档的文件至少有 2 个：`metrics_daily_snapshots.csv`、`minimax_upstream_daily_snapshots.csv`。
+
+因此，以下内容仍不能直接宣称“已归档完成”：
 
 - `reports/gates/backend_verify_*.md`
 - `reports/gates/superpowers_stage_validation_*.md`
@@ -51,7 +61,7 @@
 - `reports/gates/metrics_daily_snapshot_*.md`
 - `reports/gates/metrics_trend_7d_*.md`
 
-结论：在建立根仓库归档索引前，这批删除不应进入首个清理提交。
+结论：必须先补齐根仓库归档索引，并明确哪些归档文件族要正式入库、哪些删除存在缺口，再决定是否提交这批删除。
 
 #### 3.2 本机配置和伪文档仍需隔离
 
