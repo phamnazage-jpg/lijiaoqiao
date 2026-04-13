@@ -94,24 +94,9 @@ func (r *OutboxProcessorRunner) process(ctx context.Context) error {
 	}
 
 	for _, event := range events {
-		// 转换为domain.OutboxEvent
-		domainEvent := &domain.OutboxEvent{
-			ID:            event.ID,
-			AggregateType: event.AggregateType,
-			AggregateID:   event.AggregateID,
-			EventType:     event.EventType,
-			EventID:       event.EventID,
-			Payload:       event.Payload,
-			Status:        string(event.Status),
-			RetryCount:    event.RetryCount,
-			MaxRetries:    event.MaxRetries,
-			ErrorMessage:  event.ErrorMessage,
-			Version:       event.Version,
-		}
-
 		// 发布消息
 		if err := r.msgBroker.Publish(ctx, event); err != nil {
-			r.handleFailure(ctx, domainEvent, err)
+			r.handleFailure(ctx, event, err)
 			continue
 		}
 
@@ -128,26 +113,20 @@ func (r *OutboxProcessorRunner) process(ctx context.Context) error {
 }
 
 // handleFailure 处理失败事件
-func (r *OutboxProcessorRunner) handleFailure(ctx context.Context, event *domain.OutboxEvent, publishErr error) {
+func (r *OutboxProcessorRunner) handleFailure(ctx context.Context, event *repository.OutboxEvent, publishErr error) {
 	event.RetryCount++
 
 	if event.RetryCount >= event.MaxRetries {
 		// 移入死信队列
-		domainEvent := &repository.OutboxEvent{
-			ID:         event.ID,
-			EventID:    event.EventID,
-			Payload:    event.Payload,
-			RetryCount: event.RetryCount,
-		}
-		if err := r.repo.MoveToDeadLetter(ctx, domainEvent, publishErr.Error()); err != nil {
+		if err := r.repo.MoveToDeadLetter(ctx, event, publishErr.Error()); err != nil {
 			r.stats.RecordOutboxFailure("move_to_dlq_failed")
 		} else {
 			r.stats.RecordOutboxDLQ(event.EventType)
 		}
 	} else {
 		// 计算下次重试时间（指数退避）
-			backoffSeconds := domain.CalculateOutboxBackoff(event.RetryCount, event.MaxRetries)
-			nextRetry := time.Now().Add(time.Duration(backoffSeconds) * time.Second)
+		backoffSeconds := domain.CalculateOutboxBackoff(event.RetryCount, event.MaxRetries)
+		nextRetry := time.Now().Add(time.Duration(backoffSeconds) * time.Second)
 
 		if err := r.repo.MarkFailed(ctx, event.EventID, publishErr.Error(), &nextRetry); err != nil {
 			r.stats.RecordOutboxFailure("mark_failed_failed")
