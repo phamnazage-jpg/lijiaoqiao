@@ -9,44 +9,41 @@ import (
 	"lijiaoqiao/supply-api/internal/pkg/logging"
 )
 
+type operationHandler func(ctx context.Context, payload json.RawMessage) error
+
 // DefaultCompensationExecutor 默认补偿执行器
 type DefaultCompensationExecutor struct {
 	sanitizer *sanitizer.Sanitizer // 用于脱敏日志输出
+	handlers  map[string]operationHandler
 }
 
 // NewDefaultCompensationExecutor 创建默认补偿执行器
 func NewDefaultCompensationExecutor() *DefaultCompensationExecutor {
-	return &DefaultCompensationExecutor{
+	executor := &DefaultCompensationExecutor{
 		sanitizer: sanitizer.NewSanitizer(),
 	}
+	executor.handlers = map[string]operationHandler{
+		"account.create":      executor.CompensateAccountCreate,
+		"package.publish":     executor.CompensatePackagePublish,
+		"settlement.withdraw": executor.CompensateSettlementWithdraw,
+		"quota.deduct":        executor.CompensateQuotaDeduct,
+	}
+	return executor
 }
 
 // Execute 执行补偿操作
 func (e *DefaultCompensationExecutor) Execute(ctx context.Context, operationType string, payload json.RawMessage) error {
-	// 根据operationType执行相应的补偿操作
-	// operationType 示例:
-	// - "account.create" - 账号创建失败补偿
-	// - "package.publish" - 套餐发布失败补偿
-	// - "settlement.withdraw" - 提现失败补偿
-	// - "quota.deduct" - 配额扣减失败补偿
-
-	switch operationType {
-	case "account.create":
-		return e.CompensateAccountCreate(ctx, payload)
-	case "package.publish":
-		return e.CompensatePackagePublish(ctx, payload)
-	case "settlement.withdraw":
-		return e.CompensateSettlementWithdraw(ctx, payload)
-	case "quota.deduct":
-		return e.CompensateQuotaDeduct(ctx, payload)
-	default:
+	handler, ok := e.handlers[operationType]
+	if !ok {
 		logger := logging.NewLogger("supply-api", logging.LogLevelWarn)
 		logger.Warn("compensation executor: unknown operation type", map[string]interface{}{
-			"operation_type":   operationType,
-			"masked_payload":   e.maskPayload(payload),
+			"operation_type": operationType,
+			"masked_payload": e.maskPayload(payload),
 		})
 		return fmt.Errorf("unknown operation type: %s", operationType)
 	}
+
+	return handler(ctx, payload)
 }
 
 // maskPayload 对payload进行脱敏处理
