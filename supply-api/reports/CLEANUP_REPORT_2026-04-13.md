@@ -66,7 +66,9 @@
 #### 3.2 本机配置和伪文档仍需隔离
 
 - `config/config.dev.yaml` 当前包含本机 Unix socket 路径和本机用户，不应继续充当仓库样例。
-- `e2e/README.md` 当前内容是 Go 测试源码而不是说明文档，不能作为有效归档直接提交。
+- `config/config.test.yaml` 没有被仓库代码引用，且内容绑定本机 PostgreSQL socket 和本机用户，不应作为仓库测试样例保留。
+- `e2e/README.md` 已修正为真实说明文档；E2E 源码应只保留在 `*_test.go`。
+- `scripts/production_test.sh` 只有在输出目录迁移到 `reports/archive/production_runs/` 并允许环境变量覆盖后才适合作为仓库脚本保留。
 
 ### 4. 保留的有效文档
 

@@ -3,14 +3,16 @@
 # Supply API 生产上线测试套件
 # ============================================================================
 # 包含：单元测试、集成测试、E2E测试、安全测试、性能基准
+# 说明：所有数据库、Redis 和输出目录参数都应通过环境变量覆盖。
 # ============================================================================
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-REPORT_DIR="$PROJECT_ROOT/reports/gates"
+REPORT_DIR="${REPORT_DIR:-$PROJECT_ROOT/reports/archive/production_runs}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+export GOCACHE="${GOCACHE:-/tmp/supply-api-go-cache}"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -29,15 +31,15 @@ log_info "=== Supply API 生产上线测试套件 ==="
 log_info "时间: $TIMESTAMP"
 log_info "报告目录: $REPORT_DIR"
 
-# 设置环境变量
-export SUPPLY_TOKEN_SECRET_KEY="production-test-secret-key-min-32-chars!!"
-export SUPPLY_API_DB_HOST="localhost"
-export SUPPLY_API_DB_PORT="5432"
-export SUPPLY_API_DB_USER="long"
-export SUPPLY_API_DB_PASSWORD=""
-export SUPPLY_API_DB_NAME="supply_api"
-export SUPPLY_API_REDIS_HOST="localhost"
-export SUPPLY_API_REDIS_PORT="6379"
+# 设置默认环境变量，允许调用方覆盖
+export SUPPLY_TOKEN_SECRET_KEY="${SUPPLY_TOKEN_SECRET_KEY:-production-test-secret-key-min-32-chars!!}"
+export SUPPLY_API_DB_HOST="${SUPPLY_API_DB_HOST:-localhost}"
+export SUPPLY_API_DB_PORT="${SUPPLY_API_DB_PORT:-5432}"
+export SUPPLY_API_DB_USER="${SUPPLY_API_DB_USER:-postgres}"
+export SUPPLY_API_DB_PASSWORD="${SUPPLY_API_DB_PASSWORD:-}"
+export SUPPLY_API_DB_NAME="${SUPPLY_API_DB_NAME:-supply_api}"
+export SUPPLY_API_REDIS_HOST="${SUPPLY_API_REDIS_HOST:-localhost}"
+export SUPPLY_API_REDIS_PORT="${SUPPLY_API_REDIS_PORT:-6379}"
 
 cd "$PROJECT_ROOT"
 
@@ -78,7 +80,7 @@ fi
 # ============================================================================
 log_info "=== 3. 执行 E2E 测试 ==="
 E2E_START=$(date +%s)
-go test -tags=e2e -v ./e2e/... 2>&1 | tee "$REPORT_DIR/e2e_test_$TIMESTAMP.log"
+go test -tags=e2e -v ./e2e 2>&1 | tee "$REPORT_DIR/e2e_test_$TIMESTAMP.log"
 E2E_RESULT=$?
 E2E_END=$(date +%s)
 E2E_DURATION=$((E2E_END - E2E_START))
@@ -206,9 +208,9 @@ log_info "=== 测试完成 ==="
 log_info "报告位置: $REPORT_DIR/production_test_report_$TIMESTAMP.md"
 
 if [ $UNIT_RESULT -eq 0 ] && [ $INTEGRATION_RESULT -eq 0 ] && [ $E2E_RESULT -eq 0 ]; then
-    log_info "🎉 所有 P0 测试门禁通过！"
+    log_info "所有 P0 测试门禁通过"
     exit 0
 else
-    log_error "❌ 存在测试失败，请检查报告"
+    log_error "存在测试失败，请检查报告"
     exit 1
 fi

@@ -1,104 +1,27 @@
-//go:build e2e
-// +build e2e
+# E2E 测试说明
 
-package e2e
+`e2e/` 目录只存放带 `//go:build e2e` 的端到端测试源码，不再混放伪装成文档的 Go 文件。
 
-import (
-	"context"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"testing"
-	"time"
+当前测试分层如下：
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-)
+- `e2e_test.go`: 核心 HTTP API、鉴权和审计行为的端到端断言。
+- `playbook_test.go`: 按业务剧本组织的多步骤流程验证。
+- `production_flow_test.go`: 面向上线前复核的关键流程和安全边界检查。
 
-// TestE2E_HTTPEndpoints E2E 测试：HTTP 端点测试
-// 使用 httptest 模拟 HTTP 服务器进行端到端测试
-func TestE2E_HTTPEndpoints(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping E2E test in short mode")
-	}
+运行方式：
 
-	// 创建测试服务器
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/actuator/health":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `{"status":"UP"}`)
-		case "/api/v1/accounts":
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `{"accounts":[]}`)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer server.Close()
+```bash
+go test -tags=e2e ./e2e
+```
 
-	// 测试健康检查端点
-	resp, err := http.Get(server.URL + "/actuator/health")
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+如果只想跑单个测试：
 
-	// 测试账号列表端点
-	resp, err = http.Get(server.URL + "/api/v1/accounts")
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-}
+```bash
+go test -tags=e2e ./e2e -run TestPlaybook_SupplierOnboarding
+```
 
-// TestE2E_TimeoutHandling E2E 测试：超时处理
-func TestE2E_TimeoutHandling(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping E2E test in short mode")
-	}
+约束说明：
 
-	// 创建慢服务器
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(5 * time.Second)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	// 配置带超时的客户端
-	client := &http.Client{
-		Timeout: 1 * time.Second,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", server.URL, nil)
-	require.NoError(t, err)
-
-	_, err = client.Do(req)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "timeout")
-}
-
-// TestE2E_RequestID E2E 测试：请求追踪
-func TestE2E_RequestID(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping E2E test in short mode")
-	}
-
-	var capturedRequestID string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedRequestID = r.Header.Get("X-Request-ID")
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	// 发送带请求 ID 的请求
-	req, err := http.NewRequest("GET", server.URL, nil)
-	require.NoError(t, err)
-	req.Header.Set("X-Request-ID", "test-req-12345")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "test-req-12345", capturedRequestID)
-}
+- E2E 测试应保留在 `*_test.go` 文件内。
+- 说明文档只保留 Markdown 内容，不内嵌 Go 源码。
+- 新增剧本时优先复用 `newE2ESystem`，避免重复搭建测试系统。
