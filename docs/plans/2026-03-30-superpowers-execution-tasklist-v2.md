@@ -4,6 +4,8 @@
 - 基线来源：`docs/plans/2026-03-25-superpowers-execution-tasklist-v1.md`
 - 目标：基于最新真实证据重排执行优先级，持续推进到 staging 可复核、可签署。
 
+> 机审稿引用约束：截至 2026-04-14，活文档只允许引用 `review/outputs/tok007_release_recheck_2026-04-14_151511.md` 与 `review/outputs/final_decision_candidate_from_tok007_2026-04-14_182641.md`。本页保留的旧 `tok007` 路径仅作历史续跑证据，不得继续当作当前事实源。
+
 ---
 
 ## 1. 实际状态复盘（以证据为准）
@@ -106,7 +108,7 @@
 完整开发测试续跑结果（2026-03-31 12:31）：
 1. 已重新生成 `.env.staging-real` 且三类 token 均为非占位值：`reports/gates/local_staging_env_generation_2026-03-31_123102.md`。
 2. `local/mock` 口径 `staging_release_pipeline` 再次通过：`reports/gates/staging_release_pipeline_2026-03-31_123148.md`。
-3. `superpowers_release_pipeline` 与 `tok007` 复审链路再次通过，机判维持 `CONDITIONAL_GO`：`reports/gates/superpowers_release_pipeline_2026-03-31_123150.md`、`review/outputs/tok007_release_recheck_2026-03-31_123153.md`。
+3. `superpowers_release_pipeline` 与 `tok007` 复审链路再次通过，机判维持 `CONDITIONAL_GO`：`reports/gates/superpowers_release_pipeline_2026-03-31_123150.md`、`review/outputs/tok007_release_recheck_2026-03-31_123153.md`（历史续跑稿）。
 4. 真实 STG 就绪度检查仍为 `BLOCKED`：`reports/gates/staging_real_readiness_2026-03-31_123159.md`（`STG-RDY-004/008` 未关闭）。
 5. Minimax 上游 smoke 继续保持 `PASS`：`reports/gates/minimax_upstream_smoke_2026-03-31_123210.md`。
 
@@ -117,6 +119,7 @@
 1. `local/mock` 结果仅可作为开发演练证据，不可替代 staging 放行证据。
 2. 任何 `P0` 项未关闭，最终结论不得上调为 `GO`。
 3. 所有阶段结论以脚本返回码 + 报告产物双重校验为准。
+4. 活文档若需引用 `review/outputs/` 下机审稿，只允许引用页首声明的现行机审稿；历史续跑稿只能用于追溯。
 
 ---
 

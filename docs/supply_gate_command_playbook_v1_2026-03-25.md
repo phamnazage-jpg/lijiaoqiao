@@ -12,6 +12,14 @@
 
 ---
 
+## 0. 机审稿引用约束
+
+1. 截至 2026-04-14，活文档只允许引用现行机审稿 `review/outputs/tok007_release_recheck_2026-04-14_151511.md` 与 `review/outputs/final_decision_candidate_from_tok007_2026-04-14_182641.md`。
+2. `review/outputs/` 下其余 `tok007_release_recheck_*` / `final_decision_candidate_from_tok007_*` 仅为历史快照，不得再作为当前事实源、门禁结论或签署依据。
+3. 示例命令中的 `--tok007-report` 必须绑定现行机审稿，不得复制旧批次路径。
+
+---
+
 ## 1. 执行前准备
 
 ## 1.1 环境变量
@@ -212,8 +220,8 @@ cd "/home/long/project/立交桥"
 1. G3 失败后必须触发回退到 G2。
 2. 后续阶段冻结，不允许继续升波。
 3. 生成原始日志与演练报告：
-   1. `reports/gates/stage_gate_drill_2026-03-27.log`
-   2. `reports/gates/stage_gate_drift_drill_report_2026-03-27.md`
+   1. `reports/archive/gate_verification/stage_gate_drill_2026-03-27.log`
+   2. `reports/archive/gate_verification/stage_gate_drift_drill_report_2026-03-27.md`
 
 ---
 
@@ -259,8 +267,8 @@ bash "scripts/supply-gate/tok005_boundary_dryrun.sh" "scripts/supply-gate/.env"
 
 证据输出：
 
-1. `reports/gates/tok005_dryrun_*.md`
-2. `reports/gates/tok005_dryrun_*.log`
+1. `reports/archive/gate_verification/tok005_dryrun_*.md`
+2. `reports/archive/gate_verification/tok005_dryrun_*.log`
 3. `tests/supply/artifacts/tok005_dryrun_*/go_test_output.txt`
 
 说明：
@@ -297,9 +305,9 @@ ENABLE_SUP_RUN=0
 
 证据输出：
 
-1. `reports/gates/tok006_gate_bundle_*.md`
-2. `reports/gates/tok006_gate_bundle_*.log`
-3. `reports/gates/tok006_release_decision_onepager_template_v1_2026-03-30.md`（模板）
+1. `reports/archive/gate_verification/tok006_gate_bundle_*.md`
+2. `reports/archive/gate_verification/tok006_gate_bundle_*.log`
+3. `reports/archive/gate_verification/tok006_release_decision_onepager_template_v1_2026-03-30.md`（模板）
 
 ---
 
@@ -340,8 +348,8 @@ STAGING_ENV_FILE="scripts/supply-gate/.env"
 
 证据输出：
 
-1. `reports/gates/superpowers_stage_validation_*.md`
-2. `reports/gates/superpowers_stage_validation_*.log`
+1. `reports/archive/gate_verification/superpowers_stage_validation_*.md`
+2. `reports/archive/gate_verification/superpowers_stage_validation_*.log`
 3. `tests/supply/artifacts/superpowers_stage_validation_*/phase*.log`
 
 ---
@@ -365,7 +373,7 @@ bash "scripts/ci/tok007_release_recheck.sh"
 证据输出：
 
 1. `review/outputs/tok007_release_recheck_*.md`
-2. `reports/gates/tok007_release_recheck_*.log`
+2. `reports/archive/gate_verification/tok007_release_recheck_*.log`
 
 ---
 
@@ -386,8 +394,8 @@ bash "scripts/ci/final_decision_consistency_check.sh"
 
 证据输出：
 
-1. `reports/gates/final_decision_consistency_*.md`
-2. `reports/gates/final_decision_consistency_*.log`
+1. `reports/archive/gate_verification/final_decision_consistency_*.md`
+2. `reports/archive/gate_verification/final_decision_consistency_*.log`
 
 ---
 
@@ -409,7 +417,7 @@ bash "scripts/ci/tok007_generate_final_decision_candidate.sh"
 证据输出：
 
 1. `review/outputs/final_decision_candidate_from_tok007_*.md`
-2. `reports/gates/tok007_generate_candidate_*.log`
+2. `reports/archive/gate_verification/tok007_generate_candidate_*.log`
 
 ---
 
@@ -444,10 +452,10 @@ TOKEN_RUNTIME_SMOKE_PORT=18082
 
 证据输出：
 
-1. `reports/gates/token_runtime_readiness_*.md`
-2. `reports/gates/token_runtime_readiness_*.log`
-3. `reports/gates/token_runtime_go_test_*.log`
-4. `reports/gates/token_runtime_go_build_*.log`
+1. `reports/archive/gate_verification/token_runtime_readiness_*.md`
+2. `reports/archive/gate_verification/token_runtime_readiness_*.log`
+3. `reports/archive/gate_verification/token_runtime_go_test_*.log`
+4. `reports/archive/gate_verification/token_runtime_go_build_*.log`
 
 ---
 
@@ -477,7 +485,7 @@ curl -sS "http://127.0.0.1:18081/api/v1/platform/tokens/audit-events?limit=20" \
 证据输出：
 
 1. `platform-token-runtime/internal/httpapi/token_api_test.go`（自动化用例）
-2. `reports/gates/token_runtime_readiness_*.md`（检查项 `TOK-REAL-002-C1/C2`）
+2. `reports/archive/gate_verification/token_runtime_readiness_*.md`（检查项 `TOK-REAL-002-C1/C2`）
 
 ---
 
@@ -494,11 +502,11 @@ bash "scripts/ci/staging_evidence_autofill.sh"
 
 ```bash
 bash "scripts/ci/staging_evidence_autofill.sh" \
-  --staging-run-log "reports/gates/staging_run_2026-03-30_184432.log" \
-  --stage-report "reports/gates/superpowers_stage_validation_2026-03-30_184433.md" \
-  --token-readiness "reports/gates/token_runtime_readiness_2026-03-30_184435.md" \
-  --tok007-report "review/outputs/tok007_release_recheck_2026-03-30_184436.md" \
-  --pipeline-report "reports/gates/superpowers_release_pipeline_2026-03-30_184434.md"
+  --staging-run-log "reports/archive/gate_verification/staging_run_2026-03-30_184432.log" \
+  --stage-report "reports/archive/gate_verification/superpowers_stage_validation_2026-03-30_184433.md" \
+  --token-readiness "reports/archive/gate_verification/token_runtime_readiness_2026-03-30_184435.md" \
+  --tok007-report "review/outputs/tok007_release_recheck_2026-04-14_151511.md" \
+  --pipeline-report "reports/archive/gate_verification/superpowers_release_pipeline_2026-03-30_184434.md"
 ```
 
 最低断言：
@@ -509,8 +517,8 @@ bash "scripts/ci/staging_evidence_autofill.sh" \
 
 证据输出：
 
-1. `reports/gates/staging_token_go_evidence_autofill_*.md`
-2. `reports/gates/staging_token_go_evidence_autofill_*.log`
+1. `reports/archive/gate_verification/staging_token_go_evidence_autofill_*.md`
+2. `reports/archive/gate_verification/staging_token_go_evidence_autofill_*.log`
 
 ---
 
@@ -553,8 +561,8 @@ bash "scripts/ci/superpowers_release_pipeline.sh"
 
 证据输出：
 
-1. `reports/gates/staging_release_pipeline_*.md`
-2. `reports/gates/staging_release_pipeline_*.log`
+1. `reports/archive/gate_verification/staging_release_pipeline_*.md`
+2. `reports/archive/gate_verification/staging_release_pipeline_*.log`
 
 ---
 
@@ -582,7 +590,7 @@ MINIMAX_TIMEOUT_SECONDS=20
 
 最低断言：
 
-1. 输出 `reports/gates/minimax_upstream_smoke_*.md` 报告。
+1. 输出 `reports/archive/gate_verification/minimax_upstream_smoke_*.md` 报告。
 2. 报告必须包含 base 连通探测与 active 鉴权探测两段结果。
 3. 分类规则需区分：`PASS / PASS_AUTH_REACHED / FAIL_AUTH / FAIL_PATH / FAIL_NETWORK`。
 
@@ -615,8 +623,8 @@ RUN_ACTIVE_SMOKE=1
 
 最低断言：
 
-1. 生成 `reports/gates/minimax_upstream_daily_snapshot_*.md`。
-2. 生成/更新 `reports/gates/minimax_upstream_daily_snapshots.csv`。
+1. 生成 `reports/archive/gate_verification/minimax_upstream_daily_snapshot_*.md`。
+2. 生成/更新 `reports/archive/gate_verification/minimax_upstream_daily_snapshots.csv`。
 3. 明确标注 `RUN_ACTIVE_SMOKE` 取值，区分“实时探测”与“仅汇总”。
 4. 默认优先汇总“非 dry-run”最新报告，避免将联调证据误当真实上游证据。
 
@@ -639,7 +647,7 @@ bash "scripts/ci/minimax_upstream_trend_report.sh" "$(date +%F)"
 
 最低断言：
 
-1. 生成 `reports/gates/minimax_upstream_trend_7d_*.md`。
+1. 生成 `reports/archive/gate_verification/minimax_upstream_trend_7d_*.md`。
 2. 报告包含最近 7 条（不足 7 条按实际）快照的状态统计。
 3. 趋势状态遵循 `PASS_7D / CONDITIONAL_7D / NOT_READY / INSUFFICIENT_DATA`。
 
@@ -679,7 +687,7 @@ START_RUNTIME_IF_NEEDED=1
 
 1. 生成 `scripts/supply-gate/.env.staging-real`（权限 `600`）。
 2. 文件包含 `OWNER_BEARER_TOKEN / VIEWER_BEARER_TOKEN / ADMIN_BEARER_TOKEN` 三类 token。
-3. 生成摘要报告 `reports/gates/local_staging_env_generation_*.md`（仅 hash，不泄露明文 token）。
+3. 生成摘要报告 `reports/archive/gate_verification/local_staging_env_generation_*.md`（仅 hash，不泄露明文 token）。
 
 说明：
 
@@ -702,7 +710,7 @@ bash "scripts/ci/staging_real_readiness_check.sh" "scripts/supply-gate/.env.stag
 1. `API_BASE_URL` 非占位值，且不是 `localhost/127.0.0.1`。
 2. 三类 token 非空且非占位值。
 3. `API_BASE_URL` 基础可达性检查通过（`curl -I` 非 `000`）。
-4. 生成报告 `reports/gates/staging_real_readiness_*.md`。
+4. 生成报告 `reports/archive/gate_verification/staging_real_readiness_*.md`。
 
 说明：
 

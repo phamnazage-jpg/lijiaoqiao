@@ -2,6 +2,8 @@
 
 - 关联任务：SUP-004~SUP-008
 
+> 机审稿引用约束：截至 2026-04-14，活文档只允许引用 `review/outputs/tok007_release_recheck_2026-04-14_151511.md` 与 `review/outputs/final_decision_candidate_from_tok007_2026-04-14_182641.md`。本文正文中的旧 `tok007` 路径仅为历史续跑证据，不得再当作当前事实源。
+
 ## 1. 汇总结论
 
 - [ ] 通过
@@ -46,7 +48,7 @@
    - `reports/gates/staging_release_pipeline_2026-03-31_123148.md`
 3. Superpowers 总控与 TOK-007 复审续跑通过（结论维持 `CONDITIONAL_GO`）：
    - `reports/gates/superpowers_release_pipeline_2026-03-31_123150.md`
-   - `review/outputs/tok007_release_recheck_2026-03-31_123153.md`
+   - `review/outputs/tok007_release_recheck_2026-03-31_123153.md`（历史续跑稿）
 4. 真实 STG 就绪检查仍 `BLOCKED`（`STG-RDY-004/008`）：
    - `reports/gates/staging_real_readiness_2026-03-31_123159.md`
 5. Minimax 上游 smoke 续跑通过：

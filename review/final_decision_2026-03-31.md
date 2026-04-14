@@ -1,6 +1,7 @@
 # 专家最终决议（2026-03-31）
 
 - 对应任务：`EXP-006`
+- 机审稿引用约束：截至 2026-04-14，活文档只允许引用 `review/outputs/tok007_release_recheck_2026-04-14_151511.md` 与 `review/outputs/final_decision_candidate_from_tok007_2026-04-14_182641.md`；`review/outputs/` 下其余同类机审稿均为历史快照，不得作为当前事实源、签署依据或对外口径。
 - 关联材料：
   - `docs/llm_gateway_subapi_evolution_plan_v4_2_2026-03-24.md`
   - `docs/acceptance_gate_single_source_v1_2026-03-18.md`（v1.2）
@@ -17,7 +18,7 @@
 | 主持人 | 王磊（ARCH，待确认） |
 | 记录人 | PMO（待确认） |
 | 参会角色 | 架构、安全、合规、SRE、QA、产品、管理层 |
-| 会议纪要路径 | `review/outputs/` |
+| 会议纪要路径 | `review/outputs/`（历史附件归档；现行机审稿引用以上方约束为准） |
 
 ## 2. 总体结论
 
