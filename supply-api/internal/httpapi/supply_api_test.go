@@ -19,13 +19,13 @@ import (
 
 // mockAccountService Mock账户服务
 type mockAccountService struct {
-	verifyResult *domain.VerifyResult
-	verifyErr    error
-	account      *domain.Account
-	createErr    error
-	activateErr  error
-	suspendErr   error
-	deleteErr    error
+	verifyResult         *domain.VerifyResult
+	verifyErr            error
+	account              *domain.Account
+	createErr            error
+	activateErr          error
+	suspendErr           error
+	deleteErr            error
 	lastVerifySupplierID int64
 }
 
@@ -68,7 +68,7 @@ func (m *mockAccountService) GetByID(ctx context.Context, supplierID, accountID 
 
 // mockPackageService Mock套餐服务
 type mockPackageService struct {
-	pkg           *domain.Package
+	pkg            *domain.Package
 	createDraftErr error
 	publishErr     error
 	pauseErr       error
@@ -126,10 +126,10 @@ func (m *mockPackageService) GetByID(ctx context.Context, supplierID, packageID 
 
 // mockSettlementService Mock结算服务
 type mockSettlementService struct {
-	settlement *domain.Settlement
+	settlement  *domain.Settlement
 	withdrawErr error
-	cancelErr    error
-	getErr       error
+	cancelErr   error
+	getErr      error
 }
 
 func (m *mockSettlementService) Withdraw(ctx context.Context, supplierID int64, req *domain.WithdrawRequest) (*domain.Settlement, error) {
@@ -166,8 +166,8 @@ func (m *mockSettlementService) GetBillingSummary(ctx context.Context, supplierI
 
 // mockEarningService Mock收益服务
 type mockEarningService struct {
-	records       []*domain.EarningRecord
-	total         int
+	records        []*domain.EarningRecord
+	total          int
 	billingSummary *domain.BillingSummary
 	listErr        error
 	billingErr     error
@@ -222,6 +222,16 @@ func (m *mockAuditStore) GetByID(ctx context.Context, eventID string) (audit.Eve
 // ==================== Test Helpers ====================
 
 func newTestAPI() (*SupplyAPI, *mockAccountService, *mockPackageService, *mockSettlementService, *mockEarningService, *mockAuditStore) {
+	return newTestAPIWithIdempotency(middleware.NewIdempotencyMiddleware(nil, middleware.IdempotencyConfig{
+		Enabled: false,
+	}))
+}
+
+func newTestAPIWithoutIdempotencyForTest() (*SupplyAPI, *mockAccountService, *mockPackageService, *mockSettlementService, *mockEarningService, *mockAuditStore) {
+	return newTestAPIWithIdempotency(nil)
+}
+
+func newTestAPIWithIdempotency(idempotencyMw *middleware.IdempotencyMiddleware) (*SupplyAPI, *mockAccountService, *mockPackageService, *mockSettlementService, *mockEarningService, *mockAuditStore) {
 	accountSvc := &mockAccountService{
 		account: &domain.Account{
 			ID:          1,
@@ -233,9 +243,9 @@ func newTestAPI() (*SupplyAPI, *mockAccountService, *mockPackageService, *mockSe
 			UpdatedAt:   time.Now(),
 		},
 		verifyResult: &domain.VerifyResult{
-			VerifyStatus:    "pass",
-			AvailableQuota:  1000,
-			RiskScore:       0,
+			VerifyStatus:   "pass",
+			AvailableQuota: 1000,
+			RiskScore:      0,
 		},
 	}
 
@@ -272,7 +282,7 @@ func newTestAPI() (*SupplyAPI, *mockAccountService, *mockPackageService, *mockSe
 				Status: "available",
 			},
 		},
-		total: 1,
+		total:          1,
 		billingSummary: &domain.BillingSummary{},
 	}
 
@@ -302,7 +312,7 @@ func newTestAPI() (*SupplyAPI, *mockAccountService, *mockPackageService, *mockSe
 		packageSvc,
 		settlementSvc,
 		earningSvc,
-		nil, // idempotencyMw
+		idempotencyMw,
 		auditSvc,
 		nil, // fkValidator
 		100, // supplierID
@@ -431,6 +441,21 @@ func TestSupplyAPI_CreateAccount_Success(t *testing.T) {
 
 	if w.Code != http.StatusCreated {
 		t.Errorf("expected status 201, got %d", w.Code)
+	}
+}
+
+func TestHandleCreateAccount_RequiresIdempotencyMiddleware(t *testing.T) {
+	api, _, _, _, _, _ := newTestAPIWithoutIdempotencyForTest()
+
+	body := `{"provider":"openai","account_type":"resource","credential_input":"sk-test","account_alias":"test","risk_ack":true}`
+	req := httptest.NewRequest("POST", "/api/v1/supply/accounts", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	api.handleCreateAccount(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when idempotency middleware is missing, got=%d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -929,6 +954,21 @@ func TestSupplyAPI_Withdraw_Success(t *testing.T) {
 	}
 }
 
+func TestHandleWithdraw_RequiresIdempotencyMiddleware(t *testing.T) {
+	api, _, _, _, _, _ := newTestAPIWithoutIdempotencyForTest()
+
+	body := `{"withdraw_amount":1000,"payment_method":"bank","payment_account":"1234567890","sms_code":"123456"}`
+	req := httptest.NewRequest("POST", "/api/v1/supply/settlements/withdraw", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	api.handleWithdraw(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when idempotency middleware is missing, got=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestSupplyAPI_Withdraw_MethodNotAllowed(t *testing.T) {
 	api, _, _, _, _, _ := newTestAPI()
 
@@ -1299,14 +1339,14 @@ func TestSupplyAPI_Register(t *testing.T) {
 func TestSupplyAPI_EndToEnd_Withdraw(t *testing.T) {
 	api, _, _, settlementSvc, _, _ := newTestAPI()
 	settlementSvc.settlement = &domain.Settlement{
-		ID:          1,
-		SupplierID:  100,
+		ID:           1,
+		SupplierID:   100,
 		SettlementNo: "SET_20240101_001",
-		Status:      domain.SettlementStatusPending,
-		TotalAmount: 1000,
-		NetAmount:   950,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		Status:       domain.SettlementStatusPending,
+		TotalAmount:  1000,
+		NetAmount:    950,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 
 	body := `{"withdraw_amount":500,"payment_method":"bank","payment_account":"1234567890","sms_code":"123456"}`

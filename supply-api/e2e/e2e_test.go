@@ -172,13 +172,16 @@ func newE2ESystem(t *testing.T, opts e2eOptions) *e2eSystem {
 		},
 	}
 	auditStore := audit.NewMemoryAuditStore()
+	idempotencyMw := middleware.NewIdempotencyMiddleware(nil, middleware.IdempotencyConfig{
+		Enabled: false,
+	})
 
 	api := httpapi.NewSupplyAPI(
 		accountSvc,
 		&e2ePackageService{},
 		&e2eSettlementService{},
 		&e2eEarningService{},
-		nil,
+		idempotencyMw,
 		auditStore,
 		nil,
 		0,
@@ -830,7 +833,7 @@ func TestE2E_AuditEvent_SensitiveDataSanitized(t *testing.T) {
 		TenantID:   9001,
 		ObjectType: "supply_account",
 		Action:     "verify",
-		Limit:     1,
+		Limit:      1,
 	})
 	if err != nil {
 		t.Fatalf("failed to query audit events: %v", err)

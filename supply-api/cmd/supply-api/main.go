@@ -210,7 +210,10 @@ func main() {
 		})
 		jsonLogger.Info("幂等中间件已启用（DB-backed）")
 	} else {
-		jsonLogger.Info("警告：幂等中间件未启用（db或repo不可用）- 使用内联幂等逻辑作为替代")
+		if isProd {
+			jsonLogger.Fatalf("production startup requirement failed: idempotency repository unavailable")
+		}
+		jsonLogger.Info("警告：幂等中间件未启用（db或repo不可用）- 需要幂等的写接口将返回 503")
 	}
 
 	// P0-05修复: 初始化限流中间件

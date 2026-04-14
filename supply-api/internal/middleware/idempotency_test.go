@@ -209,3 +209,25 @@ func TestIdempotentHandler(t *testing.T) {
 		}
 	})
 }
+
+func TestIdempotentHandler_EnabledWithoutRepositoryReturnsServiceUnavailable(t *testing.T) {
+	testHandler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, record *repository.IdempotencyRecord) error {
+		w.WriteHeader(http.StatusCreated)
+		return nil
+	}
+
+	handler := NewIdempotencyMiddleware(nil, IdempotencyConfig{
+		Enabled: true,
+	}).Wrap(testHandler)
+
+	req := httptest.NewRequest("POST", "/api/v1/supply/accounts", strings.NewReader(`{"key":"value"}`))
+	req.Header.Set("X-Request-Id", "req-123")
+	req.Header.Set("Idempotency-Key", "idem-key-12345678")
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d body=%s", w.Code, w.Body.String())
+	}
+}

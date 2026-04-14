@@ -92,8 +92,16 @@ type IdempotentHandler func(ctx context.Context, w http.ResponseWriter, r *http.
 // Wrap 包装HTTP处理器以实现幂等
 func (m *IdempotencyMiddleware) Wrap(handler IdempotentHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if m == nil {
+			writeIdempotencyError(w, http.StatusServiceUnavailable, "IDEMPOTENCY_UNAVAILABLE", "idempotency middleware is not configured")
+			return
+		}
 		if !m.config.Enabled {
 			handler(r.Context(), w, r, nil)
+			return
+		}
+		if m.idempotencyRepo == nil {
+			writeIdempotencyError(w, http.StatusServiceUnavailable, "IDEMPOTENCY_UNAVAILABLE", "idempotency repository is not configured")
 			return
 		}
 

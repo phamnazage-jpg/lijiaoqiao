@@ -107,6 +107,14 @@ func (a *SupplyAPI) requireSupplierID(w http.ResponseWriter, r *http.Request) (i
 	return supplierID, true
 }
 
+func (a *SupplyAPI) requireIdempotencyMiddleware(w http.ResponseWriter) bool {
+	if a.idempotencyMw == nil {
+		writeError(w, http.StatusServiceUnavailable, CodeIdempotencyRequired, "idempotency middleware is required for write operations")
+		return false
+	}
+	return true
+}
+
 // ==================== Account Handlers ====================
 
 type VerifyAccountRequest struct {
@@ -161,15 +169,11 @@ func (a *SupplyAPI) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 		return
 	}
-
-	// P0-P4修复: 使用DB-backed幂等中间件
-	if a.idempotencyMw != nil {
-		a.idempotencyMw.Wrap(a.createAccountHandler)(w, r)
+	if !a.requireIdempotencyMiddleware(w) {
 		return
 	}
 
-	// 降级：使用内联幂等逻辑（仅在幂等中间件未启用时）
-	a.createAccountHandler(r.Context(), w, r, nil)
+	a.idempotencyMw.Wrap(a.createAccountHandler)(w, r)
 }
 
 // createAccountHandler 创建账号的业务逻辑（供幂等中间件包装）
@@ -742,15 +746,11 @@ func (a *SupplyAPI) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, CodeFeatureDisabled, "withdraw is disabled until SMS verification is integrated")
 		return
 	}
-
-	// P0-P4修复: 使用DB-backed幂等中间件
-	if a.idempotencyMw != nil {
-		a.idempotencyMw.Wrap(a.withdrawHandler)(w, r)
+	if !a.requireIdempotencyMiddleware(w) {
 		return
 	}
 
-	// 降级：使用内联幂等逻辑（仅在幂等中间件未启用时）
-	a.withdrawHandler(r.Context(), w, r, nil)
+	a.idempotencyMw.Wrap(a.withdrawHandler)(w, r)
 }
 
 // withdrawHandler 提现的业务逻辑（供幂等中间件包装）
