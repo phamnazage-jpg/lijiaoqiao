@@ -200,8 +200,8 @@ func main() {
 	}
 	authMiddleware := middleware.NewAuthMiddleware(authConfig, tokenCache, tokenBackend, auditEmitter)
 
-	// 初始化幂等中间件（NEW-P1-04修复 - 由于repo为nil，暂保持禁用状态）
-	// 注意：幂等逻辑在supply_api.go中以内联方式实现
+	// 初始化幂等中间件。
+	// 当仓储不可用时，相关写接口会通过统一错误码返回 503，而不是切回其他实现路径。
 	var idempotencyMiddleware *middleware.IdempotencyMiddleware
 	if db != nil && idempotencyRepo != nil {
 		idempotencyMiddleware = middleware.NewIdempotencyMiddleware(idempotencyRepo, middleware.IdempotencyConfig{
@@ -270,7 +270,7 @@ func main() {
 	// 6. BearerExtract - Bearer Token提取
 	// 7. TokenVerify - JWT校验
 	// 8. RateLimit - 限流 (P0-05)
-	// 注：幂等处理在supply_api.go中以内联方式实现（NEW-P1-05已统一：中间件方案需要DB-backed repo）
+	// 注：幂等写路径由 SupplyAPI 内部统一经 IdempotencyMiddleware 包装，不额外挂到全局 mux。
 
 	var handler http.Handler = mux
 	handler = middleware.RequestID(handler)
