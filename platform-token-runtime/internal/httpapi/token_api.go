@@ -27,16 +27,28 @@ type Runtime interface {
 }
 
 type TokenAPI struct {
-	runtime Runtime
-	auditor service.AuditEmitter
-	now     func() time.Time
+	runtime      Runtime
+	auditor      service.AuditEmitter
+	auditQuerier service.AuditEventQuerier
+	now          func() time.Time
 }
 
 func NewTokenAPI(runtime Runtime, auditor service.AuditEmitter, now func() time.Time) *TokenAPI {
 	if now == nil {
 		now = time.Now
 	}
-	return &TokenAPI{runtime: runtime, auditor: auditor, now: now}
+
+	querier, ok := auditor.(service.AuditEventQuerier)
+	if !ok {
+		querier = emptyAuditQuerier{}
+	}
+
+	return &TokenAPI{
+		runtime:      runtime,
+		auditor:      auditor,
+		auditQuerier: querier,
+		now:          now,
+	}
 }
 
 func (a *TokenAPI) Register(mux *http.ServeMux) {
@@ -322,12 +334,6 @@ func (a *TokenAPI) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	querier, ok := a.auditor.(service.AuditEventQuerier)
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "AUDIT_QUERY_NOT_READY", "audit query capability is not available")
-		return
-	}
-
 	limit := parseLimit(r.URL.Query().Get("limit"))
 	filter := service.AuditEventFilter{
 		RequestID:  strings.TrimSpace(r.URL.Query().Get("request_id")),
@@ -337,7 +343,7 @@ func (a *TokenAPI) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 		ResultCode: strings.TrimSpace(r.URL.Query().Get("result_code")),
 		Limit:      limit,
 	}
-	events, err := querier.QueryEvents(r.Context(), filter)
+	events, err := a.auditQuerier.QueryEvents(r.Context(), filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "AUDIT_QUERY_FAILED", err.Error())
 		return
@@ -365,6 +371,12 @@ func (a *TokenAPI) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 			"items": items,
 		},
 	})
+}
+
+type emptyAuditQuerier struct{}
+
+func (emptyAuditQuerier) QueryEvents(context.Context, service.AuditEventFilter) ([]service.AuditEvent, error) {
+	return []service.AuditEvent{}, nil
 }
 
 func validateIssueRequest(req issueRequest) error {

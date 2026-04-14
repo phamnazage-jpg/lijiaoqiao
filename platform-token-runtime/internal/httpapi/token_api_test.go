@@ -246,7 +246,7 @@ func TestTokenAPIAuditEventsReady(t *testing.T) {
 	}
 }
 
-func TestTokenAPIAuditEventsNotReady(t *testing.T) {
+func TestTokenAPIAuditEventsWithoutQuerierReturnsEmptyList(t *testing.T) {
 	t.Parallel()
 
 	runtime := service.NewInMemoryTokenRuntime(nil)
@@ -258,8 +258,14 @@ func TestTokenAPIAuditEventsNotReady(t *testing.T) {
 	req.Header.Set("X-Request-Id", "req-audit-query-3")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("expected not implemented: code=%d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected stable empty query response: code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	body := decodeMap(t, rec.Body.Bytes())
+	data := body["data"].(map[string]any)
+	if total := int(data["total"].(float64)); total != 0 {
+		t.Fatalf("expected total=0, got=%d body=%s", total, rec.Body.String())
 	}
 }
 

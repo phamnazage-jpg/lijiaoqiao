@@ -1,72 +1,51 @@
 # Gateway
 
-> OpenAI 兼容入口网关，负责请求接入、鉴权、限流、上游路由和基础审计。
+> OpenAI 兼容入口网关，负责接入、鉴权、限流、上游路由与基础审计。
 
 ## 当前真实状态
 
-- 服务入口是 [main.go](/home/long/project/立交桥/gateway/cmd/gateway/main.go)。
+- 服务入口是 `cmd/gateway/main.go`。
 - 当前对外暴露的主要接口是 `/v1/chat/completions`、`/v1/completions`、`/v1/models`，以及对应的 `/api/v1/*` 兼容路径。
 - 鉴权运行时支持两种模式：
   - `inmemory`
   - `remote_introspection`
-- provider 注册已通过 [config.LoadConfig](/home/long/project/立交桥/gateway/internal/config/config.go) 提供的 `Providers` 配置装配；默认会基于环境变量生成一个 OpenAI provider。
-- 审计发射器支持 PostgreSQL 与内存实现；数据库未配置时会回退到内存实现。
-
-## 目录结构
-
-```text
-gateway/
-├── cmd/gateway/main.go              # 进程入口与优雅关闭
-├── internal/adapter/                # 上游 provider 适配
-├── internal/config/                 # 环境变量配置
-├── internal/handler/                # OpenAI 兼容 HTTP handler
-├── internal/middleware/             # 鉴权、CORS、远程 introspection
-├── internal/ratelimit/              # 令牌桶 / 滑动窗口限流
-├── internal/router/                 # 路由、打分、fallback
-└── pkg/                             # 通用模型与错误码
-```
+- provider 注册已经从配置装配；如果未显式配置 provider，启动时会基于环境变量生成默认 OpenAI provider。
+- 审计发射器支持 PostgreSQL 与内存实现；数据库未配置时会显式回退到内存实现。
 
 ## 与其他服务的边界
 
-- `gateway` 自己不签发业务 token。
+- `gateway` 不签发业务 token。
 - `gateway` 在 `remote_introspection` 模式下依赖 `platform-token-runtime` 提供 token introspection。
-- `gateway` 保护 `supply-api` 和 `platform-token-runtime` 的受保护路径，但不承载它们的业务逻辑。
+- `gateway` 只承载入口控制，不承载 `supply-api` 或 `platform-token-runtime` 的业务逻辑。
 
-## 运行
-
-### 必要环境变量
+## 本地运行
 
 ```bash
+cd "/home/long/project/立交桥/gateway"
 export OPENAI_API_KEY="..."
 export OPENAI_BASE_URL="https://api.openai.com"
 export OPENAI_MODELS="gpt-4,gpt-3.5-turbo"
 export GATEWAY_ENV="dev"
 export GATEWAY_TOKEN_RUNTIME_MODE="inmemory"
+go run ./cmd/gateway
 ```
 
-如果要走远程 token 校验：
+如果要切到远程 token 校验：
 
 ```bash
 export GATEWAY_TOKEN_RUNTIME_MODE="remote_introspection"
 export GATEWAY_TOKEN_RUNTIME_URL="http://127.0.0.1:18081"
 ```
 
-### 本地启动
-
-```bash
-cd "/home/long/project/立交桥/gateway"
-go run ./cmd/gateway
-```
-
 默认监听 `0.0.0.0:8080`。
 
-## 测试
+## 验证命令
 
 模块级验证：
 
 ```bash
 cd "/home/long/project/立交桥/gateway"
-go test ./...
+GOCACHE=/tmp/lijiaoqiao-go-cache-gateway go test ./...
 ```
 
 仓库级统一验证：
@@ -76,7 +55,9 @@ cd "/home/long/project/立交桥"
 bash scripts/ci/repo_integrity_check.sh
 ```
 
-## 已知限制
+## 关键目录
 
-- 当前默认 provider 只有 OpenAI；其他 provider 类型还未接入到 `internal/app/providers.go`。
-- 更细的生产级 bootstrap 和多 provider 装配，仍在后续重构计划中。
+- `internal/config/`：环境变量配置与 provider 配置加载。
+- `internal/handler/`：OpenAI 兼容 HTTP handler。
+- `internal/middleware/`：鉴权、CORS、远程 introspection。
+- `internal/router/`：provider 路由、打分与 fallback。

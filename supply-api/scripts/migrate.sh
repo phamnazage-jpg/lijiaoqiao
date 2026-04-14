@@ -1,8 +1,8 @@
 #!/bin/bash
 # Supply API Database Migration Script
-# 执行顺序固定，按 XR-001 + database_domain_model_and_governance_v1_2026-03-27.md
+# 只应用当前 fresh setup 需要的基线 DDL。
 
-set -e
+set -euo pipefail
 
 DB_HOST="${SUPPLY_DB_HOST:-localhost}"
 DB_PORT="${SUPPLY_DB_PORT:-5432}"
@@ -21,15 +21,17 @@ echo "User: $DB_USER"
 echo ""
 
 # 迁移顺序（固定）
+# 与 scripts/run_integration_tests.sh 的 schema baseline 保持一致。
 MIGRATIONS=(
-    "platform_core_schema_v1.sql"
-    "supply_schema_v1.sql"
-    "supply_schema_v1_patch_2026-03-27.sql"
-    "supply_idempotency_record_v1.sql"
+    "supply_core_schema_v2.sql"
+    "partition_strategy_v1.sql"
+    "outbox_pattern_v1.sql"
+    "token_status_registry_v1.sql"
+    "audit_alerts_v1.sql"
 )
 
 # 检查PGPASSWORD
-if [ -z "$SUPPLY_DB_PASSWORD" ]; then
+if [ -z "${SUPPLY_DB_PASSWORD:-}" ]; then
     echo "Warning: SUPPLY_DB_PASSWORD not set"
 fi
 
@@ -44,7 +46,7 @@ for migration in "${MIGRATIONS[@]}"; do
     echo "Executing: $migration"
     echo "--------------------------------------------"
 
-    PGPASSWORD="$SUPPLY_DB_PASSWORD" psql \
+    PGPASSWORD="${SUPPLY_DB_PASSWORD:-}" psql \
         -h "$DB_HOST" \
         -p "$DB_PORT" \
         -U "$DB_USER" \
@@ -52,12 +54,7 @@ for migration in "${MIGRATIONS[@]}"; do
         -f "$sql_file" \
         --set ON_ERROR_STOP=on
 
-    if [ $? -eq 0 ]; then
-        echo "SUCCESS: $migration"
-    else
-        echo "FAILED: $migration"
-        exit 1
-    fi
+    echo "SUCCESS: $migration"
     echo ""
 done
 

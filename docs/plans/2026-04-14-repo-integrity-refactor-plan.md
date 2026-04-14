@@ -610,7 +610,10 @@ git commit -m "fix(supply-api): close sms and audit flush gaps"
 **Files:**
 - Modify: `gateway/README.md`
 - Modify: `platform-token-runtime/README.md`
+- Modify: `platform-token-runtime/internal/httpapi/token_api.go`
+- Modify: `platform-token-runtime/internal/httpapi/token_api_test.go`
 - Modify: `supply-api/README.md`
+- Modify: `supply-api/scripts/migrate.sh`
 - Modify: `scripts/ci/repo_integrity_check.sh`
 - Modify: `docs/plans/2026-04-14-repo-integrity-refactor-plan.md`
 
@@ -628,6 +631,8 @@ Expected:
 
 Write:
 - 每个模块 README 都只写当前真实运行方式、当前真实依赖、当前真实验证命令。
+- `platform-token-runtime/internal/httpapi/token_api.go` 去掉 `AUDIT_QUERY_NOT_READY` 占位语义，保持 `audit-events` 接口稳定可查询。
+- `supply-api/scripts/migrate.sh` 改为只应用当前真实存在且可执行的 baseline DDL。
 - 将 `scripts/ci/repo_integrity_check.sh` 作为所有报告和发布前检查的统一入口。
 
 **Step 3: 运行最终验证**
