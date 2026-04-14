@@ -49,11 +49,16 @@ supply-api/
 │   └── config/               # 配置管理
 ├── sql/
 │   └── postgresql/           # 数据库 DDL 脚本
-│       ├── platform_core_schema_v1.sql
-│       ├── iam_schema_v1.sql           # IAM 表 (R-07)
-│       └── supply_idempotency_record_v1.sql
+│       ├── audit_events_migration_v1_to_v2.sql
+│       ├── outbox_pattern_v1.sql
+│       ├── partition_strategy_v1.sql
+│       ├── settlement_withdraw_constraint_v1.sql
+│       ├── supply_idempotency_record_v1.sql
+│       └── token_status_registry_v1.sql
 └── scripts/
-    └── migrate.sh            # 数据库迁移脚本
+    ├── migrate.sh            # 数据库迁移脚本
+    ├── production_test.sh    # 历史生产验证脚本
+    └── run_integration_tests.sh
 ```
 
 ## 模块说明
@@ -149,6 +154,14 @@ go run ./cmd/supply-api -env=dev -config ./config/config.local.yaml
 
 仓库中的 `config/config.dev.yaml` 保持为可复现样例，`config/config.local.yaml` 只用于本机环境，已加入忽略规则。
 
+## 当前真实状态
+
+- 入口是 [main.go](/home/long/project/立交桥/supply-api/cmd/supply-api/main.go)。
+- 当 PostgreSQL 可用时，会装配 DB-backed 的账户、套餐、结算、收益、审计、token 状态、outbox 与补偿链路。
+- 开发模式下如果 PostgreSQL 或 Redis 不可用，部分能力仍会回退到内存实现。
+- 告警 API 当前仍使用内存告警存储，不是 PostgreSQL-backed 实现。
+- Outbox processor 与补偿 worker 仅在数据库可用时启动。
+
 ## 构建和运行
 
 ```bash
@@ -160,6 +173,13 @@ go build -o supply-api ./cmd/supply-api/
 
 # 测试
 go test ./... -count=1
+```
+
+仓库级统一验证：
+
+```bash
+cd "/home/long/project/立交桥"
+bash scripts/ci/repo_integrity_check.sh
 ```
 
 ## 测试覆盖率
@@ -182,6 +202,15 @@ go test ./... -count=1
 # 运行迁移
 ./scripts/migrate.sh -env=dev
 ```
+
+当前仓库中实际存在的 PostgreSQL DDL / 约束文件包括：
+
+- `sql/postgresql/outbox_pattern_v1.sql`
+- `sql/postgresql/partition_strategy_v1.sql`
+- `sql/postgresql/settlement_withdraw_constraint_v1.sql`
+- `sql/postgresql/supply_idempotency_record_v1.sql`
+- `sql/postgresql/token_status_registry_v1.sql`
+- `sql/postgresql/audit_events_migration_v1_to_v2.sql`
 
 ## 文档
 
