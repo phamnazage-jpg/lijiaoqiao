@@ -49,10 +49,12 @@ supply-api/
 │   └── config/               # 配置管理
 ├── sql/
 │   └── postgresql/           # 数据库 DDL 脚本
+│       ├── audit_alerts_v1.sql
 │       ├── audit_events_migration_v1_to_v2.sql
 │       ├── outbox_pattern_v1.sql
 │       ├── partition_strategy_v1.sql
 │       ├── settlement_withdraw_constraint_v1.sql
+│       ├── supply_core_schema_v2.sql
 │       ├── supply_idempotency_record_v1.sql
 │       └── token_status_registry_v1.sql
 └── scripts/
@@ -158,8 +160,9 @@ go run ./cmd/supply-api -env=dev -config ./config/config.local.yaml
 
 - 入口是 [main.go](/home/long/project/立交桥/supply-api/cmd/supply-api/main.go)。
 - 当 PostgreSQL 可用时，会装配 DB-backed 的账户、套餐、结算、收益、审计、token 状态、outbox 与补偿链路。
-- 开发模式下如果 PostgreSQL 或 Redis 不可用，部分能力仍会回退到内存实现。
-- 告警 API 当前仍使用内存告警存储，不是 PostgreSQL-backed 实现。
+- 开发模式下如果 PostgreSQL 不可用，部分链路仍会回退到内存实现。
+- 告警 API 在 PostgreSQL 可用时会装配 DB-backed 仓储；数据库不可用时才显式回退内存实现。
+- 依赖幂等仓储的写接口在中间件缺失时会返回 `503 SUP_HTTP_5031`，不再静默切换到内联逻辑。
 - Outbox processor 与补偿 worker 仅在数据库可用时启动。
 
 ## 构建和运行
@@ -203,8 +206,10 @@ bash scripts/ci/repo_integrity_check.sh
 ./scripts/migrate.sh -env=dev
 ```
 
-当前仓库中实际存在的 PostgreSQL DDL / 约束文件包括：
+当前仓库中实际存在且应优先参考的 PostgreSQL DDL / 约束文件包括：
 
+- `sql/postgresql/supply_core_schema_v2.sql`
+- `sql/postgresql/audit_alerts_v1.sql`
 - `sql/postgresql/outbox_pattern_v1.sql`
 - `sql/postgresql/partition_strategy_v1.sql`
 - `sql/postgresql/settlement_withdraw_constraint_v1.sql`
