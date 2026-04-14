@@ -9,14 +9,15 @@ import (
 
 	"github.com/google/uuid"
 
+	"lijiaoqiao/supply-api/internal/audit/alerterr"
 	"lijiaoqiao/supply-api/internal/audit/model"
 )
 
 // 错误定义
 var (
-	ErrAlertNotFound     = errors.New("alert not found")
-	ErrInvalidAlertInput = errors.New("invalid alert input")
-	ErrAlertConflict     = errors.New("alert conflict")
+	ErrAlertNotFound     = alerterr.ErrAlertNotFound
+	ErrInvalidAlertInput = alerterr.ErrInvalidAlertInput
+	ErrAlertConflict     = alerterr.ErrAlertConflict
 )
 
 // AlertStoreInterface 告警存储接口

@@ -483,6 +483,38 @@ func TestInMemoryAlertStore_CRUD(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestInMemoryAlertStore_PreservesMetadataAndTags(t *testing.T) {
+	ctx := context.Background()
+	store := NewInMemoryAlertStore()
+
+	alert := &model.Alert{
+		AlertID:    "test-meta-001",
+		AlertName:  "Metadata Test",
+		AlertType:  model.AlertTypeSecurity,
+		AlertLevel: model.AlertLevelWarning,
+		TenantID:   1001,
+		Title:      "Metadata",
+		Message:    "metadata and tags",
+		Status:     model.AlertStatusActive,
+		Metadata: map[string]any{
+			"source": "unit-test",
+		},
+		Tags:           []string{"urgent", "security"},
+		NotifyChannels: []string{"email"},
+		EventIDs:       []string{"evt-001"},
+	}
+
+	err := store.Create(ctx, alert)
+	assert.NoError(t, err)
+
+	stored, err := store.GetByID(ctx, "test-meta-001")
+	assert.NoError(t, err)
+	assert.Equal(t, "unit-test", stored.Metadata["source"])
+	assert.Equal(t, []string{"urgent", "security"}, stored.Tags)
+	assert.Equal(t, []string{"email"}, stored.NotifyChannels)
+	assert.Equal(t, []string{"evt-001"}, stored.EventIDs)
+}
+
 func TestInMemoryAlertStore_GetByID_NotFound(t *testing.T) {
 	ctx := context.Background()
 	store := NewInMemoryAlertStore()
@@ -524,13 +556,13 @@ func TestInMemoryAlertStore_List_FilterByTenant(t *testing.T) {
 
 	store.Create(ctx, &model.Alert{
 		AlertID:   "1",
-		TenantID:   1001,
+		TenantID:  1001,
 		Title:     "Tenant 1001 Alert",
 		AlertType: model.AlertTypeSecurity,
 	})
 	store.Create(ctx, &model.Alert{
 		AlertID:   "2",
-		TenantID:   1002,
+		TenantID:  1002,
 		Title:     "Tenant 1002 Alert",
 		AlertType: model.AlertTypeSecurity,
 	})
@@ -550,13 +582,13 @@ func TestInMemoryAlertStore_List_FilterByAlertType(t *testing.T) {
 
 	store.Create(ctx, &model.Alert{
 		AlertID:   "1",
-		TenantID:   1001,
+		TenantID:  1001,
 		AlertType: model.AlertTypeSecurity,
 		Title:     "Security",
 	})
 	store.Create(ctx, &model.Alert{
 		AlertID:   "2",
-		TenantID:   1001,
+		TenantID:  1001,
 		AlertType: model.AlertTypeQuota,
 		Title:     "Quota",
 	})
@@ -607,16 +639,16 @@ func TestInMemoryAlertStore_List_FilterByStatus(t *testing.T) {
 	store := NewInMemoryAlertStore()
 
 	store.Create(ctx, &model.Alert{
-		AlertID:   "1",
-		TenantID:   1001,
-		Status:     model.AlertStatusActive,
-		Title:     "Active",
+		AlertID:  "1",
+		TenantID: 1001,
+		Status:   model.AlertStatusActive,
+		Title:    "Active",
 	})
 	store.Create(ctx, &model.Alert{
-		AlertID:   "2",
-		TenantID:   1001,
-		Status:     model.AlertStatusResolved,
-		Title:     "Resolved",
+		AlertID:  "2",
+		TenantID: 1001,
+		Status:   model.AlertStatusResolved,
+		Title:    "Resolved",
 	})
 
 	filter := &model.AlertFilter{
@@ -640,16 +672,16 @@ func TestInMemoryAlertStore_List_FilterByTimeRange(t *testing.T) {
 	recentTime := now.Add(-10 * time.Minute)
 
 	store.Create(ctx, &model.Alert{
-		AlertID:    "1",
-		TenantID:   1001,
-		CreatedAt:  oldTime,
-		Title:      "Old",
+		AlertID:   "1",
+		TenantID:  1001,
+		CreatedAt: oldTime,
+		Title:     "Old",
 	})
 	store.Create(ctx, &model.Alert{
-		AlertID:    "2",
-		TenantID:   1001,
-		CreatedAt:  recentTime,
-		Title:      "Recent",
+		AlertID:   "2",
+		TenantID:  1001,
+		CreatedAt: recentTime,
+		Title:     "Recent",
 	})
 
 	// Filter for recent alerts only
@@ -671,20 +703,20 @@ func TestInMemoryAlertStore_List_FilterByKeywords(t *testing.T) {
 	store := NewInMemoryAlertStore()
 
 	store.Create(ctx, &model.Alert{
-		AlertID:   "1",
-		TenantID:   1001,
-		Title:     "Database Connection Error",
-		Message:   "Failed to connect to DB",
+		AlertID:  "1",
+		TenantID: 1001,
+		Title:    "Database Connection Error",
+		Message:  "Failed to connect to DB",
 	})
 	store.Create(ctx, &model.Alert{
-		AlertID:   "2",
-		TenantID:   1001,
-		Title:     "API Timeout",
-		Message:   "Request timed out",
+		AlertID:  "2",
+		TenantID: 1001,
+		Title:    "API Timeout",
+		Message:  "Request timed out",
 	})
 
 	filter := &model.AlertFilter{
-		TenantID:  1001,
+		TenantID: 1001,
 		Keywords: "Database",
 	}
 	results, total, err := store.List(ctx, filter)
@@ -701,9 +733,9 @@ func TestInMemoryAlertStore_List_Pagination(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		store.Create(ctx, &model.Alert{
-			AlertID:   string(rune('0' + i)),
-			TenantID:   1001,
-			Title:      "Test",
+			AlertID:  string(rune('0' + i)),
+			TenantID: 1001,
+			Title:    "Test",
 		})
 	}
 
@@ -720,9 +752,9 @@ func TestInMemoryAlertStore_List_OffsetBeyondBounds(t *testing.T) {
 	store := NewInMemoryAlertStore()
 
 	store.Create(ctx, &model.Alert{
-		AlertID:   "1",
-		TenantID:   1001,
-		Title:      "Test",
+		AlertID:  "1",
+		TenantID: 1001,
+		Title:    "Test",
 	})
 
 	filter := &model.AlertFilter{TenantID: 1001, Limit: 10, Offset: 100}
@@ -783,7 +815,7 @@ func TestAlert_UpdateLastSeen(t *testing.T) {
 
 	alert.UpdateLastSeen()
 
-	assert.True(t, alert.LastSeenAt.After(time.Now().Add(-1 * time.Hour)))
+	assert.True(t, alert.LastSeenAt.After(time.Now().Add(-1*time.Hour)))
 }
 
 func TestAlert_AddEventID(t *testing.T) {

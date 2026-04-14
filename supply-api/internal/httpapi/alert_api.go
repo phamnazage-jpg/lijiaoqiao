@@ -14,12 +14,11 @@ type AlertAPI struct {
 }
 
 // NewAlertAPI 创建告警API处理器
-func NewAlertAPI() *AlertAPI {
-	// 创建内存告警存储
-	alertStore := service.NewInMemoryAlertStore()
-	// 创建告警服务
-	alertSvc := service.NewAlertService(alertStore)
-	// 创建告警处理器
+func NewAlertAPI(alertSvc *service.AlertService) *AlertAPI {
+	if alertSvc == nil {
+		panic("alert service is required")
+	}
+
 	alertHandler := handler.NewAlertHandler(alertSvc)
 
 	return &AlertAPI{

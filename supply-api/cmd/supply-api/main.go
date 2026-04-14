@@ -12,6 +12,7 @@ import (
 	"lijiaoqiao/supply-api/internal/adapter"
 	"lijiaoqiao/supply-api/internal/audit"
 	auditrepo "lijiaoqiao/supply-api/internal/audit/repository"
+	auditservice "lijiaoqiao/supply-api/internal/audit/service"
 	"lijiaoqiao/supply-api/internal/cache"
 	"lijiaoqiao/supply-api/internal/compensation"
 	"lijiaoqiao/supply-api/internal/config"
@@ -121,6 +122,16 @@ func main() {
 		auditStore = audit.NewMemoryAuditStore()
 		jsonLogger.Info("警告: 审计存储使用内存实现 (生产环境不应使用)")
 	}
+
+	var alertStore auditservice.AlertStoreInterface
+	if db != nil {
+		alertStore = auditrepo.NewPostgresAlertRepository(db.Pool)
+		jsonLogger.Info("告警存储: 使用PostgreSQL (DB-backed)")
+	} else {
+		alertStore = auditservice.NewInMemoryAlertStore()
+		jsonLogger.Info("警告: 告警存储使用内存实现 (仅开发环境允许)")
+	}
+	alertService := auditservice.NewAlertService(alertStore)
 
 	// P0-09修复: 初始化外键校验器
 	var fkValidator *repository.ForeignKeyValidator
@@ -244,7 +255,7 @@ func main() {
 	api.Register(mux)
 
 	// 注册告警API路由
-	alertAPI := httpapi.NewAlertAPI()
+	alertAPI := httpapi.NewAlertAPI(alertService)
 	alertAPI.Register(mux)
 
 	// 应用中间件链路
