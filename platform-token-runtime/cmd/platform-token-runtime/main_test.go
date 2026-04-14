@@ -27,8 +27,8 @@ func TestMain_ProdRejectsInMemoryRuntime(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected prod startup to fail, but process exited successfully. output=%s", string(output))
 	}
-	if !strings.Contains(string(output), "in-memory token runtime is not allowed") {
-		t.Fatalf("expected startup failure output to mention in-memory token runtime is not allowed, got: %s", string(output))
+	if !strings.Contains(string(output), "runtime store is required") {
+		t.Fatalf("expected startup failure output to mention runtime store is required, got: %s", string(output))
 	}
 }
 

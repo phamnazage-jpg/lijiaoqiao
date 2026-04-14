@@ -10,40 +10,21 @@ import (
 	"syscall"
 	"time"
 
-	"lijiaoqiao/platform-token-runtime/internal/auth/service"
-	"lijiaoqiao/platform-token-runtime/internal/httpapi"
+	"lijiaoqiao/platform-token-runtime/internal/app"
 )
 
 func main() {
-	addr := envOrDefault("TOKEN_RUNTIME_ADDR", ":18081")
-	env := strings.ToLower(envOrDefault("TOKEN_RUNTIME_ENV", "dev"))
-	if env == "prod" || env == "staging" {
-		log.Fatalf("in-memory token runtime is not allowed in %s", env)
-	}
-
-	runtime := service.NewInMemoryTokenRuntime(nil)
-	auditor := service.NewMemoryAuditEmitter()
-	api := httpapi.NewTokenAPI(runtime, auditor, time.Now)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/actuator/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"UP"}`))
+	srv, err := app.BuildServer(app.Config{
+		Addr: envOrDefault("TOKEN_RUNTIME_ADDR", ":18081"),
+		Env:  strings.ToLower(envOrDefault("TOKEN_RUNTIME_ENV", "dev")),
+		Now:  time.Now,
 	})
-	api.Register(mux)
-
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       30 * time.Second,
+	if err != nil {
+		log.Fatalf("platform-token-runtime bootstrap failed: %v", err)
 	}
 
 	go func() {
-		log.Printf("platform-token-runtime listening on %s", addr)
+		log.Printf("platform-token-runtime listening on %s", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen failed: %v", err)
 		}

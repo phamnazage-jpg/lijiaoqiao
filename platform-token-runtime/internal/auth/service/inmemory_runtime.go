@@ -49,12 +49,19 @@ type idempotencyEntry struct {
 }
 
 func NewInMemoryTokenRuntime(now func() time.Time) *InMemoryTokenRuntime {
+	return NewInMemoryTokenRuntimeWithStore(now, NewInMemoryRuntimeStore())
+}
+
+func NewInMemoryTokenRuntimeWithStore(now func() time.Time, store *InMemoryRuntimeStore) *InMemoryTokenRuntime {
 	if now == nil {
 		now = time.Now
 	}
+	if store == nil {
+		store = NewInMemoryRuntimeStore()
+	}
 	return &InMemoryTokenRuntime{
 		now:   now,
-		store: NewInMemoryRuntimeStore(),
+		store: store,
 	}
 }
 
