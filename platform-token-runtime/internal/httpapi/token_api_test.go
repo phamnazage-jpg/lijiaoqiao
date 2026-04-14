@@ -17,7 +17,7 @@ func TestTokenAPIIssueAndIntrospect(t *testing.T) {
 	t.Parallel()
 
 	runtime := service.NewInMemoryTokenRuntime(nil)
-	auditor := service.NewMemoryAuditEmitter()
+	auditor := service.NewMemoryAuditStore()
 	api := NewTokenAPI(runtime, auditor, func() time.Time {
 		return time.Date(2026, 3, 30, 15, 50, 0, 0, time.UTC)
 	})
@@ -66,7 +66,7 @@ func TestTokenAPIIssueIdempotencyConflict(t *testing.T) {
 	t.Parallel()
 
 	runtime := service.NewInMemoryTokenRuntime(nil)
-	api := NewTokenAPI(runtime, service.NewMemoryAuditEmitter(), time.Now)
+	api := NewTokenAPI(runtime, service.NewMemoryAuditStore(), time.Now)
 	mux := http.NewServeMux()
 	api.Register(mux)
 
@@ -107,7 +107,7 @@ func TestTokenAPIRefreshAndRevoke(t *testing.T) {
 
 	now := time.Date(2026, 3, 30, 16, 0, 0, 0, time.UTC)
 	runtime := service.NewInMemoryTokenRuntime(func() time.Time { return now })
-	api := NewTokenAPI(runtime, service.NewMemoryAuditEmitter(), func() time.Time { return now })
+	api := NewTokenAPI(runtime, service.NewMemoryAuditStore(), func() time.Time { return now })
 	mux := http.NewServeMux()
 	api.Register(mux)
 
@@ -162,7 +162,7 @@ func TestTokenAPIMissingHeaders(t *testing.T) {
 	t.Parallel()
 
 	runtime := service.NewInMemoryTokenRuntime(nil)
-	api := NewTokenAPI(runtime, service.NewMemoryAuditEmitter(), time.Now)
+	api := NewTokenAPI(runtime, service.NewMemoryAuditStore(), time.Now)
 	mux := http.NewServeMux()
 	api.Register(mux)
 
@@ -184,7 +184,7 @@ func TestTokenAPIAuditEventsQuery(t *testing.T) {
 	t.Parallel()
 
 	runtime := service.NewInMemoryTokenRuntime(nil)
-	auditor := service.NewMemoryAuditEmitter()
+	auditor := service.NewMemoryAuditStore()
 	api := NewTokenAPI(runtime, auditor, time.Now)
 	mux := http.NewServeMux()
 	api.Register(mux)
@@ -224,6 +224,25 @@ func TestTokenAPIAuditEventsQuery(t *testing.T) {
 	}
 	if strings.Contains(queryRec.Body.String(), "access_token") {
 		t.Fatalf("audit query response must not contain access_token")
+	}
+}
+
+func TestTokenAPIAuditEventsReady(t *testing.T) {
+	t.Parallel()
+
+	runtime := service.NewInMemoryTokenRuntime(nil)
+	auditor := service.NewMemoryAuditStore()
+	api := NewTokenAPI(runtime, auditor, time.Now)
+	mux := http.NewServeMux()
+	api.Register(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/platform/tokens/audit-events?limit=3", nil)
+	req.Header.Set("X-Request-Id", "req-audit-ready")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ready audit query endpoint: code=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

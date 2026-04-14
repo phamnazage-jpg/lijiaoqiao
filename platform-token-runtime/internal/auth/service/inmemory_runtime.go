@@ -38,11 +38,9 @@ type IssueTokenInput struct {
 }
 
 type InMemoryTokenRuntime struct {
-	mu               sync.RWMutex
-	now              func() time.Time
-	records          map[string]*TokenRecord
-	tokenToID        map[string]string
-	idempotencyByKey map[string]idempotencyEntry
+	mu    sync.RWMutex
+	now   func() time.Time
+	store *InMemoryRuntimeStore
 }
 
 type idempotencyEntry struct {
@@ -55,10 +53,8 @@ func NewInMemoryTokenRuntime(now func() time.Time) *InMemoryTokenRuntime {
 		now = time.Now
 	}
 	return &InMemoryTokenRuntime{
-		now:              now,
-		records:          make(map[string]*TokenRecord),
-		tokenToID:        make(map[string]string),
-		idempotencyByKey: make(map[string]idempotencyEntry),
+		now:   now,
+		store: NewInMemoryRuntimeStore(),
 	}
 }
 
@@ -103,27 +99,20 @@ func (r *InMemoryTokenRuntime) Issue(_ context.Context, input IssueTokenInput) (
 
 	r.mu.Lock()
 	if idempotencyKey != "" {
-		entry, ok := r.idempotencyByKey[idempotencyKey]
+		entry, ok := r.store.LookupIdempotency(idempotencyKey)
 		if ok {
 			if entry.RequestHash != requestHash {
 				r.mu.Unlock()
 				return TokenRecord{}, errors.New("idempotency key payload mismatch")
 			}
-			existing, exists := r.records[entry.TokenID]
+			existing, exists := r.store.GetByTokenID(entry.TokenID)
 			if exists {
 				r.mu.Unlock()
 				return cloneRecord(*existing), nil
 			}
 		}
 	}
-	r.records[tokenID] = &record
-	r.tokenToID[accessToken] = tokenID
-	if idempotencyKey != "" {
-		r.idempotencyByKey[idempotencyKey] = idempotencyEntry{
-			RequestHash: requestHash,
-			TokenID:     tokenID,
-		}
-	}
+	r.store.Save(record, idempotencyKey, requestHash)
 	r.mu.Unlock()
 
 	return record, nil
@@ -137,7 +126,7 @@ func (r *InMemoryTokenRuntime) Refresh(_ context.Context, tokenID string, ttl ti
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	record, ok := r.records[tokenID]
+	record, ok := r.store.GetByTokenID(tokenID)
 	if !ok {
 		return TokenRecord{}, errors.New("token not found")
 	}
@@ -154,7 +143,7 @@ func (r *InMemoryTokenRuntime) Revoke(_ context.Context, tokenID, reason string)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	record, ok := r.records[tokenID]
+	record, ok := r.store.GetByTokenID(tokenID)
 	if !ok {
 		return TokenRecord{}, errors.New("token not found")
 	}
@@ -168,11 +157,10 @@ func (r *InMemoryTokenRuntime) Introspect(_ context.Context, accessToken string)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	tokenID, ok := r.tokenToID[accessToken]
+	record, ok := r.store.GetByAccessToken(accessToken)
 	if !ok {
 		return TokenRecord{}, errors.New("token not found")
 	}
-	record := r.records[tokenID]
 	r.applyExpiry(record)
 	return cloneRecord(*record), nil
 }
@@ -181,7 +169,7 @@ func (r *InMemoryTokenRuntime) Lookup(_ context.Context, tokenID string) (TokenR
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	record, ok := r.records[tokenID]
+	record, ok := r.store.GetByTokenID(tokenID)
 	if !ok {
 		return TokenRecord{}, errors.New("token not found")
 	}
@@ -191,15 +179,10 @@ func (r *InMemoryTokenRuntime) Lookup(_ context.Context, tokenID string) (TokenR
 
 func (r *InMemoryTokenRuntime) Verify(_ context.Context, rawToken string) (VerifiedToken, error) {
 	r.mu.RLock()
-	tokenID, ok := r.tokenToID[rawToken]
+	record, ok := r.store.GetByAccessToken(rawToken)
 	if !ok {
 		r.mu.RUnlock()
 		return VerifiedToken{}, NewAuthError(CodeAuthInvalidToken, errors.New("token not found"))
-	}
-	record, ok := r.records[tokenID]
-	if !ok {
-		r.mu.RUnlock()
-		return VerifiedToken{}, NewAuthError(CodeAuthInvalidToken, errors.New("token record not found"))
 	}
 	claims := VerifiedToken{
 		TokenID:   record.TokenID,
@@ -217,7 +200,7 @@ func (r *InMemoryTokenRuntime) Resolve(_ context.Context, tokenID string) (Token
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	record, ok := r.records[tokenID]
+	record, ok := r.store.GetByTokenID(tokenID)
 	if !ok {
 		return "", NewAuthError(CodeAuthInvalidToken, errors.New("token not found"))
 	}
@@ -228,7 +211,7 @@ func (r *InMemoryTokenRuntime) Resolve(_ context.Context, tokenID string) (Token
 func (r *InMemoryTokenRuntime) TokenCount() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return len(r.records)
+	return r.store.TokenCount()
 }
 
 func (r *InMemoryTokenRuntime) IssueAndAudit(ctx context.Context, input IssueTokenInput, auditor AuditEmitter) (TokenRecord, error) {
@@ -366,126 +349,4 @@ func hasScope(scopes []string, required string) bool {
 		}
 	}
 	return false
-}
-
-type MemoryAuditEmitter struct {
-	mu     sync.RWMutex
-	events []AuditEvent
-	now    func() time.Time
-}
-
-func NewMemoryAuditEmitter() *MemoryAuditEmitter {
-	return &MemoryAuditEmitter{now: time.Now}
-}
-
-func (e *MemoryAuditEmitter) Emit(_ context.Context, event AuditEvent) error {
-	if event.EventID == "" {
-		eventID, err := generateEventID()
-		if err != nil {
-			return err
-		}
-		event.EventID = eventID
-	}
-	if event.CreatedAt.IsZero() {
-		event.CreatedAt = e.now()
-	}
-	e.mu.Lock()
-	e.events = append(e.events, event)
-	e.mu.Unlock()
-	return nil
-}
-
-func (e *MemoryAuditEmitter) Events() []AuditEvent {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	copied := make([]AuditEvent, len(e.events))
-	copy(copied, e.events)
-	return copied
-}
-
-func (e *MemoryAuditEmitter) QueryEvents(_ context.Context, filter AuditEventFilter) ([]AuditEvent, error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 500 {
-		limit = 500
-	}
-
-	result := make([]AuditEvent, 0, minInt(limit, len(e.events)))
-	for idx := len(e.events) - 1; idx >= 0; idx-- {
-		ev := e.events[idx]
-		if !matchAuditFilter(ev, filter) {
-			continue
-		}
-		result = append(result, ev)
-		if len(result) >= limit {
-			break
-		}
-	}
-
-	// 按时间正序返回，便于前端/审计系统展示时间线。
-	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
-		result[i], result[j] = result[j], result[i]
-	}
-	return result, nil
-}
-
-func (e *MemoryAuditEmitter) LastEvent() (AuditEvent, bool) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	if len(e.events) == 0 {
-		return AuditEvent{}, false
-	}
-	return e.events[len(e.events)-1], true
-}
-
-func emitAudit(emitter AuditEmitter, event AuditEvent, now func() time.Time) {
-	if emitter == nil {
-		return
-	}
-	if now == nil {
-		now = time.Now
-	}
-	if event.CreatedAt.IsZero() {
-		event.CreatedAt = now()
-	}
-	_ = emitter.Emit(context.Background(), event)
-}
-
-func matchAuditFilter(ev AuditEvent, filter AuditEventFilter) bool {
-	if filter.RequestID != "" && ev.RequestID != filter.RequestID {
-		return false
-	}
-	if filter.TokenID != "" && ev.TokenID != filter.TokenID {
-		return false
-	}
-	if filter.SubjectID != "" && ev.SubjectID != filter.SubjectID {
-		return false
-	}
-	if filter.EventName != "" && ev.EventName != filter.EventName {
-		return false
-	}
-	if filter.ResultCode != "" && ev.ResultCode != filter.ResultCode {
-		return false
-	}
-	return true
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func generateEventID() (string, error) {
-	var entropy [8]byte
-	if _, err := rand.Read(entropy[:]); err != nil {
-		return "", err
-	}
-	return "evt_" + hex.EncodeToString(entropy[:]), nil
 }

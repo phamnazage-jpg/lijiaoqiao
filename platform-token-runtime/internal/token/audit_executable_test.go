@@ -16,7 +16,7 @@ import (
 func TestTOKAud001IssueSuccessEvent(t *testing.T) {
 	t.Parallel()
 
-	auditor := service.NewMemoryAuditEmitter()
+	auditor := service.NewMemoryAuditStore()
 	rt := service.NewInMemoryTokenRuntime(nil)
 
 	record, err := rt.IssueAndAudit(context.Background(), service.IssueTokenInput{
@@ -46,7 +46,7 @@ func TestTOKAud001IssueSuccessEvent(t *testing.T) {
 func TestTOKAud002IssueFailEvent(t *testing.T) {
 	t.Parallel()
 
-	auditor := service.NewMemoryAuditEmitter()
+	auditor := service.NewMemoryAuditStore()
 	rt := service.NewInMemoryTokenRuntime(nil)
 
 	_, err := rt.IssueAndAudit(context.Background(), service.IssueTokenInput{
@@ -76,7 +76,7 @@ func TestTOKAud002IssueFailEvent(t *testing.T) {
 func TestTOKAud003AuthnFailEvent(t *testing.T) {
 	t.Parallel()
 
-	auditor := service.NewMemoryAuditEmitter()
+	auditor := service.NewMemoryAuditStore()
 	rt := service.NewInMemoryTokenRuntime(nil)
 	authorizer := service.NewScopeRoleAuthorizer()
 
@@ -112,7 +112,7 @@ func TestTOKAud003AuthnFailEvent(t *testing.T) {
 func TestTOKAud004AuthzDeniedEvent(t *testing.T) {
 	t.Parallel()
 
-	auditor := service.NewMemoryAuditEmitter()
+	auditor := service.NewMemoryAuditStore()
 	rt := service.NewInMemoryTokenRuntime(nil)
 	authorizer := service.NewScopeRoleAuthorizer()
 
@@ -159,7 +159,7 @@ func TestTOKAud004AuthzDeniedEvent(t *testing.T) {
 func TestTOKAud005RevokeSuccessEvent(t *testing.T) {
 	t.Parallel()
 
-	auditor := service.NewMemoryAuditEmitter()
+	auditor := service.NewMemoryAuditStore()
 	rt := service.NewInMemoryTokenRuntime(nil)
 
 	record, err := rt.Issue(context.Background(), service.IssueTokenInput{
@@ -192,7 +192,7 @@ func TestTOKAud005RevokeSuccessEvent(t *testing.T) {
 func TestTOKAud006QueryKeyRejectedEvent(t *testing.T) {
 	t.Parallel()
 
-	auditor := service.NewMemoryAuditEmitter()
+	auditor := service.NewMemoryAuditStore()
 	rt := service.NewInMemoryTokenRuntime(nil)
 	authorizer := service.NewScopeRoleAuthorizer()
 
@@ -238,7 +238,7 @@ func TestTOKAud006QueryKeyRejectedEvent(t *testing.T) {
 func TestTOKAud007EventImmutability(t *testing.T) {
 	t.Parallel()
 
-	auditor := service.NewMemoryAuditEmitter()
+	auditor := service.NewMemoryAuditStore()
 	rt := service.NewInMemoryTokenRuntime(nil)
 
 	issued, err := rt.IssueAndAudit(context.Background(), service.IssueTokenInput{
