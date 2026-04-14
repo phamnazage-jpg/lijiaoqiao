@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"lijiaoqiao/gateway/internal/adapter"
+	"lijiaoqiao/gateway/internal/app"
 	"lijiaoqiao/gateway/internal/handler"
 	"lijiaoqiao/gateway/internal/middleware"
 	"lijiaoqiao/gateway/internal/ratelimit"
@@ -85,7 +86,7 @@ func TestCreateMux_ProtectsCompletionRoutes(t *testing.T) {
 		Now:              func() time.Time { return now },
 	}
 
-	mux := createMux(h, limiter, authConfig)
+	mux := app.BuildMux(h, limiter, authConfig)
 
 	for _, path := range []string{
 		"/v1/chat/completions",
@@ -118,7 +119,7 @@ func TestCreateMux_HealthRoutesRemainOpen(t *testing.T) {
 		Now:               func() time.Time { return now },
 	}
 
-	mux := createMux(h, limiter, authConfig)
+	mux := app.BuildMux(h, limiter, authConfig)
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
@@ -153,7 +154,7 @@ func TestCreateMux_CompletionsRouteUsesCompletionsHandler(t *testing.T) {
 		Now:              func() time.Time { return now },
 	}
 
-	mux := createMux(h, limiter, authConfig)
+	mux := app.BuildMux(h, limiter, authConfig)
 	reqBody := `{"model":"gpt-4","prompt":"hello","max_tokens":16}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/completions", bytes.NewBufferString(reqBody))
 	req.Header.Set("Authorization", "Bearer "+token)

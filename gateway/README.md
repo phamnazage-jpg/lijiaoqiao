@@ -9,7 +9,7 @@
 - 鉴权运行时支持两种模式：
   - `inmemory`
   - `remote_introspection`
-- 当前 provider 注册仍是代码内装配，不是配置驱动。默认只在入口里注册 OpenAI adapter。
+- provider 注册已通过 [config.LoadConfig](/home/long/project/立交桥/gateway/internal/config/config.go) 提供的 `Providers` 配置装配；默认会基于环境变量生成一个 OpenAI provider。
 - 审计发射器支持 PostgreSQL 与内存实现；数据库未配置时会回退到内存实现。
 
 ## 目录结构
@@ -38,6 +38,8 @@ gateway/
 
 ```bash
 export OPENAI_API_KEY="..."
+export OPENAI_BASE_URL="https://api.openai.com"
+export OPENAI_MODELS="gpt-4,gpt-3.5-turbo"
 export GATEWAY_ENV="dev"
 export GATEWAY_TOKEN_RUNTIME_MODE="inmemory"
 ```
@@ -76,5 +78,5 @@ bash scripts/ci/repo_integrity_check.sh
 
 ## 已知限制
 
-- `internal/config.Config.Providers` 已存在，但当前入口尚未按该配置动态注册 provider。
-- 生产级 provider 装配和更细的 bootstrap 拆分，仍在后续重构计划中。
+- 当前默认 provider 只有 OpenAI；其他 provider 类型还未接入到 `internal/app/providers.go`。
+- 更细的生产级 bootstrap 和多 provider 装配，仍在后续重构计划中。

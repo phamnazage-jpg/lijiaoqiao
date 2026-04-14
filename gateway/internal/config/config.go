@@ -202,16 +202,27 @@ func LoadConfig(path string) (*Config, error) {
 				Secret:  getEnv("FEISHU_SECRET", ""),
 			},
 		},
+		Providers: []ProviderConfig{
+			{
+				Name:     "openai",
+				Type:     "openai",
+				BaseURL:  strings.TrimSpace(getEnv("OPENAI_BASE_URL", "https://api.openai.com")),
+				APIKey:   getEnv("OPENAI_API_KEY", ""),
+				Models:   splitCSV(getEnv("OPENAI_MODELS", "gpt-4,gpt-3.5-turbo")),
+				Priority: 1,
+				Weight:   1.0,
+			},
+		},
 	}
 
-	if err := validateAuthConfig(cfg.Auth); err != nil {
+	if err := ValidateAuthConfig(cfg.Auth); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
 }
 
-func validateAuthConfig(cfg AuthConfig) error {
+func ValidateAuthConfig(cfg AuthConfig) error {
 	mode := strings.ToLower(strings.TrimSpace(cfg.TokenRuntimeMode))
 	env := strings.ToLower(strings.TrimSpace(cfg.Env))
 
@@ -229,6 +240,18 @@ func validateAuthConfig(cfg AuthConfig) error {
 	}
 
 	return nil
+}
+
+func splitCSV(value string) []string {
+	rawParts := strings.Split(value, ",")
+	parts := make([]string, 0, len(rawParts))
+	for _, part := range rawParts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	return parts
 }
 
 func getEnv(key, defaultValue string) string {

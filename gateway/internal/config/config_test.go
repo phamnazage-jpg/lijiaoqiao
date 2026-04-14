@@ -433,3 +433,29 @@ func TestLoadConfig_ProdRequiresTokenRuntimeURL(t *testing.T) {
 		t.Fatalf("expected error to mention TOKEN_RUNTIME_URL, got %v", err)
 	}
 }
+
+func TestValidateAuthConfig_ProdRequiresRemoteIntrospection(t *testing.T) {
+	cfg := AuthConfig{Env: "prod", TokenRuntimeMode: "inmemory"}
+	if err := ValidateAuthConfig(cfg); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestLoadConfig_DefaultProvider(t *testing.T) {
+	t.Setenv("OPENAI_BASE_URL", "https://api.openai.com")
+	t.Setenv("OPENAI_MODELS", "gpt-4o-mini,gpt-4o")
+
+	cfg, err := LoadConfig("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Providers) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(cfg.Providers))
+	}
+	if cfg.Providers[0].Name != "openai" {
+		t.Fatalf("unexpected provider name: %s", cfg.Providers[0].Name)
+	}
+	if len(cfg.Providers[0].Models) != 2 {
+		t.Fatalf("unexpected model count: %d", len(cfg.Providers[0].Models))
+	}
+}
