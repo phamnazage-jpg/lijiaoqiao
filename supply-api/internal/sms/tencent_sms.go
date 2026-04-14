@@ -15,18 +15,28 @@ import (
 type TencentSMSService struct {
 	config     *Config
 	httpClient *http.Client
+	store      *InMemoryCodeStore
 }
 
 // NewTencentSMSService creates a new Tencent Cloud SMS service.
 func NewTencentSMSService(config *Config) *TencentSMSService {
+	return NewTencentSMSServiceWithCodeStore(config, NewInMemoryCodeStore())
+}
+
+// NewTencentSMSServiceWithCodeStore creates a new Tencent Cloud SMS service with an explicit code store.
+func NewTencentSMSServiceWithCodeStore(config *Config, store *InMemoryCodeStore) *TencentSMSService {
 	if config == nil {
 		config = DefaultConfig()
+	}
+	if store == nil {
+		store = NewInMemoryCodeStore()
 	}
 	return &TencentSMSService{
 		config: config,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		store: store,
 	}
 }
 
@@ -46,13 +56,16 @@ func (t *TencentSMSService) SendVerificationCode(ctx context.Context, phoneNumbe
 		return "", err
 	}
 
-	codeID := fmt.Sprintf("tencent-%d", time.Now().UnixNano())
-
 	// Tencent Cloud SMS API request
 	// Sign and send request
 	err = t.sendSMS(ctx, phoneNumber, code)
 	if err != nil {
 		return "", fmt.Errorf("failed to send SMS via Tencent Cloud: %w", err)
+	}
+
+	codeID, err := t.store.Save(phoneNumber, code, time.Duration(t.config.CodeExpireMins)*time.Minute, "tencent")
+	if err != nil {
+		return "", err
 	}
 
 	fmt.Printf("[TencentSMS] Code '%s' sent to %s\n", code, phoneNumber)
@@ -107,25 +120,23 @@ func (t *TencentSMSService) sendSMS(ctx context.Context, phoneNumber, code strin
 // VerifyCode is a no-op for Tencent - verification is handled by the code store
 // In production, you would verify against your own code store or use Tencent's verification API
 func (t *TencentSMSService) VerifyCode(ctx context.Context, codeID string, phoneNumber string, code string) (bool, error) {
-	// This would typically verify against your own code storage
-	// For Tencent, you'd store the code after sending and verify here
-	return false, fmt.Errorf("TencentSMSService.VerifyCode not implemented - use InMemoryCodeStore")
+	return t.store.Verify(codeID, phoneNumber, code)
 }
 
 // TencentSMSResponse represents the Tencent Cloud SMS API response.
 type TencentSMSResponse struct {
 	Response struct {
-		RequestID string `json:"RequestId"`
+		RequestID     string `json:"RequestId"`
 		SendStatusSet []struct {
-			SerialNo     string `json:"SerialNo"`
-			PhoneNumber  string `json:"PhoneNumber"`
-			CountryCode  string `json:"CountryCode"`
-			InvokeID     string `json:"InvokeId"`
-			Fee          int    `json:"Fee"`
-			StatusCode   string `json:"StatusCode"`
-			Code         string `json:"Code"`         // 腾讯云实际字段名
+			SerialNo      string `json:"SerialNo"`
+			PhoneNumber   string `json:"PhoneNumber"`
+			CountryCode   string `json:"CountryCode"`
+			InvokeID      string `json:"InvokeId"`
+			Fee           int    `json:"Fee"`
+			StatusCode    string `json:"StatusCode"`
+			Code          string `json:"Code"` // 腾讯云实际字段名
 			StatusMessage string `json:"StatusMessage"`
-			Message      string `json:"Message"`     // 腾讯云实际字段名
+			Message       string `json:"Message"` // 腾讯云实际字段名
 		} `json:"SendStatusSet"`
 	} `json:"Response"`
 }

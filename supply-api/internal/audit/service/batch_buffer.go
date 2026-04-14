@@ -30,6 +30,7 @@ type BatchBuffer struct {
 	buffer  []*model.AuditEvent
 	mu      sync.Mutex
 	closed  bool
+	errMu   sync.RWMutex
 
 	flushTick *time.Ticker
 	stopCh    chan struct{}
@@ -37,6 +38,10 @@ type BatchBuffer struct {
 
 	// FlushHandler 处理批量刷新回调
 	FlushHandler func(events []*model.AuditEvent) error
+	// FlushErrorHandler 处理刷新失败回调
+	FlushErrorHandler func(err error, events []*model.AuditEvent)
+	lastFlushErr      error
+	flushErrorCount   int
 }
 
 // NewBatchBuffer 创建批量缓冲区
@@ -73,12 +78,12 @@ func (b *BatchBuffer) run() {
 		select {
 		case <-b.stopCh:
 			// 停止信号：处理剩余缓冲
-			b.flush()
+			_ = b.flush()
 			return
 		case event := <-b.eventCh:
 			b.addEvent(event)
 		case <-b.flushTick.C:
-			b.flush()
+			_ = b.flush()
 		}
 	}
 }
@@ -92,12 +97,12 @@ func (b *BatchBuffer) addEvent(event *model.AuditEvent) {
 
 	// 达到批量大小立即刷新
 	if len(b.buffer) >= b.config.BatchSize {
-		b.doFlushLocked()
+		_ = b.doFlushLocked()
 	}
 }
 
 // flush 刷新缓冲（带锁）- 也会处理eventCh中的待处理事件
-func (b *BatchBuffer) flush() {
+func (b *BatchBuffer) flush() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -111,13 +116,13 @@ func (b *BatchBuffer) flush() {
 		}
 	}
 done:
-	b.doFlushLocked()
+	return b.doFlushLocked()
 }
 
 // doFlushLocked 执行刷新（ caller 必须持锁）
-func (b *BatchBuffer) doFlushLocked() {
+func (b *BatchBuffer) doFlushLocked() error {
 	if len(b.buffer) == 0 {
-		return
+		return nil
 	}
 
 	// 复制缓冲数据
@@ -130,10 +135,11 @@ func (b *BatchBuffer) doFlushLocked() {
 	// 调用处理函数（如果已设置）
 	if b.FlushHandler != nil {
 		if err := b.FlushHandler(events); err != nil {
-			// TODO: 错误处理 - 记录日志、重试等
-			// 当前简化处理：仅记录
+			b.recordFlushError(err, events)
+			return err
 		}
 	}
+	return nil
 }
 
 // Add 添加审计事件
@@ -152,7 +158,7 @@ func (b *BatchBuffer) Add(event *model.AuditEvent) error {
 		// 通道满，添加到缓冲
 		b.buffer = append(b.buffer, event)
 		if len(b.buffer) >= b.config.BatchSize {
-			b.doFlushLocked()
+			_ = b.doFlushLocked()
 		}
 		return nil
 	}
@@ -160,8 +166,7 @@ func (b *BatchBuffer) Add(event *model.AuditEvent) error {
 
 // FlushNow 立即刷新
 func (b *BatchBuffer) FlushNow() error {
-	b.flush()
-	return nil
+	return b.flush()
 }
 
 // Close 关闭缓冲区
@@ -185,6 +190,37 @@ func (b *BatchBuffer) Close() error {
 // SetFlushHandler 设置刷新处理器
 func (b *BatchBuffer) SetFlushHandler(handler func(events []*model.AuditEvent) error) {
 	b.FlushHandler = handler
+}
+
+// SetFlushErrorHandler 设置刷新错误处理器。
+func (b *BatchBuffer) SetFlushErrorHandler(handler func(err error, events []*model.AuditEvent)) {
+	b.FlushErrorHandler = handler
+}
+
+// LastFlushError 返回最近一次刷新错误。
+func (b *BatchBuffer) LastFlushError() error {
+	b.errMu.RLock()
+	defer b.errMu.RUnlock()
+	return b.lastFlushErr
+}
+
+// FlushErrorCount 返回累计刷新错误次数。
+func (b *BatchBuffer) FlushErrorCount() int {
+	b.errMu.RLock()
+	defer b.errMu.RUnlock()
+	return b.flushErrorCount
+}
+
+func (b *BatchBuffer) recordFlushError(err error, events []*model.AuditEvent) {
+	b.errMu.Lock()
+	b.lastFlushErr = err
+	b.flushErrorCount++
+	handler := b.FlushErrorHandler
+	b.errMu.Unlock()
+
+	if handler != nil {
+		handler(err, events)
+	}
 }
 
 // 错误定义

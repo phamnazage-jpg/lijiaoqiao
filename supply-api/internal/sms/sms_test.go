@@ -269,6 +269,31 @@ func TestNewSMSServiceWithCodeStore_NilStore(t *testing.T) {
 	assert.NotNil(t, svc)
 }
 
+func TestTencentSMSService_VerifyCode_UsesCodeStore(t *testing.T) {
+	store := NewInMemoryCodeStore()
+	svc := NewTencentSMSServiceWithCodeStore(&Config{Enabled: true}, store)
+
+	codeID, err := store.Save("13800138000", "123456", time.Minute, "test")
+	assert.NoError(t, err)
+
+	valid, err := svc.VerifyCode(context.Background(), codeID, "13800138000", "123456")
+	assert.NoError(t, err)
+	assert.True(t, valid)
+}
+
+func TestAliyunSMSService_VerifyCode_UsesCodeStore(t *testing.T) {
+	store := NewInMemoryCodeStore()
+	svc, err := NewAliyunSMSServiceWithCodeStore(&Config{Enabled: true}, store)
+	assert.NoError(t, err)
+
+	codeID, err := store.Save("13800138000", "654321", time.Minute, "test")
+	assert.NoError(t, err)
+
+	valid, err := svc.VerifyCode(context.Background(), codeID, "13800138000", "654321")
+	assert.NoError(t, err)
+	assert.True(t, valid)
+}
+
 // TestSMSCodeVerifier_VerifyByID 测试VerifyByID方法
 func TestSMSCodeVerifier_VerifyByID(t *testing.T) {
 	verifier := NewSMSCodeVerifier()

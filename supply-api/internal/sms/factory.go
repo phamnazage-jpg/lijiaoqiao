@@ -16,9 +16,9 @@ func NewSMSService(config *Config) (SMSService, error) {
 
 	switch config.Provider {
 	case ProviderTencent:
-		return NewTencentSMSService(config), nil
+		return NewTencentSMSServiceWithCodeStore(config, NewInMemoryCodeStore()), nil
 	case ProviderAliyun:
-		svc, err := NewAliyunSMSService(config)
+		svc, err := NewAliyunSMSServiceWithCodeStore(config, NewInMemoryCodeStore())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Aliyun SMS service: %w", err)
 		}
@@ -34,6 +34,9 @@ func NewSMSServiceWithCodeStore(config *Config, store *InMemoryCodeStore) (SMSSe
 	if config == nil {
 		config = DefaultConfig()
 	}
+	if store == nil {
+		store = NewInMemoryCodeStore()
+	}
 
 	if !config.Enabled {
 		mockSvc := &MockSMSService{
@@ -45,9 +48,9 @@ func NewSMSServiceWithCodeStore(config *Config, store *InMemoryCodeStore) (SMSSe
 
 	switch config.Provider {
 	case ProviderTencent:
-		return NewTencentSMSService(config), store, nil
+		return NewTencentSMSServiceWithCodeStore(config, store), store, nil
 	case ProviderAliyun:
-		svc, err := NewAliyunSMSService(config)
+		svc, err := NewAliyunSMSServiceWithCodeStore(config, store)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create Aliyun SMS service: %w", err)
 		}

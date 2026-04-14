@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -245,5 +246,44 @@ func TestBatchBuffer_FlushNow(t *testing.T) {
 	defer mu.Unlock()
 	if len(receivedBatches) != 1 {
 		t.Errorf("expected 1 batch after FlushNow, got %d", len(receivedBatches))
+	}
+}
+
+func TestBatchBuffer_FlushHandlerFailureIsReported(t *testing.T) {
+	buffer := NewBatchBuffer(10, 100*time.Millisecond)
+	ctx := context.Background()
+
+	err := buffer.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer buffer.Close()
+
+	expectedErr := errors.New("flush failed")
+	var hookCalls int
+
+	buffer.SetFlushHandler(func(events []*model.AuditEvent) error {
+		return expectedErr
+	})
+	buffer.SetFlushErrorHandler(func(err error, events []*model.AuditEvent) {
+		hookCalls++
+	})
+
+	if err := buffer.Add(&model.AuditEvent{EventID: "evt-flush-fail", EventName: "TEST-FLUSH-FAIL"}); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	err = buffer.FlushNow()
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("expected FlushNow error %v, got %v", expectedErr, err)
+	}
+	if !errors.Is(buffer.LastFlushError(), expectedErr) {
+		t.Fatalf("expected last flush error %v, got %v", expectedErr, buffer.LastFlushError())
+	}
+	if buffer.FlushErrorCount() != 1 {
+		t.Fatalf("expected flush error count 1, got %d", buffer.FlushErrorCount())
+	}
+	if hookCalls != 1 {
+		t.Fatalf("expected flush error hook to be called once, got %d", hookCalls)
 	}
 }

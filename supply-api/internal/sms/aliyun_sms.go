@@ -23,12 +23,21 @@ type AliyunSMSService struct {
 	config     *Config
 	httpClient *http.Client
 	privateKey *rsa.PrivateKey
+	store      *InMemoryCodeStore
 }
 
 // NewAliyunSMSService creates a new Aliyun SMS service.
 func NewAliyunSMSService(config *Config) (*AliyunSMSService, error) {
+	return NewAliyunSMSServiceWithCodeStore(config, NewInMemoryCodeStore())
+}
+
+// NewAliyunSMSServiceWithCodeStore creates a new Aliyun SMS service with an explicit code store.
+func NewAliyunSMSServiceWithCodeStore(config *Config, store *InMemoryCodeStore) (*AliyunSMSService, error) {
 	if config == nil {
 		config = DefaultConfig()
+	}
+	if store == nil {
+		store = NewInMemoryCodeStore()
 	}
 
 	svc := &AliyunSMSService{
@@ -36,6 +45,7 @@ func NewAliyunSMSService(config *Config) (*AliyunSMSService, error) {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		store: store,
 	}
 
 	// Parse private key if provided
@@ -77,11 +87,14 @@ func (a *AliyunSMSService) SendVerificationCode(ctx context.Context, phoneNumber
 		return "", err
 	}
 
-	codeID := fmt.Sprintf("aliyun-%d", time.Now().UnixNano())
-
 	err = a.sendSMS(ctx, phoneNumber, code)
 	if err != nil {
 		return "", fmt.Errorf("failed to send SMS via Aliyun: %w", err)
+	}
+
+	codeID, err := a.store.Save(phoneNumber, code, time.Duration(a.config.CodeExpireMins)*time.Minute, "aliyun")
+	if err != nil {
+		return "", err
 	}
 
 	fmt.Printf("[AliyunSMS] Code '%s' sent to %s\n", code, phoneNumber)
@@ -179,7 +192,7 @@ func (a *AliyunSMSService) calculateSignature(params url.Values) string {
 
 // VerifyCode is a no-op for Aliyun - verification is handled by the code store
 func (a *AliyunSMSService) VerifyCode(ctx context.Context, codeID string, phoneNumber string, code string) (bool, error) {
-	return false, fmt.Errorf("AliyunSMSService.VerifyCode not implemented - use InMemoryCodeStore")
+	return a.store.Verify(codeID, phoneNumber, code)
 }
 
 // AliyunSMSResponse represents the Aliyun SMS API response.

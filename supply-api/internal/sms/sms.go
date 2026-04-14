@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 )
 
@@ -59,6 +60,7 @@ type SMSService interface {
 
 // InMemoryCodeStore stores verification codes in memory (for development/testing).
 type InMemoryCodeStore struct {
+	mu    sync.Mutex
 	codes map[string]*codeEntry
 }
 
@@ -115,6 +117,56 @@ func (m *MockSMSService) IsEnabled() bool {
 
 // ErrSMSServiceDisabled indicates SMS service is disabled
 var ErrSMSServiceDisabled = errors.New("SMS service is disabled")
+var ErrCodeStoreNotConfigured = errors.New("SMS code store is not configured")
+
+// Save stores a verification code and returns the generated code ID.
+func (s *InMemoryCodeStore) Save(phoneNumber, code string, ttl time.Duration, prefix string) (string, error) {
+	if s == nil {
+		return "", ErrCodeStoreNotConfigured
+	}
+	if ttl <= 0 {
+		ttl = 5 * time.Minute
+	}
+	if prefix == "" {
+		prefix = "code"
+	}
+
+	codeID := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.codes[codeID] = &codeEntry{
+		Code:      code,
+		Phone:     phoneNumber,
+		ExpiresAt: time.Now().Add(ttl),
+	}
+	return codeID, nil
+}
+
+// Verify checks a code by ID and enforces one-time usage.
+func (s *InMemoryCodeStore) Verify(codeID, phoneNumber, code string) (bool, error) {
+	if s == nil {
+		return false, ErrCodeStoreNotConfigured
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	entry, ok := s.codes[codeID]
+	if !ok {
+		return false, nil
+	}
+	if time.Now().After(entry.ExpiresAt) {
+		delete(s.codes, codeID)
+		return false, nil
+	}
+	if entry.Phone != phoneNumber || entry.Code != code {
+		return false, nil
+	}
+
+	delete(s.codes, codeID)
+	return true, nil
+}
 
 // SendVerificationCode generates and "sends" a verification code.
 func (m *MockSMSService) SendVerificationCode(ctx context.Context, phoneNumber string) (string, error) {
@@ -128,13 +180,9 @@ func (m *MockSMSService) SendVerificationCode(ctx context.Context, phoneNumber s
 		return "", err
 	}
 
-	codeID := fmt.Sprintf("mock-%d", time.Now().UnixNano())
-	expiresAt := time.Now().Add(time.Duration(m.config.CodeExpireMins) * time.Minute)
-
-	m.store.codes[codeID] = &codeEntry{
-		Code:      code,
-		Phone:     phoneNumber,
-		ExpiresAt: expiresAt,
+	codeID, err := m.store.Save(phoneNumber, code, time.Duration(m.config.CodeExpireMins)*time.Minute, "mock")
+	if err != nil {
+		return "", err
 	}
 
 	// In a real implementation, this would send the SMS via HTTP API
@@ -149,23 +197,5 @@ func (m *MockSMSService) VerifyCode(ctx context.Context, codeID string, phoneNum
 		return false, ErrSMSServiceDisabled
 	}
 
-	entry, ok := m.store.codes[codeID]
-	if !ok {
-		return false, nil
-	}
-
-	if time.Now().After(entry.ExpiresAt) {
-		delete(m.store.codes, codeID)
-		return false, nil
-	}
-
-	if entry.Phone != phoneNumber {
-		return false, nil
-	}
-
-	valid := entry.Code == code
-	if valid {
-		delete(m.store.codes, codeID) // Code can only be used once
-	}
-	return valid, nil
+	return m.store.Verify(codeID, phoneNumber, code)
 }
