@@ -40,54 +40,77 @@ type middlewareChainOptions struct {
 	RateLimitConfig *middleware.RateLimitConfig
 }
 
+type resolvedBuildServerOptions struct {
+	Env              string
+	ServerConfig     config.ServerConfig
+	Logger           logging.Logger
+	SupplyAPI        *httpapi.SupplyAPI
+	AlertAPI         *httpapi.AlertAPI
+	AuthMiddleware   *middleware.AuthMiddleware
+	RateLimitConfig  *middleware.RateLimitConfig
+	DBHealthCheck    func(context.Context) error
+	RedisHealthCheck func(context.Context) error
+}
+
 // BuildServer 构建可复用的 HTTP server 与 handler 装配。
 func BuildServer(opts BuildServerOptions) (*http.Server, error) {
+	resolved, err := resolveBuildServerOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	mux := buildRouteMux(buildRouteMuxOptions{
+		SupplyAPI:        resolved.SupplyAPI,
+		AlertAPI:         resolved.AlertAPI,
+		DBHealthCheck:    resolved.DBHealthCheck,
+		RedisHealthCheck: resolved.RedisHealthCheck,
+	})
+	handler := buildMiddlewareChain(middlewareChainOptions{
+		Env:             resolved.Env,
+		Logger:          resolved.Logger,
+		AuthMiddleware:  resolved.AuthMiddleware,
+		RateLimitConfig: resolved.RateLimitConfig,
+	}, mux)
+
+	return &http.Server{
+		Addr:              resolved.ServerConfig.Addr,
+		Handler:           handler,
+		ReadHeaderTimeout: resolved.ServerConfig.ReadTimeout,
+		ReadTimeout:       resolved.ServerConfig.ReadTimeout,
+		WriteTimeout:      resolved.ServerConfig.WriteTimeout,
+		IdleTimeout:       resolved.ServerConfig.IdleTimeout,
+	}, nil
+}
+
+func resolveBuildServerOptions(opts BuildServerOptions) (resolvedBuildServerOptions, error) {
 	if opts.SupplyAPI == nil {
-		return nil, errors.New("supply api is required")
+		return resolvedBuildServerOptions{}, errors.New("supply api is required")
 	}
 	if opts.AlertAPI == nil {
-		return nil, errors.New("alert api is required")
+		return resolvedBuildServerOptions{}, errors.New("alert api is required")
 	}
 	if opts.Logger == nil {
-		return nil, errors.New("logger is required")
+		return resolvedBuildServerOptions{}, errors.New("logger is required")
 	}
 
 	env, err := ResolveEnv(opts.Env)
 	if err != nil {
-		return nil, err
+		return resolvedBuildServerOptions{}, err
 	}
 	if env != "dev" && opts.AuthMiddleware == nil {
-		return nil, errors.New("auth middleware is required outside dev")
+		return resolvedBuildServerOptions{}, errors.New("auth middleware is required outside dev")
 	}
 
-	rateLimitConfig := opts.RateLimitConfig
-	if rateLimitConfig == nil {
-		rateLimitConfig = middleware.DefaultRateLimitConfig()
-		rateLimitConfig.Enabled = env != "dev"
-	}
-
-	mux := buildRouteMux(buildRouteMuxOptions{
+	return resolvedBuildServerOptions{
+		Env:              env,
+		ServerConfig:     normalizeServerConfig(opts.ServerConfig),
+		Logger:           opts.Logger,
 		SupplyAPI:        opts.SupplyAPI,
 		AlertAPI:         opts.AlertAPI,
+		AuthMiddleware:   opts.AuthMiddleware,
+		RateLimitConfig:  resolveRateLimitConfig(env, opts.RateLimitConfig),
 		DBHealthCheck:    opts.DBHealthCheck,
 		RedisHealthCheck: opts.RedisHealthCheck,
-	})
-	handler := buildMiddlewareChain(middlewareChainOptions{
-		Env:             env,
-		Logger:          opts.Logger,
-		AuthMiddleware:  opts.AuthMiddleware,
-		RateLimitConfig: rateLimitConfig,
-	}, mux)
-
-	serverConfig := normalizeServerConfig(opts.ServerConfig)
-
-	return &http.Server{
-		Addr:              serverConfig.Addr,
-		Handler:           handler,
-		ReadHeaderTimeout: serverConfig.ReadTimeout,
-		ReadTimeout:       serverConfig.ReadTimeout,
-		WriteTimeout:      serverConfig.WriteTimeout,
-		IdleTimeout:       serverConfig.IdleTimeout,
 	}, nil
 }
 
@@ -108,6 +131,16 @@ func normalizeServerConfig(serverConfig config.ServerConfig) config.ServerConfig
 		serverConfig.ShutdownTimeout = 5 * time.Second
 	}
 	return serverConfig
+}
+
+func resolveRateLimitConfig(env string, rateLimitConfig *middleware.RateLimitConfig) *middleware.RateLimitConfig {
+	if rateLimitConfig != nil {
+		return rateLimitConfig
+	}
+
+	rateLimitConfig = middleware.DefaultRateLimitConfig()
+	rateLimitConfig.Enabled = env != "dev"
+	return rateLimitConfig
 }
 
 func buildRouteMux(opts buildRouteMuxOptions) *http.ServeMux {

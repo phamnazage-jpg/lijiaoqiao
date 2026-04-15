@@ -144,6 +144,43 @@ func TestBuildServer_DefaultsTimeoutsWhenUnset(t *testing.T) {
 	}
 }
 
+func TestResolveBuildServerOptions_RequiresAuthOutsideDev(t *testing.T) {
+	supplyAPI, alertAPI := mustBuildTestAPIs(t)
+
+	_, err := resolveBuildServerOptions(BuildServerOptions{
+		Env:       "prod",
+		Logger:    testLogger{},
+		SupplyAPI: supplyAPI,
+		AlertAPI:  alertAPI,
+	})
+	if err == nil {
+		t.Fatal("expected auth middleware requirement outside dev")
+	}
+	if !strings.Contains(err.Error(), "auth middleware") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveRateLimitConfig_DefaultsDisabledInDev(t *testing.T) {
+	cfg := resolveRateLimitConfig("dev", nil)
+	if cfg == nil {
+		t.Fatal("expected rate limit config")
+	}
+	if cfg.Enabled {
+		t.Fatal("expected dev default rate limit to be disabled")
+	}
+}
+
+func TestResolveRateLimitConfig_DefaultsEnabledOutsideDev(t *testing.T) {
+	cfg := resolveRateLimitConfig("prod", nil)
+	if cfg == nil {
+		t.Fatal("expected rate limit config")
+	}
+	if !cfg.Enabled {
+		t.Fatal("expected non-dev default rate limit to be enabled")
+	}
+}
+
 func TestBuildRouteMux_RegistersHealthAndSupplyRoutes(t *testing.T) {
 	supplyAPI, alertAPI := mustBuildTestAPIs(t)
 
