@@ -127,7 +127,7 @@ func (p *CompensationProcessor) ProcessBatchCompensations(ctx context.Context, b
 	}
 
 	for _, comp := range compensations {
-		if comp.Status != CompensationStatusPending {
+		if comp.Status != CompensationStatusPending && comp.Status != CompensationStatusRetrying {
 			continue
 		}
 

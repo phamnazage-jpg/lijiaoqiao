@@ -274,6 +274,44 @@ func TestCompensationProcessor_ProcessBatchCompensations_Retry(t *testing.T) {
 	}
 }
 
+// TestCompensationProcessor_ProcessBatchCompensations_RetryingStatus 测试 retrying 状态会继续处理
+func TestCompensationProcessor_ProcessBatchCompensations_RetryingStatus(t *testing.T) {
+	store := newMockCompensationStore()
+	executor := &mockOperationExecutor{shouldFail: false}
+	stats := &mockCompensationStats{}
+
+	processor := NewCompensationProcessor(store, executor, stats)
+
+	payload, _ := json.Marshal(map[string]string{"key": "value"})
+	store.compensations[1] = &BatchCompensation{
+		ID:            1,
+		BatchID:       "batch_retrying",
+		OperationType: "account.create",
+		ItemPayload:   payload,
+		Status:        CompensationStatusRetrying,
+		MaxRetries:    3,
+		RetryCount:    1,
+	}
+
+	result, err := processor.ProcessBatchCompensations(context.Background(), "batch_retrying")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.SuccessCount != 1 {
+		t.Errorf("expected 1 success, got %d", result.SuccessCount)
+	}
+	if executor.executionCount != 1 {
+		t.Errorf("expected 1 execution, got %d", executor.executionCount)
+	}
+	if stats.resolvedCount != 1 {
+		t.Errorf("expected 1 resolved stat, got %d", stats.resolvedCount)
+	}
+}
+
 // TestCompensationProcessor_ProcessBatchCompensations_MaxRetriesExceeded 测试超过最大重试
 func TestCompensationProcessor_ProcessBatchCompensations_MaxRetriesExceeded(t *testing.T) {
 	store := newMockCompensationStore()
