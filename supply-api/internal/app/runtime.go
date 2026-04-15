@@ -87,6 +87,11 @@ type runtimeAPIBundle struct {
 	rateLimitConfig *middleware.RateLimitConfig
 }
 
+type runtimeHealthChecks struct {
+	DBHealthCheck    func(context.Context) error
+	RedisHealthCheck func(context.Context) error
+}
+
 // BuildRuntime 构建 supply-api 运行时依赖。
 func BuildRuntime(opts RuntimeOptions) (*Runtime, error) {
 	return buildRuntimeWithFactory(opts, runtimeFactory{
@@ -333,30 +338,44 @@ func defaultRuntimeTuning() runtimeTuning {
 
 // BuildServer 使用运行时依赖构建 HTTP server。
 func (r *Runtime) BuildServer() (*http.Server, error) {
-	if r == nil {
-		return nil, errors.New("runtime is required")
+	opts, err := adaptRuntimeToBuildServerOptions(r)
+	if err != nil {
+		return nil, err
+	}
+	return BuildServer(opts)
+}
+
+func resolveRuntimeHealthChecks(runtime *Runtime) runtimeHealthChecks {
+	var checks runtimeHealthChecks
+	if runtime == nil {
+		return checks
+	}
+	if runtime.db != nil {
+		checks.DBHealthCheck = runtime.db.HealthCheck
+	}
+	if runtime.redisCache != nil {
+		checks.RedisHealthCheck = runtime.redisCache.HealthCheck
+	}
+	return checks
+}
+
+func adaptRuntimeToBuildServerOptions(runtime *Runtime) (BuildServerOptions, error) {
+	if runtime == nil {
+		return BuildServerOptions{}, errors.New("runtime is required")
 	}
 
-	var dbHealthCheck func(context.Context) error
-	var redisHealthCheck func(context.Context) error
-	if r.db != nil {
-		dbHealthCheck = r.db.HealthCheck
-	}
-	if r.redisCache != nil {
-		redisHealthCheck = r.redisCache.HealthCheck
-	}
-
-	return BuildServer(BuildServerOptions{
-		Env:              r.env,
-		ServerConfig:     r.serverConfig,
-		Logger:           r.logger,
-		SupplyAPI:        r.supplyAPI,
-		AlertAPI:         r.alertAPI,
-		AuthMiddleware:   r.authMiddleware,
-		RateLimitConfig:  r.rateLimitConfig,
-		DBHealthCheck:    dbHealthCheck,
-		RedisHealthCheck: redisHealthCheck,
-	})
+	healthChecks := resolveRuntimeHealthChecks(runtime)
+	return BuildServerOptions{
+		Env:              runtime.env,
+		ServerConfig:     runtime.serverConfig,
+		Logger:           runtime.logger,
+		SupplyAPI:        runtime.supplyAPI,
+		AlertAPI:         runtime.alertAPI,
+		AuthMiddleware:   runtime.authMiddleware,
+		RateLimitConfig:  runtime.rateLimitConfig,
+		DBHealthCheck:    healthChecks.DBHealthCheck,
+		RedisHealthCheck: healthChecks.RedisHealthCheck,
+	}, nil
 }
 
 // Close 关闭运行时持有的外部资源。

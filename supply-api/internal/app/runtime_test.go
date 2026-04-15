@@ -13,6 +13,7 @@ import (
 	"lijiaoqiao/supply-api/internal/config"
 	"lijiaoqiao/supply-api/internal/domain"
 	"lijiaoqiao/supply-api/internal/messaging"
+	"lijiaoqiao/supply-api/internal/middleware"
 	"lijiaoqiao/supply-api/internal/repository"
 )
 
@@ -351,6 +352,84 @@ func TestBuildRuntime_DevFallbackLogsWarnings(t *testing.T) {
 	}
 	if len(logger.infoMessages) == 0 {
 		t.Fatal("expected info logs during successful in-memory runtime initialization")
+	}
+}
+
+func TestResolveRuntimeHealthChecks_OmitsUnavailableDependencies(t *testing.T) {
+	checks := resolveRuntimeHealthChecks(&Runtime{})
+	if checks.DBHealthCheck != nil {
+		t.Fatal("expected nil db health check without database")
+	}
+	if checks.RedisHealthCheck != nil {
+		t.Fatal("expected nil redis health check without redis")
+	}
+}
+
+func TestResolveRuntimeHealthChecks_ExposesAvailableDependencies(t *testing.T) {
+	checks := resolveRuntimeHealthChecks(&Runtime{
+		db:         &repository.DB{},
+		redisCache: &cache.RedisCache{},
+	})
+	if checks.DBHealthCheck == nil {
+		t.Fatal("expected db health check")
+	}
+	if checks.RedisHealthCheck == nil {
+		t.Fatal("expected redis health check")
+	}
+}
+
+func TestAdaptRuntimeToBuildServerOptions_RequiresRuntime(t *testing.T) {
+	_, err := adaptRuntimeToBuildServerOptions(nil)
+	if err == nil {
+		t.Fatal("expected nil runtime to fail")
+	}
+	if !strings.Contains(err.Error(), "runtime is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAdaptRuntimeToBuildServerOptions_MapsRuntimeFields(t *testing.T) {
+	supplyAPI, alertAPI := mustBuildTestAPIs(t)
+	authMiddleware := &middleware.AuthMiddleware{}
+	rateLimitConfig := &middleware.RateLimitConfig{Enabled: true}
+
+	opts, err := adaptRuntimeToBuildServerOptions(&Runtime{
+		env:             "staging",
+		logger:          testLogger{},
+		serverConfig:    config.ServerConfig{Addr: ":19090"},
+		supplyAPI:       supplyAPI,
+		alertAPI:        alertAPI,
+		authMiddleware:  authMiddleware,
+		rateLimitConfig: rateLimitConfig,
+		db:              &repository.DB{},
+		redisCache:      &cache.RedisCache{},
+	})
+	if err != nil {
+		t.Fatalf("expected adapter to succeed, got %v", err)
+	}
+	if opts.Env != "staging" {
+		t.Fatalf("unexpected env: %s", opts.Env)
+	}
+	if opts.ServerConfig.Addr != ":19090" {
+		t.Fatalf("unexpected server addr: %s", opts.ServerConfig.Addr)
+	}
+	if opts.SupplyAPI != supplyAPI {
+		t.Fatal("expected supply api to be preserved")
+	}
+	if opts.AlertAPI != alertAPI {
+		t.Fatal("expected alert api to be preserved")
+	}
+	if opts.AuthMiddleware != authMiddleware {
+		t.Fatal("expected auth middleware to be preserved")
+	}
+	if opts.RateLimitConfig != rateLimitConfig {
+		t.Fatal("expected rate limit config to be preserved")
+	}
+	if opts.DBHealthCheck == nil {
+		t.Fatal("expected db health check")
+	}
+	if opts.RedisHealthCheck == nil {
+		t.Fatal("expected redis health check")
 	}
 }
 
