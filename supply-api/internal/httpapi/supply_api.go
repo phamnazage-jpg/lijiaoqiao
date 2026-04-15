@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,7 +43,26 @@ func NewSupplyAPI(
 	supplierID int64,
 	statementBaseURL string,
 	now func() time.Time,
-) *SupplyAPI {
+) (*SupplyAPI, error) {
+	if accountService == nil {
+		return nil, errors.New("account service is required")
+	}
+	if packageService == nil {
+		return nil, errors.New("package service is required")
+	}
+	if settlementService == nil {
+		return nil, errors.New("settlement service is required")
+	}
+	if earningService == nil {
+		return nil, errors.New("earning service is required")
+	}
+	if auditStore == nil {
+		return nil, errors.New("audit store is required")
+	}
+	if now == nil {
+		now = time.Now
+	}
+
 	return &SupplyAPI{
 		accountService:    accountService,
 		packageService:    packageService,
@@ -55,7 +75,7 @@ func NewSupplyAPI(
 		withdrawEnabled:   true,
 		statementBaseURL:  statementBaseURL,
 		now:               now,
-	}
+	}, nil
 }
 
 func (a *SupplyAPI) SetWithdrawEnabled(enabled bool) {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"lijiaoqiao/supply-api/internal/adapter"
+	"lijiaoqiao/supply-api/internal/app"
 	"lijiaoqiao/supply-api/internal/audit"
 	auditrepo "lijiaoqiao/supply-api/internal/audit/repository"
 	auditservice "lijiaoqiao/supply-api/internal/audit/service"
@@ -223,7 +224,7 @@ func main() {
 
 	// 初始化HTTP API处理器
 	// P0-P4修复: 使用DB-backed幂等中间件替代内联幂等存储
-	api := httpapi.NewSupplyAPI(
+	api, err := httpapi.NewSupplyAPI(
 		accountService,
 		packageService,
 		settlementService,
@@ -235,12 +236,11 @@ func main() {
 		cfg.Server.StatementBaseURL,
 		time.Now,
 	)
+	if err != nil {
+		jsonLogger.Fatalf("failed to initialize supply api: %v", err)
+	}
 	api.SetWithdrawEnabled(cfg.Settlement.WithdrawEnabled)
 
-	// 创建路由器
-	mux := http.NewServeMux()
-
-	// P1-007修复: 统一健康检查实现，使用HealthHandler代替重复的inline handlers
 	var dbHealthCheck func(ctx context.Context) error
 	var redisHealthCheck func(ctx context.Context) error
 	if db != nil {
@@ -249,56 +249,27 @@ func main() {
 	if redisCache != nil {
 		redisHealthCheck = redisCache.HealthCheck
 	}
-	healthHandler := httpapi.NewHealthHandlerWithDefaults(dbHealthCheck, redisHealthCheck)
-	mux.HandleFunc("/actuator/health", healthHandler.ServeHealth)
-	mux.HandleFunc("/actuator/health/live", healthHandler.ServeLiveness)
-	mux.HandleFunc("/actuator/health/ready", healthHandler.ServeReadiness)
-
-	// 注册API路由
-	api.Register(mux)
 
 	// 注册告警API路由
 	alertAPI, err := httpapi.NewAlertAPI(alertService)
 	if err != nil {
 		jsonLogger.Fatalf("failed to initialize alert api: %v", err)
 	}
-	alertAPI.Register(mux)
-
-	// 应用中间件链路
-	// 1. RequestID - 请求追踪
-	// 2. Recovery - Panic恢复
-	// 3. Logging - 请求日志
-	// 4. Tracing - W3C Trace Context (P1-006)
-	// 5. QueryKeyReject - 拒绝外部query key (M-016)
-	// 6. BearerExtract - Bearer Token提取
-	// 7. TokenVerify - JWT校验
-	// 8. RateLimit - 限流 (P0-05)
-	// 注：幂等写路径由 SupplyAPI 内部统一经 IdempotencyMiddleware 包装，不额外挂到全局 mux。
-
-	var handler http.Handler = mux
-	handler = middleware.RequestID(handler)
-	handler = middleware.Recovery(handler)
-	handler = middleware.Logging(handler, jsonLogger) // P1-010: 使用结构化JSON日志
-	handler = middleware.TracingMiddleware(handler)   // P1-006: W3C Trace Context中间件
-
-	// 生产环境启用安全中间件
-	if *env != "dev" {
-		// 包装顺序与请求执行顺序相反，这里从内到外构建，保证实际执行顺序为：
-		// QueryKeyReject -> BearerExtract -> TokenVerify -> RateLimit
-		handler = middleware.NewRateLimitHandler(rateLimitConfig, handler)
-		handler = authMiddleware.TokenVerifyMiddleware(handler)
-		handler = authMiddleware.BearerExtractMiddleware(handler)
-		handler = authMiddleware.QueryKeyRejectMiddleware(handler)
-	}
 
 	// 创建HTTP服务器
-	srv := &http.Server{
-		Addr:              cfg.Server.Addr,
-		Handler:           handler,
-		ReadHeaderTimeout: cfg.Server.ReadTimeout,
-		ReadTimeout:       cfg.Server.ReadTimeout,
-		WriteTimeout:      cfg.Server.WriteTimeout,
-		IdleTimeout:       cfg.Server.IdleTimeout,
+	srv, err := app.BuildServer(app.BuildServerOptions{
+		Env:              *env,
+		ServerConfig:     cfg.Server,
+		Logger:           jsonLogger,
+		SupplyAPI:        api,
+		AlertAPI:         alertAPI,
+		AuthMiddleware:   authMiddleware,
+		RateLimitConfig:  rateLimitConfig,
+		DBHealthCheck:    dbHealthCheck,
+		RedisHealthCheck: redisHealthCheck,
+	})
+	if err != nil {
+		jsonLogger.Fatalf("failed to build http server: %v", err)
 	}
 
 	serverErrCh := make(chan error, 1)

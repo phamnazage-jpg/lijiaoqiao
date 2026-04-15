@@ -15,7 +15,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"lijiaoqiao/supply-api/internal/adapter"
+	"lijiaoqiao/supply-api/internal/app"
 	"lijiaoqiao/supply-api/internal/audit"
+	auditservice "lijiaoqiao/supply-api/internal/audit/service"
 	"lijiaoqiao/supply-api/internal/domain"
 	"lijiaoqiao/supply-api/internal/httpapi"
 	"lijiaoqiao/supply-api/internal/middleware"
@@ -176,7 +178,7 @@ func newE2ESystem(t *testing.T, opts e2eOptions) *e2eSystem {
 		Enabled: false,
 	})
 
-	api := httpapi.NewSupplyAPI(
+	api, err := httpapi.NewSupplyAPI(
 		accountSvc,
 		&e2ePackageService{},
 		&e2eSettlementService{},
@@ -188,14 +190,10 @@ func newE2ESystem(t *testing.T, opts e2eOptions) *e2eSystem {
 		"https://statements.example.com",
 		func() time.Time { return time.Unix(1712800000, 0).UTC() },
 	)
+	if err != nil {
+		t.Fatalf("expected api constructor to succeed, got %v", err)
+	}
 	api.SetWithdrawEnabled(opts.withdrawEnabled)
-
-	mux := http.NewServeMux()
-	healthHandler := httpapi.NewHealthHandlerWithDefaults(nil, nil)
-	mux.HandleFunc("/actuator/health", healthHandler.ServeHealth)
-	mux.HandleFunc("/actuator/health/live", healthHandler.ServeLiveness)
-	mux.HandleFunc("/actuator/health/ready", healthHandler.ServeReadiness)
-	api.Register(mux)
 
 	authMiddleware := middleware.NewAuthMiddleware(
 		middleware.AuthConfig{
@@ -209,19 +207,29 @@ func newE2ESystem(t *testing.T, opts e2eOptions) *e2eSystem {
 		adapter.NewAuditEmitterAdapter(auditStore),
 	)
 
-	logger := logging.NewLogger("supply-api-e2e", logging.LogLevelError)
+	alertAPI, err := httpapi.NewAlertAPI(auditservice.NewAlertService(auditservice.NewInMemoryAlertStore()))
+	if err != nil {
+		t.Fatalf("expected alert api constructor to succeed, got %v", err)
+	}
 
-	var handler http.Handler = mux
-	handler = middleware.RequestID(handler)
-	handler = middleware.Recovery(handler)
-	handler = middleware.Logging(handler, logger)
-	handler = middleware.TracingMiddleware(handler)
-	handler = authMiddleware.TokenVerifyMiddleware(handler)
-	handler = authMiddleware.BearerExtractMiddleware(handler)
-	handler = authMiddleware.QueryKeyRejectMiddleware(handler)
+	logger := logging.NewLogger("supply-api-e2e", logging.LogLevelError)
+	rateLimitConfig := middleware.DefaultRateLimitConfig()
+	rateLimitConfig.Enabled = false
+
+	srv, err := app.BuildServer(app.BuildServerOptions{
+		Env:             "staging",
+		Logger:          logger,
+		SupplyAPI:       api,
+		AlertAPI:        alertAPI,
+		AuthMiddleware:  authMiddleware,
+		RateLimitConfig: rateLimitConfig,
+	})
+	if err != nil {
+		t.Fatalf("expected bootstrap to succeed, got %v", err)
+	}
 
 	return &e2eSystem{
-		handler:     handler,
+		handler:     srv.Handler,
 		accountSvc:  accountSvc,
 		auditStore:  auditStore,
 		secretKey:   "e2e-secret-key-should-be-long",

@@ -307,7 +307,7 @@ func newTestAPIWithIdempotency(idempotencyMw *middleware.IdempotencyMiddleware) 
 		},
 	}
 
-	api := NewSupplyAPI(
+	api, err := NewSupplyAPI(
 		accountSvc,
 		packageSvc,
 		settlementSvc,
@@ -319,8 +319,53 @@ func newTestAPIWithIdempotency(idempotencyMw *middleware.IdempotencyMiddleware) 
 		"https://statements.example.com",
 		time.Now,
 	)
+	if err != nil {
+		panic("expected api constructor to succeed: " + err.Error())
+	}
 
 	return api, accountSvc, packageSvc, settlementSvc, earningSvc, auditSvc
+}
+
+func TestNewSupplyAPI_ReturnsErrorWhenAccountServiceMissing(t *testing.T) {
+	api, err := NewSupplyAPI(
+		nil,
+		&mockPackageService{},
+		&mockSettlementService{},
+		&mockEarningService{},
+		nil,
+		&mockAuditStore{},
+		nil,
+		100,
+		"https://statements.example.com",
+		time.Now,
+	)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if api != nil {
+		t.Fatal("expected nil api")
+	}
+}
+
+func TestNewSupplyAPI_DefaultsClockWhenNil(t *testing.T) {
+	api, err := NewSupplyAPI(
+		&mockAccountService{},
+		&mockPackageService{},
+		&mockSettlementService{},
+		&mockEarningService{},
+		nil,
+		&mockAuditStore{},
+		nil,
+		100,
+		"https://statements.example.com",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if api.now == nil {
+		t.Fatal("expected default clock")
+	}
 }
 
 // ==================== Account Handler Tests ====================
