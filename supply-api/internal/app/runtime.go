@@ -30,11 +30,21 @@ type RuntimeOptions struct {
 	Now         func() time.Time
 }
 
+type runtimeTuning struct {
+	outboxStreamName             string
+	outboxConsumerGroup          string
+	idempotencyTTL               time.Duration
+	partitionMaintenanceInterval time.Duration
+	compensationCheckInterval    time.Duration
+	partitionedTables            []string
+}
+
 // Runtime 聚合 HTTP 启动和后台任务启动所需的运行时依赖。
 type Runtime struct {
 	env                  string
 	logger               logging.Logger
 	now                  func() time.Time
+	tuning               runtimeTuning
 	serverConfig         config.ServerConfig
 	db                   *repository.DB
 	redisCache           *cache.RedisCache
@@ -88,13 +98,14 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 	}
 
 	isProd := env == "prod"
+	tuning := defaultRuntimeTuning()
 
 	db, err := factory.newDB(initCtx, opts.Config.Database)
 	if err != nil {
 		if isProd {
 			return nil, fmt.Errorf("database unavailable: %w", err)
 		}
-		infof(opts.Logger, "warning: failed to connect to database: %v (using in-memory store)", err)
+		warnf(opts.Logger, "failed to connect to database: %v (using in-memory store)", err)
 		db = nil
 	} else if db != nil {
 		infof(opts.Logger, "connected to database at %s:%d", opts.Config.Database.Host, opts.Config.Database.Port)
@@ -103,9 +114,9 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 	redisCache, err := factory.newRedisCache(opts.Config.Redis)
 	if err != nil {
 		if isProd {
-			infof(opts.Logger, "warning: redis unavailable at startup: %v", err)
+			warnf(opts.Logger, "redis unavailable at startup: %v", err)
 		} else {
-			infof(opts.Logger, "warning: failed to connect to redis: %v (caching disabled)", err)
+			warnf(opts.Logger, "failed to connect to redis: %v (caching disabled)", err)
 		}
 		redisCache = nil
 	} else if redisCache != nil {
@@ -146,7 +157,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		opts.Logger.Info("审计存储: 使用PostgreSQL (DB-backed)", nil)
 	} else {
 		auditStore = audit.NewMemoryAuditStore()
-		opts.Logger.Info("警告: 审计存储使用内存实现 (生产环境不应使用)", nil)
+		opts.Logger.Warn("审计存储使用内存实现 (生产环境不应使用)", nil)
 	}
 
 	var alertStore auditservice.AlertStoreInterface
@@ -155,7 +166,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		opts.Logger.Info("告警存储: 使用PostgreSQL (DB-backed)", nil)
 	} else {
 		alertStore = auditservice.NewInMemoryAlertStore()
-		opts.Logger.Info("警告: 告警存储使用内存实现 (仅开发环境允许)", nil)
+		opts.Logger.Warn("告警存储使用内存实现 (仅开发环境允许)", nil)
 	}
 	alertService := auditservice.NewAlertService(alertStore)
 
@@ -164,7 +175,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		fkValidator = repository.NewForeignKeyValidator(db.Pool)
 		opts.Logger.Info("外键校验器: 已初始化 (PostgreSQL-backed)", nil)
 	} else {
-		opts.Logger.Info("警告: 外键校验器未启用 (db不可用)", nil)
+		opts.Logger.Warn("外键校验器未启用 (db不可用)", nil)
 	}
 
 	_ = domain.NewInvariantChecker(accountStore, packageStore, settlementStore)
@@ -184,7 +195,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		opts.Logger.Info("Token状态后端: 使用PostgreSQL (DB-backed)", nil)
 	} else {
 		tokenBackend = adapter.NewMemoryTokenBackend()
-		opts.Logger.Info("警告: Token状态后端使用内存实现 (生产环境不应使用)", nil)
+		opts.Logger.Warn("Token状态后端使用内存实现 (生产环境不应使用)", nil)
 	}
 
 	auditEmitter := adapter.NewAuditEmitterAdapter(auditStore)
@@ -200,7 +211,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 	var idempotencyMiddleware *middleware.IdempotencyMiddleware
 	if db != nil && idempotencyRepo != nil {
 		idempotencyMiddleware = middleware.NewIdempotencyMiddleware(idempotencyRepo, middleware.IdempotencyConfig{
-			TTL:     24 * time.Hour,
+			TTL:     tuning.idempotencyTTL,
 			Enabled: env != "dev",
 		})
 		opts.Logger.Info("幂等中间件已启用（DB-backed）", nil)
@@ -208,7 +219,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		if isProd {
 			return nil, errors.New("idempotency repository unavailable")
 		}
-		opts.Logger.Info("警告：幂等中间件未启用（db或repo不可用）- 需要幂等的写接口将返回 503", nil)
+		opts.Logger.Warn("幂等中间件未启用（db或repo不可用）- 需要幂等的写接口将返回 503", nil)
 	}
 
 	rateLimitConfig := middleware.DefaultRateLimitConfig()
@@ -241,6 +252,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		env:                  env,
 		logger:               opts.Logger,
 		now:                  now,
+		tuning:               tuning,
 		serverConfig:         opts.Config.Server,
 		db:                   db,
 		redisCache:           redisCache,
@@ -250,6 +262,21 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		rateLimitConfig:      rateLimitConfig,
 		revocationSubscriber: revocationSubscriber,
 	}, nil
+}
+
+func defaultRuntimeTuning() runtimeTuning {
+	return runtimeTuning{
+		outboxStreamName:             "supply:outbox:stream",
+		outboxConsumerGroup:          "outbox-processor",
+		idempotencyTTL:               24 * time.Hour,
+		partitionMaintenanceInterval: time.Hour,
+		compensationCheckInterval:    5 * time.Minute,
+		partitionedTables: []string{
+			"audit_events",
+			"supply_usage_records",
+			"supply_idempotency_records",
+		},
+	}
 }
 
 // BuildServer 使用运行时依赖构建 HTTP server。
@@ -311,4 +338,8 @@ func normalizeEnv(env string) string {
 
 func infof(logger logging.Logger, format string, args ...any) {
 	logger.Info(fmt.Sprintf(format, args...), nil)
+}
+
+func warnf(logger logging.Logger, format string, args ...any) {
+	logger.Warn(fmt.Sprintf(format, args...), nil)
 }
