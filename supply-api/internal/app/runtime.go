@@ -173,41 +173,49 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 }
 
 func buildStoreBundle(db *repository.DB, logger logging.Logger) runtimeStoreBundle {
-	var bundle runtimeStoreBundle
-
 	if db != nil {
-		accountRepo := repository.NewAccountRepository(db.Pool)
-		packageRepo := repository.NewPackageRepository(db.Pool)
-		settlementRepo := repository.NewSettlementRepository(db.Pool)
-		usageRepo := repository.NewUsageRepository(db.Pool)
-
-		bundle.idempotencyRepo = repository.NewIdempotencyRepository(db.Pool)
-		bundle.tokenStatusRepo = repository.NewTokenStatusRepository(db.Pool)
-		bundle.accountStore = adapter.NewDBAccountStore(accountRepo)
-		bundle.packageStore = adapter.NewDBPackageStore(packageRepo)
-		bundle.settlementStore = adapter.NewDBSettlementStore(settlementRepo, accountRepo, db.Pool)
-		bundle.earningStore = adapter.NewDBEarningStore(usageRepo)
-		bundle.auditStore = audit.NewPostgresAuditStore(auditrepo.NewPostgresAuditRepository(db.Pool))
-		bundle.alertService = auditservice.NewAlertService(auditrepo.NewPostgresAlertRepository(db.Pool))
-		bundle.fkValidator = repository.NewForeignKeyValidator(db.Pool)
-
+		bundle := buildDBStoreBundle(db)
 		logger.Info("审计存储: 使用PostgreSQL (DB-backed)", nil)
 		logger.Info("告警存储: 使用PostgreSQL (DB-backed)", nil)
 		logger.Info("外键校验器: 已初始化 (PostgreSQL-backed)", nil)
 		return bundle
 	}
 
-	bundle.accountStore = adapter.NewInMemoryAccountStoreAdapter()
-	bundle.packageStore = adapter.NewInMemoryPackageStoreAdapter()
-	bundle.settlementStore = adapter.NewInMemorySettlementStoreAdapter()
-	bundle.earningStore = adapter.NewInMemoryEarningStoreAdapter()
-	bundle.auditStore = audit.NewMemoryAuditStore()
-	bundle.alertService = auditservice.NewAlertService(auditservice.NewInMemoryAlertStore())
-
+	bundle := buildMemoryStoreBundle()
 	logger.Warn("审计存储使用内存实现 (生产环境不应使用)", nil)
 	logger.Warn("告警存储使用内存实现 (仅开发环境允许)", nil)
 	logger.Warn("外键校验器未启用 (db不可用)", nil)
 	return bundle
+}
+
+func buildDBStoreBundle(db *repository.DB) runtimeStoreBundle {
+	accountRepo := repository.NewAccountRepository(db.Pool)
+	packageRepo := repository.NewPackageRepository(db.Pool)
+	settlementRepo := repository.NewSettlementRepository(db.Pool)
+	usageRepo := repository.NewUsageRepository(db.Pool)
+
+	return runtimeStoreBundle{
+		accountStore:    adapter.NewDBAccountStore(accountRepo),
+		packageStore:    adapter.NewDBPackageStore(packageRepo),
+		settlementStore: adapter.NewDBSettlementStore(settlementRepo, accountRepo, db.Pool),
+		earningStore:    adapter.NewDBEarningStore(usageRepo),
+		auditStore:      audit.NewPostgresAuditStore(auditrepo.NewPostgresAuditRepository(db.Pool)),
+		alertService:    auditservice.NewAlertService(auditrepo.NewPostgresAlertRepository(db.Pool)),
+		fkValidator:     repository.NewForeignKeyValidator(db.Pool),
+		tokenStatusRepo: repository.NewTokenStatusRepository(db.Pool),
+		idempotencyRepo: repository.NewIdempotencyRepository(db.Pool),
+	}
+}
+
+func buildMemoryStoreBundle() runtimeStoreBundle {
+	return runtimeStoreBundle{
+		accountStore:    adapter.NewInMemoryAccountStoreAdapter(),
+		packageStore:    adapter.NewInMemoryPackageStoreAdapter(),
+		settlementStore: adapter.NewInMemorySettlementStoreAdapter(),
+		earningStore:    adapter.NewInMemoryEarningStoreAdapter(),
+		auditStore:      audit.NewMemoryAuditStore(),
+		alertService:    auditservice.NewAlertService(auditservice.NewInMemoryAlertStore()),
+	}
 }
 
 func buildSecurityBundle(

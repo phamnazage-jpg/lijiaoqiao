@@ -93,6 +93,34 @@ func TestBuildStoreBundle_UsesInMemoryStoresWithoutDatabase(t *testing.T) {
 	}
 }
 
+func TestBuildMemoryStoreBundle_DisablesDatabaseOnlyDependencies(t *testing.T) {
+	bundle := buildMemoryStoreBundle()
+	if bundle.accountStore == nil {
+		t.Fatal("expected account store")
+	}
+	if bundle.packageStore == nil {
+		t.Fatal("expected package store")
+	}
+	if bundle.settlementStore == nil {
+		t.Fatal("expected settlement store")
+	}
+	if bundle.earningStore == nil {
+		t.Fatal("expected earning store")
+	}
+	if bundle.auditStore == nil {
+		t.Fatal("expected audit store")
+	}
+	if bundle.alertService == nil {
+		t.Fatal("expected alert service")
+	}
+	if bundle.tokenStatusRepo != nil {
+		t.Fatal("expected nil token status repo")
+	}
+	if bundle.idempotencyRepo != nil {
+		t.Fatal("expected nil idempotency repo")
+	}
+}
+
 func TestBuildStoreBundle_UsesDatabaseBackedStoresWithDatabase(t *testing.T) {
 	bundle := buildStoreBundle(&repository.DB{}, testLogger{})
 	if bundle.accountStore == nil {
@@ -118,6 +146,34 @@ func TestBuildStoreBundle_UsesDatabaseBackedStoresWithDatabase(t *testing.T) {
 	}
 	if bundle.idempotencyRepo == nil {
 		t.Fatal("expected idempotency repo with database")
+	}
+}
+
+func TestBuildDBStoreBundle_InitializesDatabaseOnlyDependencies(t *testing.T) {
+	bundle := buildDBStoreBundle(&repository.DB{})
+	if bundle.accountStore == nil {
+		t.Fatal("expected account store")
+	}
+	if bundle.packageStore == nil {
+		t.Fatal("expected package store")
+	}
+	if bundle.settlementStore == nil {
+		t.Fatal("expected settlement store")
+	}
+	if bundle.earningStore == nil {
+		t.Fatal("expected earning store")
+	}
+	if bundle.auditStore == nil {
+		t.Fatal("expected audit store")
+	}
+	if bundle.alertService == nil {
+		t.Fatal("expected alert service")
+	}
+	if bundle.tokenStatusRepo == nil {
+		t.Fatal("expected token status repo")
+	}
+	if bundle.idempotencyRepo == nil {
+		t.Fatal("expected idempotency repo")
 	}
 }
 
