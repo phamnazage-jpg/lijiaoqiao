@@ -276,15 +276,6 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("settlement.withdraw_enabled", "SUPPLY_SETTLEMENT_WITHDRAW_ENABLED")
 }
 
-// MustLoad 加载配置，失败时panic
-func MustLoad(env string) *Config {
-	cfg, err := Load(env)
-	if err != nil {
-		panic("failed to load config: " + err.Error())
-	}
-	return cfg
-}
-
 // GetEnvInt 获取环境变量int值
 func GetEnvInt(key string, defaultVal int) int {
 	if v := os.Getenv(key); v != "" {

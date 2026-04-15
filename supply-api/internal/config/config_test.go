@@ -7,6 +7,36 @@ import (
 	"testing"
 )
 
+func TestLoad_UsesDefaultsWithoutConfigFile(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("failed to chdir to temp dir: %v", err)
+	}
+	defer func() {
+		if chdirErr := os.Chdir(wd); chdirErr != nil {
+			t.Fatalf("failed to restore working directory: %v", chdirErr)
+		}
+	}()
+
+	t.Setenv("SUPPLY_API_SERVER_ADDR", "")
+	t.Setenv("SUPPLY_API_TOKEN_ISSUER", "")
+
+	cfg, err := Load("dev")
+	if err != nil {
+		t.Fatalf("expected defaults to load without config file, got error: %v", err)
+	}
+	if cfg.Server.Addr != ":18082" {
+		t.Fatalf("expected default addr :18082, got %s", cfg.Server.Addr)
+	}
+	if cfg.Token.Issuer != "lijiaoqiao/supply-api" {
+		t.Fatalf("expected default issuer lijiaoqiao/supply-api, got %s", cfg.Token.Issuer)
+	}
+}
+
 func TestDatabaseConfigDSN_UsesUnixSocketFormat(t *testing.T) {
 	cfg := DatabaseConfig{
 		Host:     "/var/run/postgresql",

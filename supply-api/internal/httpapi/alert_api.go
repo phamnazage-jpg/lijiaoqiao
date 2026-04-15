@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 
@@ -14,16 +15,16 @@ type AlertAPI struct {
 }
 
 // NewAlertAPI 创建告警API处理器
-func NewAlertAPI(alertSvc *service.AlertService) *AlertAPI {
+func NewAlertAPI(alertSvc *service.AlertService) (*AlertAPI, error) {
 	if alertSvc == nil {
-		panic("alert service is required")
+		return nil, errors.New("alert service is required")
 	}
 
 	alertHandler := handler.NewAlertHandler(alertSvc)
 
 	return &AlertAPI{
 		alertHandler: alertHandler,
-	}
+	}, nil
 }
 
 // Register 注册告警路由

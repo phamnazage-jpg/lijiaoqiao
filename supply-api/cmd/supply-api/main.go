@@ -258,7 +258,10 @@ func main() {
 	api.Register(mux)
 
 	// 注册告警API路由
-	alertAPI := httpapi.NewAlertAPI(alertService)
+	alertAPI, err := httpapi.NewAlertAPI(alertService)
+	if err != nil {
+		jsonLogger.Fatalf("failed to initialize alert api: %v", err)
+	}
 	alertAPI.Register(mux)
 
 	// 应用中间件链路

@@ -35,8 +35,21 @@ func (s *recordingAlertStore) List(ctx context.Context, filter *model.AlertFilte
 
 func TestNewAlertAPI_UsesInjectedStore(t *testing.T) {
 	store := &recordingAlertStore{}
-	api := NewAlertAPI(service.NewAlertService(store))
+	api, err := NewAlertAPI(service.NewAlertService(store))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 	if api == nil {
 		t.Fatal("expected api")
+	}
+}
+
+func TestNewAlertAPI_ReturnsErrorWhenServiceMissing(t *testing.T) {
+	api, err := NewAlertAPI(nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if api != nil {
+		t.Fatal("expected nil api")
 	}
 }
