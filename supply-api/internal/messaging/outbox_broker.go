@@ -10,18 +10,39 @@ import (
 	"lijiaoqiao/supply-api/internal/repository"
 )
 
+type streamRedisClient interface {
+	XAdd(ctx context.Context, a *redis.XAddArgs) *redis.StringCmd
+	XGroupCreateMkStream(ctx context.Context, stream, group, start string) *redis.StatusCmd
+}
+
+type streamRedisClientWrapper struct {
+	client *redis.Client
+}
+
+func (w *streamRedisClientWrapper) XAdd(ctx context.Context, a *redis.XAddArgs) *redis.StringCmd {
+	return w.client.XAdd(ctx, a)
+}
+
+func (w *streamRedisClientWrapper) XGroupCreateMkStream(ctx context.Context, stream, group, start string) *redis.StatusCmd {
+	return w.client.XGroupCreateMkStream(ctx, stream, group, start)
+}
+
 // OutboxMessageBroker Outbox消息代理（使用Redis Streams）
 type OutboxMessageBroker struct {
-	redis       *redis.Client
-	streamName  string
+	redis         streamRedisClient
+	streamName    string
 	consumerGroup string
 }
 
 // NewOutboxMessageBroker 创建Outbox消息代理
 func NewOutboxMessageBroker(redisClient *redis.Client, streamName string, consumerGroup string) *OutboxMessageBroker {
+	return newOutboxMessageBrokerWithClient(&streamRedisClientWrapper{client: redisClient}, streamName, consumerGroup)
+}
+
+func newOutboxMessageBrokerWithClient(redisClient streamRedisClient, streamName string, consumerGroup string) *OutboxMessageBroker {
 	return &OutboxMessageBroker{
-		redis:        redisClient,
-		streamName:   streamName,
+		redis:         redisClient,
+		streamName:    streamName,
 		consumerGroup: consumerGroup,
 	}
 }
@@ -30,12 +51,12 @@ func NewOutboxMessageBroker(redisClient *redis.Client, streamName string, consum
 func (b *OutboxMessageBroker) Publish(ctx context.Context, event *repository.OutboxEvent) error {
 	// 构造消息
 	msg := map[string]interface{}{
-		"event_id":         event.EventID,
-		"aggregate_type":   event.AggregateType,
-		"aggregate_id":     event.AggregateID,
-		"event_type":       event.EventType,
-		"payload":          string(event.Payload),
-		"published_at":     time.Now().UTC().Format(time.RFC3339),
+		"event_id":       event.EventID,
+		"aggregate_type": event.AggregateType,
+		"aggregate_id":   event.AggregateID,
+		"event_type":     event.EventType,
+		"payload":        string(event.Payload),
+		"published_at":   time.Now().UTC().Format(time.RFC3339),
 	}
 
 	data, err := json.Marshal(msg)
@@ -84,7 +105,7 @@ type OutboxStats interface {
 // NoOpOutboxStats 无操作统计（用于默认实现）
 type NoOpOutboxStats struct{}
 
-func (s *NoOpOutboxStats) RecordOutboxSuccess(eventType string)        {}
-func (s *NoOpOutboxStats) RecordOutboxFailure(reason string)          {}
-func (s *NoOpOutboxStats) RecordOutboxRetry(eventType string)         {}
-func (s *NoOpOutboxStats) RecordOutboxDLQ(eventType string)            {}
+func (s *NoOpOutboxStats) RecordOutboxSuccess(eventType string) {}
+func (s *NoOpOutboxStats) RecordOutboxFailure(reason string)    {}
+func (s *NoOpOutboxStats) RecordOutboxRetry(eventType string)   {}
+func (s *NoOpOutboxStats) RecordOutboxDLQ(eventType string)     {}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"lijiaoqiao/supply-api/internal/iam/model"
 )
@@ -48,14 +49,24 @@ type IAMRepository interface {
 	GetUserScopes(ctx context.Context, userID int64) ([]string, error)
 }
 
+type iamDB interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // PostgresIAMRepository PostgreSQL实现的IAM仓储
 type PostgresIAMRepository struct {
-	pool *pgxpool.Pool
+	pool iamDB
 }
 
 // NewPostgresIAMRepository 创建PostgreSQL IAM仓储
 func NewPostgresIAMRepository(pool *pgxpool.Pool) *PostgresIAMRepository {
 	return &PostgresIAMRepository{pool: pool}
+}
+
+func newPostgresIAMRepositoryWithDB(db iamDB) *PostgresIAMRepository {
+	return &PostgresIAMRepository{pool: db}
 }
 
 // Ensure interfaces

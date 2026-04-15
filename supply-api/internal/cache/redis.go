@@ -10,9 +10,68 @@ import (
 	"lijiaoqiao/supply-api/internal/config"
 )
 
+type redisPipeline interface {
+	Incr(ctx context.Context, key string) *redis.IntCmd
+	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
+	Exec(ctx context.Context) ([]redis.Cmder, error)
+}
+
+type redisCommander interface {
+	Close() error
+	Ping(ctx context.Context) *redis.StatusCmd
+	Get(ctx context.Context, key string) *redis.StringCmd
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
+	Del(ctx context.Context, keys ...string) *redis.IntCmd
+	Publish(ctx context.Context, channel string, message interface{}) *redis.IntCmd
+	Subscribe(ctx context.Context, channels ...string) *redis.PubSub
+	Pipeline() redisPipeline
+	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
+}
+
+type redisClientWrapper struct {
+	client *redis.Client
+}
+
+func (w *redisClientWrapper) Close() error {
+	return w.client.Close()
+}
+
+func (w *redisClientWrapper) Ping(ctx context.Context) *redis.StatusCmd {
+	return w.client.Ping(ctx)
+}
+
+func (w *redisClientWrapper) Get(ctx context.Context, key string) *redis.StringCmd {
+	return w.client.Get(ctx, key)
+}
+
+func (w *redisClientWrapper) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
+	return w.client.Set(ctx, key, value, expiration)
+}
+
+func (w *redisClientWrapper) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+	return w.client.Del(ctx, keys...)
+}
+
+func (w *redisClientWrapper) Publish(ctx context.Context, channel string, message interface{}) *redis.IntCmd {
+	return w.client.Publish(ctx, channel, message)
+}
+
+func (w *redisClientWrapper) Subscribe(ctx context.Context, channels ...string) *redis.PubSub {
+	return w.client.Subscribe(ctx, channels...)
+}
+
+func (w *redisClientWrapper) Pipeline() redisPipeline {
+	return w.client.Pipeline()
+}
+
+func (w *redisClientWrapper) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd {
+	return w.client.SetNX(ctx, key, value, expiration)
+}
+
 // RedisCache Redis缓存客户端
 type RedisCache struct {
-	client *redis.Client
+	client    redisCommander
+	rawClient *redis.Client
 }
 
 // NewRedisCache 创建Redis缓存客户端
@@ -32,7 +91,14 @@ func NewRedisCache(cfg config.RedisConfig) (*RedisCache, error) {
 		return nil, fmt.Errorf("failed to connect to redis: %w", err)
 	}
 
-	return &RedisCache{client: client}, nil
+	return &RedisCache{
+		client:    &redisClientWrapper{client: client},
+		rawClient: client,
+	}, nil
+}
+
+func newRedisCacheWithClient(client redisCommander) *RedisCache {
+	return &RedisCache{client: client}
 }
 
 // Close 关闭连接
@@ -47,7 +113,7 @@ func (r *RedisCache) HealthCheck(ctx context.Context) error {
 
 // GetClient 获取原始Redis客户端（用于其他组件）
 func (r *RedisCache) GetClient() *redis.Client {
-	return r.client
+	return r.rawClient
 }
 
 // ==================== Token状态缓存 ====================
