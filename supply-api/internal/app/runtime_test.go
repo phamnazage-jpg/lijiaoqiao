@@ -339,6 +339,28 @@ func TestRuntime_StartBackgroundWorkers_ProdRequiresOutboxBroker(t *testing.T) {
 	}
 }
 
+func TestStartOutboxProcessor_ProdRequiresBroker(t *testing.T) {
+	err := startOutboxProcessor(context.Background(), &Runtime{
+		env:    "prod",
+		logger: testLogger{},
+		db:     &repository.DB{},
+		tuning: defaultRuntimeTuning(),
+	}, backgroundFactory{
+		newOutboxRepository: func(*repository.DB) outboxRepository {
+			return stubOutboxRepository{}
+		},
+		newMessageBroker: func(*cache.RedisCache) messaging.MessageBroker {
+			return nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected missing outbox broker to fail in prod")
+	}
+	if !strings.Contains(err.Error(), "outbox message broker unavailable") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRuntime_StartBackgroundWorkers_UsesDefaultCompensationInterval(t *testing.T) {
 	var gotInterval time.Duration
 
@@ -381,6 +403,38 @@ func TestRuntime_StartBackgroundWorkers_UsesDefaultCompensationInterval(t *testi
 	if err != nil {
 		t.Fatalf("expected background startup to succeed, got %v", err)
 	}
+	if gotInterval != 5*time.Minute {
+		t.Fatalf("unexpected compensation interval: %s", gotInterval)
+	}
+}
+
+func TestStartCompensationWorker_UsesConfiguredInterval(t *testing.T) {
+	var gotInterval time.Duration
+
+	startCompensationWorker(context.Background(), &Runtime{
+		env:    "dev",
+		logger: testLogger{},
+		db:     &repository.DB{},
+		tuning: defaultRuntimeTuning(),
+	}, backgroundFactory{
+		newCompensationStore: func(*repository.DB) domain.CompensationStore {
+			return stubCompensationStore{}
+		},
+		newCompensationExecutor: func() domain.OperationExecutor {
+			return stubOperationExecutor{}
+		},
+		newCompensationProcessor: func(
+			domain.CompensationStore,
+			domain.OperationExecutor,
+			domain.CompensationStats,
+		) compensationWorker {
+			return stubCompensationWorker{
+				start: func(_ context.Context, interval time.Duration) {
+					gotInterval = interval
+				},
+			}
+		},
+	})
 	if gotInterval != 5*time.Minute {
 		t.Fatalf("unexpected compensation interval: %s", gotInterval)
 	}

@@ -77,48 +77,17 @@ func startBackgroundWorkersWithFactory(
 
 	factory = withDefaultBackgroundFactory(factory, runtime.tuning)
 
-	if runtime.revocationSubscriber != nil && runtime.redisCache != nil {
-		if err := runtime.revocationSubscriber.StartRevocationSubscriber(rootCtx); err != nil {
-			warnf(runtime.logger, "启动主动吊销订阅失败: %v", err)
-		} else {
-			runtime.logger.Info("主动吊销机制: 已启动 (Redis Pub/Sub)", nil)
-		}
-	}
+	startRevocationSubscriber(rootCtx, runtime)
 
 	if runtime.db == nil {
 		return nil
 	}
 
-	outboxRepo := factory.newOutboxRepository(runtime.db)
-	msgBroker := factory.newMessageBroker(runtime.redisCache)
-	if msgBroker == nil {
-		if runtime.env == "prod" {
-			return errors.New("outbox message broker unavailable")
-		}
-		runtime.logger.Warn("OutboxProcessor未启动 (message broker不可用)", nil)
-	} else {
-		stats := &messaging.NoOpOutboxStats{}
-		runner := factory.newOutboxRunner(outboxRepo, msgBroker, stats)
-		go runner.Start(rootCtx)
-		runtime.logger.Info("OutboxProcessor已启动", nil)
+	if err := startOutboxProcessor(rootCtx, runtime, factory); err != nil {
+		return err
 	}
-
-	partitionManager := factory.newPartitionManager(runtime.db)
-	if err := partitionManager.EnsureFuturePartitions(initCtx); err != nil {
-		warnf(runtime.logger, "预创建未来分区失败: %v", err)
-	} else {
-		runtime.logger.Info("分区管理: 未来分区已确保存在", nil)
-	}
-
-	go startPartitionMaintenance(rootCtx, runtime.logger, partitionManager, runtime.tuning)
-
-	compensationStore := factory.newCompensationStore(runtime.db)
-	compensationStats := &domain.NoOpCompensationStats{}
-	compensationExecutor := factory.newCompensationExecutor()
-	compensationProcessor := factory.newCompensationProcessor(compensationStore, compensationExecutor, compensationStats)
-	runtime.logger.Info("批量补偿处理器: 已初始化", nil)
-	compensationProcessor.StartBackgroundWorker(rootCtx, runtime.tuning.compensationCheckInterval)
-	infof(runtime.logger, "批量补偿处理器: 后台worker已启动 (每%s检查一次)", runtime.tuning.compensationCheckInterval)
+	startPartitionMaintenanceWorker(rootCtx, initCtx, runtime, factory)
+	startCompensationWorker(rootCtx, runtime, factory)
 
 	return nil
 }
@@ -171,7 +140,82 @@ var compensationNewDefaultExecutor = func() domain.OperationExecutor {
 	return compensation.NewDefaultCompensationExecutor()
 }
 
-func startPartitionMaintenance(ctx context.Context, logger logging.Logger, manager partitionManager, tuning runtimeTuning) {
+func startRevocationSubscriber(ctx context.Context, runtime *Runtime) {
+	if runtime == nil || runtime.revocationSubscriber == nil || runtime.redisCache == nil {
+		return
+	}
+	if err := runtime.revocationSubscriber.StartRevocationSubscriber(ctx); err != nil {
+		warnf(runtime.logger, "启动主动吊销订阅失败: %v", err)
+		return
+	}
+	runtime.logger.Info("主动吊销机制: 已启动 (Redis Pub/Sub)", nil)
+}
+
+func startOutboxProcessor(ctx context.Context, runtime *Runtime, factory backgroundFactory) error {
+	if runtime == nil {
+		return errors.New("runtime is required")
+	}
+	if runtime.db == nil {
+		return nil
+	}
+
+	factory = withDefaultBackgroundFactory(factory, runtime.tuning)
+
+	outboxRepo := factory.newOutboxRepository(runtime.db)
+	msgBroker := factory.newMessageBroker(runtime.redisCache)
+	if msgBroker == nil {
+		if runtime.env == "prod" {
+			return errors.New("outbox message broker unavailable")
+		}
+		runtime.logger.Warn("OutboxProcessor未启动 (message broker不可用)", nil)
+		return nil
+	}
+
+	stats := &messaging.NoOpOutboxStats{}
+	runner := factory.newOutboxRunner(outboxRepo, msgBroker, stats)
+	go runner.Start(ctx)
+	runtime.logger.Info("OutboxProcessor已启动", nil)
+	return nil
+}
+
+func startPartitionMaintenanceWorker(
+	rootCtx context.Context,
+	initCtx context.Context,
+	runtime *Runtime,
+	factory backgroundFactory,
+) {
+	if runtime == nil || runtime.db == nil {
+		return
+	}
+
+	factory = withDefaultBackgroundFactory(factory, runtime.tuning)
+	manager := factory.newPartitionManager(runtime.db)
+	if err := manager.EnsureFuturePartitions(initCtx); err != nil {
+		warnf(runtime.logger, "预创建未来分区失败: %v", err)
+	} else {
+		runtime.logger.Info("分区管理: 未来分区已确保存在", nil)
+	}
+
+	go runPartitionMaintenanceLoop(rootCtx, runtime.logger, manager, runtime.tuning)
+}
+
+func startCompensationWorker(ctx context.Context, runtime *Runtime, factory backgroundFactory) {
+	if runtime == nil || runtime.db == nil {
+		return
+	}
+
+	factory = withDefaultBackgroundFactory(factory, runtime.tuning)
+	compensationStore := factory.newCompensationStore(runtime.db)
+	compensationStats := &domain.NoOpCompensationStats{}
+	compensationExecutor := factory.newCompensationExecutor()
+	compensationProcessor := factory.newCompensationProcessor(compensationStore, compensationExecutor, compensationStats)
+
+	runtime.logger.Info("批量补偿处理器: 已初始化", nil)
+	compensationProcessor.StartBackgroundWorker(ctx, runtime.tuning.compensationCheckInterval)
+	infof(runtime.logger, "批量补偿处理器: 后台worker已启动 (每%s检查一次)", runtime.tuning.compensationCheckInterval)
+}
+
+func runPartitionMaintenanceLoop(ctx context.Context, logger logging.Logger, manager partitionManager, tuning runtimeTuning) {
 	ticker := time.NewTicker(tuning.partitionMaintenanceInterval)
 	defer ticker.Stop()
 
