@@ -2,7 +2,7 @@
 
 - 关联任务：SUP-004~SUP-008
 
-> 机审稿引用约束：截至 2026-04-14，活文档只允许引用 `review/outputs/tok007_release_recheck_2026-04-14_151511.md` 与 `review/outputs/final_decision_candidate_from_tok007_2026-04-14_182641.md`。本文正文中的旧 `tok007` 路径仅为历史续跑证据，不得再当作当前事实源。
+> 机审稿引用约束：活文档只允许引用 `review/outputs/current_machine_review_sources.md` 中声明的现行机审稿。本文正文中的旧 `tok007` 路径仅为历史续跑证据，不得再当作当前事实源。
 
 ## 1. 汇总结论
 

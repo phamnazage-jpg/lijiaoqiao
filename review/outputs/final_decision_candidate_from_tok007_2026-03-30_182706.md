@@ -1,4 +1,12 @@
+> 归档状态：已归档
+> 归档批次：ARCHIVE-HISTORY-AUTO
+> 归档标识：AHR-AUTO-017
+> 当前用途：历史机审快照，仅供追溯；不得作为现行门禁、发布决议或实现状态事实源。
+> 当前事实源：`review/outputs/current_machine_review_sources.md`、`docs/plans/2026-04-14-repo-integrity-refactor-plan.md` 与 `reports/archive/gate_verification/`。
+
 # 专家最终决议（2026-03-31）
+
+
 
 - 对应任务：`EXP-006`
 - 关联材料：

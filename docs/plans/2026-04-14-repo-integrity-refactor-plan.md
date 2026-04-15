@@ -13,9 +13,9 @@
 ## 当前事实源（2026-04-14）
 
 1. 仓库健康度与代码状态以 `scripts/ci/repo_integrity_check.sh`、三个服务 README、实际通过的测试与 CI 产物为准。
-2. 现行机审稿只认两份：`review/outputs/tok007_release_recheck_2026-04-14_151511.md` 与 `review/outputs/final_decision_candidate_from_tok007_2026-04-14_182641.md`。
+2. 活文档若需引用机审稿，只允许引用 `review/outputs/current_machine_review_sources.md` 中声明的现行机审稿。
 3. `review/outputs/` 下其余 `tok007_release_recheck_*`、`final_decision_candidate_from_tok007_*` 一律视为历史快照，仅供追溯，不得作为当前事实源、门禁结论、签署依据或对外口径。
-4. 后续若生成新机审稿，必须先同步更新活文档中的“现行机审稿”指针，再允许引用新稿。
+4. 后续若生成新机审稿，必须由 `scripts/ci/mark_historical_snapshots.sh` 同步更新 `review/outputs/current_machine_review_sources.md`，文档只声明规则，不再手工点名当前批次。
 
 ---
 

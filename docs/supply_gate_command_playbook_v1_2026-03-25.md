@@ -14,9 +14,9 @@
 
 ## 0. 机审稿引用约束
 
-1. 截至 2026-04-14，活文档只允许引用现行机审稿 `review/outputs/tok007_release_recheck_2026-04-14_151511.md` 与 `review/outputs/final_decision_candidate_from_tok007_2026-04-14_182641.md`。
+1. 活文档只允许引用 `review/outputs/current_machine_review_sources.md` 中声明的现行机审稿。
 2. `review/outputs/` 下其余 `tok007_release_recheck_*` / `final_decision_candidate_from_tok007_*` 仅为历史快照，不得再作为当前事实源、门禁结论或签署依据。
-3. 示例命令中的 `--tok007-report` 必须绑定现行机审稿，不得复制旧批次路径。
+3. 示例命令中的 `--tok007-report` 必须先从 `review/outputs/current_machine_review_sources.md` 解析出现行稿路径，不得复制旧批次路径。
 
 ---
 
@@ -338,6 +338,7 @@ bash "scripts/ci/superpowers_stage_validate.sh"
 1. 任一阶段 FAIL => `NO_GO`
 2. 无 FAIL 且存在 DEFERRED => `CONDITIONAL_GO`
 3. 全部 PASS => `GO`
+4. `PHASE-07` 只有在真实 staging 环境下才允许 `PASS`；`local/mock` 或占位环境必须记为 `DEFERRED`。
 
 可选环境变量：
 
@@ -505,7 +506,7 @@ bash "scripts/ci/staging_evidence_autofill.sh" \
   --staging-run-log "reports/archive/gate_verification/staging_run_2026-03-30_184432.log" \
   --stage-report "reports/archive/gate_verification/superpowers_stage_validation_2026-03-30_184433.md" \
   --token-readiness "reports/archive/gate_verification/token_runtime_readiness_2026-03-30_184435.md" \
-  --tok007-report "review/outputs/tok007_release_recheck_2026-04-14_151511.md" \
+  --tok007-report "$(sed -n 's/^- 当前 TOK-007 复审稿：`\([^`]*\)`/\1/p' review/outputs/current_machine_review_sources.md)" \
   --pipeline-report "reports/archive/gate_verification/superpowers_release_pipeline_2026-03-30_184434.md"
 ```
 

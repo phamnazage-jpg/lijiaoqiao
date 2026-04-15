@@ -5,8 +5,12 @@ ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 TS="$(date +%F_%H%M%S)"
 OUT_DIR="${ROOT_DIR}/review/outputs"
 mkdir -p "${OUT_DIR}"
+GATE_OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
+mkdir -p "${GATE_OUT_DIR}"
+MARK_SCRIPT="${ROOT_DIR}/scripts/ci/mark_historical_snapshots.sh"
+CURRENT_POINTER_FILE="review/outputs/current_machine_review_sources.md"
 OUT_FILE="${OUT_DIR}/tok007_release_recheck_${TS}.md"
-LOG_FILE="${ROOT_DIR}/reports/gates/tok007_release_recheck_${TS}.log"
+LOG_FILE="${GATE_OUT_DIR}/tok007_release_recheck_${TS}.log"
 
 log() {
   echo "$1" | tee -a "${LOG_FILE}"
@@ -96,9 +100,9 @@ extract_pass_fail_result() {
   echo "UNKNOWN"
 }
 
-TOK006_REPORT="$(latest_file_or_empty "${ROOT_DIR}/reports/gates/tok006_gate_bundle_*.md")"
-SP_REPORT="$(latest_file_or_empty "${ROOT_DIR}/reports/gates/superpowers_stage_validation_*.md")"
-TOK_RUNTIME_READINESS_REPORT="$(latest_file_or_empty "${ROOT_DIR}/reports/gates/token_runtime_readiness_*.md")"
+TOK006_REPORT="$(latest_file_or_empty "${GATE_OUT_DIR}/tok006_gate_bundle_*.md")"
+SP_REPORT="$(latest_file_or_empty "${GATE_OUT_DIR}/superpowers_stage_validation_*.md")"
+TOK_RUNTIME_READINESS_REPORT="$(latest_file_or_empty "${GATE_OUT_DIR}/token_runtime_readiness_*.md")"
 SUP_REVIEW_REPORT="${ROOT_DIR}/reports/supply_gate_review_2026-03-31.md"
 FINAL_DECISION_REPORT="${ROOT_DIR}/review/final_decision_2026-03-31.md"
 
@@ -135,6 +139,7 @@ cat > "${OUT_FILE}" <<EOF
 
 - 时间戳：${TS}
 - 生成脚本：\`scripts/ci/tok007_release_recheck.sh\`
+- 现行机审稿指针：\`${CURRENT_POINTER_FILE}\`
 
 ## 1. 输入证据
 
@@ -174,9 +179,12 @@ case "${DECISION}" in
     ;;
 esac
 
+bash "${MARK_SCRIPT}" --current-tok007 "${OUT_FILE}" >/dev/null
+
 log "[INFO] TOK006=${TOK006_DECISION}, SP=${SP_DECISION}, M021=${TOK_RUNTIME_READINESS_RESULT}, SUP=${SUP_DECISION}, FINAL_CURRENT=${FINAL_DECISION_CURRENT}"
 log "[RESULT] ${DECISION}"
 log "[INFO] output=${OUT_FILE}"
+log "[INFO] current_pointer=${ROOT_DIR}/${CURRENT_POINTER_FILE}"
 
 if [[ "${DECISION}" == "NO_GO" ]]; then
   exit 1

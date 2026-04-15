@@ -4,7 +4,7 @@
 - 基线来源：`docs/plans/2026-03-25-superpowers-execution-tasklist-v1.md`
 - 目标：基于最新真实证据重排执行优先级，持续推进到 staging 可复核、可签署。
 
-> 机审稿引用约束：截至 2026-04-14，活文档只允许引用 `review/outputs/tok007_release_recheck_2026-04-14_151511.md` 与 `review/outputs/final_decision_candidate_from_tok007_2026-04-14_182641.md`。本页保留的旧 `tok007` 路径仅作历史续跑证据，不得继续当作当前事实源。
+> 机审稿引用约束：活文档只允许引用 `review/outputs/current_machine_review_sources.md` 中声明的现行机审稿。本页保留的旧 `tok007` 路径仅作历史续跑证据，不得继续当作当前事实源。
 
 ---
 
