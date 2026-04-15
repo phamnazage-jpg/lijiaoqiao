@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 TS="$(date +%F_%H%M%S)"
 OUT_FILE="${OUT_DIR}/staging_token_go_evidence_autofill_${TS}.md"
 LOG_FILE="${OUT_DIR}/staging_token_go_evidence_autofill_${TS}.log"
@@ -212,19 +212,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${STAGING_RUN_LOG}" ]]; then
-  STAGING_RUN_LOG="$(latest_file_or_empty "${ROOT_DIR}/reports/gates/staging_run_*.log")"
+  STAGING_RUN_LOG="$(latest_file_or_empty "${OUT_DIR}/staging_run_*.log")"
 fi
 if [[ -z "${SP_REPORT}" ]]; then
-  SP_REPORT="$(latest_file_or_empty "${ROOT_DIR}/reports/gates/superpowers_stage_validation_*.md")"
+  SP_REPORT="$(latest_file_or_empty "${OUT_DIR}/superpowers_stage_validation_*.md")"
 fi
 if [[ -z "${TOK021_REPORT}" ]]; then
-  TOK021_REPORT="$(latest_file_or_empty "${ROOT_DIR}/reports/gates/token_runtime_readiness_*.md")"
+  TOK021_REPORT="$(latest_file_or_empty "${OUT_DIR}/token_runtime_readiness_*.md")"
 fi
 if [[ -z "${TOK007_REPORT}" ]]; then
   TOK007_REPORT="$(latest_file_or_empty "${ROOT_DIR}/review/outputs/tok007_release_recheck_*.md")"
 fi
 if [[ -z "${PIPELINE_REPORT}" ]]; then
-  PIPELINE_REPORT="$(latest_file_or_empty "${ROOT_DIR}/reports/gates/superpowers_release_pipeline_*.md")"
+  PIPELINE_REPORT="$(latest_file_or_empty "${OUT_DIR}/superpowers_release_pipeline_*.md")"
 fi
 
 LOG_FILE="${OUT_DIR}/staging_token_go_evidence_autofill_${TS}.log"

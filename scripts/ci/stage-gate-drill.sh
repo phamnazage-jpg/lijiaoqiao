@@ -4,7 +4,7 @@ set -euo pipefail
 FAIL_STAGE="${1:-G3}"
 DATE_TAG="${2:-$(date +%F)}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT_DIR="$PROJECT_ROOT/reports/gates"
+OUT_DIR="$PROJECT_ROOT/reports/archive/gate_verification"
 mkdir -p "$OUT_DIR"
 LOG_FILE="$OUT_DIR/stage_gate_drill_${DATE_TAG}.log"
 

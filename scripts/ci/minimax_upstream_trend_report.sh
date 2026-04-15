@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 END_DATE="${1:-$(date +%F)}"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 SNAPSHOT_CSV="${OUT_DIR}/minimax_upstream_daily_snapshots.csv"
 OUT_MD="${OUT_DIR}/minimax_upstream_trend_7d_${END_DATE}.md"
 
@@ -72,4 +72,3 @@ fi
 
 rm -f "${tmp_rows}"
 echo "[PASS] minimax trend report generated: ${OUT_MD}"
-

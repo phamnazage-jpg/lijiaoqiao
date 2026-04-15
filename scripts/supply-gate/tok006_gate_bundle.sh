@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ENV_FILE="${1:-${SCRIPT_DIR}/.env}"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 TS="$(date +%F_%H%M%S)"
 BUNDLE_ID="tok006_gate_bundle_${TS}"
 REPORT_FILE="${OUT_DIR}/${BUNDLE_ID}.md"
@@ -214,4 +214,3 @@ log "[RESULT] ${DECISION}"
 if [[ "${DECISION}" == "NO_GO" ]]; then
   exit 1
 fi
-

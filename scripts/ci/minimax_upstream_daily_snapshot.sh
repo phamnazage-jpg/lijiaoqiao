@@ -10,7 +10,7 @@ else
   ENV_FILE="${ROOT_DIR}/${ENV_FILE_REL}"
 fi
 
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 mkdir -p "${OUT_DIR}"
 
 SNAPSHOT_CSV="${OUT_DIR}/minimax_upstream_daily_snapshots.csv"

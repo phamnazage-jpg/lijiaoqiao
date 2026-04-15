@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 TS="$(date +%F_%H%M%S)"
 TODAY_TAG="$(date +%F)"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 mkdir -p "${OUT_DIR}"
 
 LOG_FILE="${OUT_DIR}/superpowers_release_pipeline_${TS}.log"

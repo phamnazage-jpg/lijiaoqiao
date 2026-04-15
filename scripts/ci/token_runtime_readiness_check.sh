@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 DATE_TAG="${1:-$(date +%F)}"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 mkdir -p "${OUT_DIR}"
 
 TS_TIME="$(date +%H%M%S)"

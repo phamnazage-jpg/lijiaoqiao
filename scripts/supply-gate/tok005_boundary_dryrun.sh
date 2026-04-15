@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ENV_FILE="${1:-${SCRIPT_DIR}/.env}"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 ART_ROOT="${ROOT_DIR}/tests/supply/artifacts"
 TS="$(date +%F_%H%M%S)"
 CASE_ID="tok005_dryrun_${TS}"
@@ -160,4 +160,3 @@ fi
 if [[ "${RESULT}" != "PASS" ]]; then
   exit 1
 fi
-

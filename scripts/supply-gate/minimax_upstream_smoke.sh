@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ENV_FILE="${1:-${SCRIPT_DIR}/.env.minimax-dev}"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 ART_DIR_BASE="${ROOT_DIR}/tests/supply/artifacts"
 TS="$(date +%F_%H%M%S)"
 

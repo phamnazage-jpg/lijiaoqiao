@@ -9,7 +9,7 @@ else
   ENV_FILE="${ROOT_DIR}/${ENV_FILE_REL}"
 fi
 TS="$(date +%F_%H%M%S)"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 mkdir -p "${OUT_DIR}"
 
 REPORT_FILE="${OUT_DIR}/staging_release_pipeline_${TS}.md"

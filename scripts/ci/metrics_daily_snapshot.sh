@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 DATE_TAG="${1:-$(date +%F)}"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 mkdir -p "${OUT_DIR}"
 
 SNAPSHOT_MD="${OUT_DIR}/metrics_daily_snapshot_${DATE_TAG}.md"
@@ -18,7 +18,7 @@ latest_file_or_empty() {
 }
 
 DEP_FILE="$(latest_file_or_empty "${ROOT_DIR}/reports/dependency/dependency_audit_result_*.md")"
-SP_FILE="$(latest_file_or_empty "${ROOT_DIR}/reports/gates/superpowers_stage_validation_*.md")"
+SP_FILE="$(latest_file_or_empty "${OUT_DIR}/superpowers_stage_validation_*.md")"
 TRACE_FILE="$(latest_file_or_empty "${ROOT_DIR}/reports/supply_traceability_matrix_*.csv")"
 
 M017="0.00"

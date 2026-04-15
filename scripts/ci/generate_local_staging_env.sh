@@ -15,7 +15,7 @@ TOKEN_TTL_SECONDS="${TOKEN_TTL_SECONDS:-7200}"
 TOKEN_SUBJECT_PREFIX="${TOKEN_SUBJECT_PREFIX:-local-staging-real}"
 START_RUNTIME_IF_NEEDED="${START_RUNTIME_IF_NEEDED:-1}"
 
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 mkdir -p "${OUT_DIR}"
 TS="$(date +%F_%H%M%S)"
 RUNTIME_LOG="${OUT_DIR}/local_token_runtime_generate_env_${TS}.log"

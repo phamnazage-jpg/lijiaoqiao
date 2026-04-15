@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 TS="$(date +%F_%H%M%S)"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 mkdir -p "${OUT_DIR}"
 
 REPORT_FILE="${OUT_DIR}/final_decision_consistency_${TS}.md"
@@ -75,7 +75,7 @@ parse_machine_decision() {
 
 FINAL_DECISION_FILE="${ROOT_DIR}/review/final_decision_2026-03-31.md"
 TOK007_FILE="$(latest_file_or_empty "${ROOT_DIR}/review/outputs/tok007_release_recheck_*.md")"
-SP_FILE="$(latest_file_or_empty "${ROOT_DIR}/reports/gates/superpowers_stage_validation_*.md")"
+SP_FILE="$(latest_file_or_empty "${OUT_DIR}/superpowers_stage_validation_*.md")"
 
 FINAL_DECISION="$(parse_checkbox_decision "${FINAL_DECISION_FILE}")"
 TOK007_DECISION="$(parse_machine_decision "${TOK007_FILE}")"
@@ -132,4 +132,3 @@ EOF
 if [[ "${CONSISTENCY_STATUS}" == "FAIL" ]]; then
   exit 1
 fi
-
