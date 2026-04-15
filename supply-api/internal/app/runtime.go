@@ -87,7 +87,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		factory.newRedisCache = cache.NewRedisCache
 	}
 
-	env, err := resolveEnv(opts.Env)
+	env, err := ResolveEnv(opts.Env)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +331,7 @@ func (r *Runtime) ShutdownTimeout() time.Duration {
 	return r.serverConfig.ShutdownTimeout
 }
 
-func resolveEnv(env string) (string, error) {
+func ResolveEnv(env string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(env))
 	if normalized == "" {
 		return "dev", nil

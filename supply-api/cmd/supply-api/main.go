@@ -20,6 +20,12 @@ func main() {
 	configPath := flag.String("config", "", "config file path")
 	flag.Parse()
 
+	envName, err := app.ResolveEnv(*env)
+	if err != nil {
+		logging.NewLogger("supply-api", logging.LogLevelInfo).Fatalf("%v", err)
+	}
+	*env = envName
+
 	// 确定配置文件路径
 	if *configPath == "" {
 		*configPath = "./config/config." + *env + ".yaml"

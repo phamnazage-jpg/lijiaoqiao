@@ -64,6 +64,16 @@ func TestBuildRuntime_ProdRequiresDatabase(t *testing.T) {
 	}
 }
 
+func TestResolveEnv_RejectsUnsupportedValue(t *testing.T) {
+	_, err := ResolveEnv("qa")
+	if err == nil {
+		t.Fatal("expected unsupported env to fail")
+	}
+	if !strings.Contains(err.Error(), "unsupported env") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestBuildRuntime_RejectsUnsupportedEnv(t *testing.T) {
 	_, err := buildRuntimeWithFactory(RuntimeOptions{
 		Env:         "qa",

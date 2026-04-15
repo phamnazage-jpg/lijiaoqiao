@@ -37,7 +37,7 @@ func BuildServer(opts BuildServerOptions) (*http.Server, error) {
 		return nil, errors.New("logger is required")
 	}
 
-	env, err := resolveEnv(opts.Env)
+	env, err := ResolveEnv(opts.Env)
 	if err != nil {
 		return nil, err
 	}
