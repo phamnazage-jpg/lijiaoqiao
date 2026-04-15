@@ -144,6 +144,29 @@ func TestBuildServer_DefaultsTimeoutsWhenUnset(t *testing.T) {
 	}
 }
 
+func TestBuildRouteMux_RegistersHealthAndSupplyRoutes(t *testing.T) {
+	supplyAPI, alertAPI := mustBuildTestAPIs(t)
+
+	mux := buildRouteMux(buildRouteMuxOptions{
+		SupplyAPI: supplyAPI,
+		AlertAPI:  alertAPI,
+	})
+
+	healthReq := httptest.NewRequest(http.MethodGet, "/actuator/health", nil)
+	healthRec := httptest.NewRecorder()
+	mux.ServeHTTP(healthRec, healthReq)
+	if healthRec.Code != http.StatusOK {
+		t.Fatalf("unexpected health status: got=%d want=%d", healthRec.Code, http.StatusOK)
+	}
+
+	supplyReq := httptest.NewRequest(http.MethodGet, "/api/v1/supply/accounts/verify", nil)
+	supplyRec := httptest.NewRecorder()
+	mux.ServeHTTP(supplyRec, supplyReq)
+	if supplyRec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("unexpected supply status: got=%d want=%d", supplyRec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
 func mustBuildTestAPIs(t *testing.T) (*httpapi.SupplyAPI, *httpapi.AlertAPI) {
 	t.Helper()
 
@@ -203,5 +226,41 @@ func TestBuildServer_ProdBuildsAuthenticatedHandler(t *testing.T) {
 	}
 	if srv == nil || srv.Handler == nil {
 		t.Fatal("expected non-nil server and handler")
+	}
+}
+
+func TestBuildMiddlewareChain_ProdRejectsQueryKey(t *testing.T) {
+	authMiddleware := middleware.NewAuthMiddleware(
+		middleware.AuthConfig{
+			SecretKey: "bootstrap-test-secret-key",
+			Algorithm: "HS256",
+			Issuer:    "bootstrap-test",
+			Enabled:   true,
+		},
+		middleware.NewTokenCache(),
+		nil,
+		nil,
+	)
+
+	handler := buildMiddlewareChain(middlewareChainOptions{
+		Env:            "prod",
+		Logger:         testLogger{},
+		AuthMiddleware: authMiddleware,
+		RateLimitConfig: &middleware.RateLimitConfig{
+			Enabled: false,
+		},
+	}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/supply/accounts?token=bad", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected status: got=%d want=%d", rec.Code, http.StatusUnauthorized)
+	}
+	if !strings.Contains(rec.Body.String(), "QUERY_KEY_NOT_ALLOWED") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 }

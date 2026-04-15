@@ -26,6 +26,20 @@ type BuildServerOptions struct {
 	RedisHealthCheck func(context.Context) error
 }
 
+type buildRouteMuxOptions struct {
+	SupplyAPI        *httpapi.SupplyAPI
+	AlertAPI         *httpapi.AlertAPI
+	DBHealthCheck    func(context.Context) error
+	RedisHealthCheck func(context.Context) error
+}
+
+type middlewareChainOptions struct {
+	Env             string
+	Logger          logging.Logger
+	AuthMiddleware  *middleware.AuthMiddleware
+	RateLimitConfig *middleware.RateLimitConfig
+}
+
 // BuildServer 构建可复用的 HTTP server 与 handler 装配。
 func BuildServer(opts BuildServerOptions) (*http.Server, error) {
 	if opts.SupplyAPI == nil {
@@ -52,13 +66,18 @@ func BuildServer(opts BuildServerOptions) (*http.Server, error) {
 		rateLimitConfig.Enabled = env != "dev"
 	}
 
-	mux := http.NewServeMux()
-	healthHandler := httpapi.NewHealthHandlerWithDefaults(opts.DBHealthCheck, opts.RedisHealthCheck)
-	healthHandler.RegisterRoutes(mux)
-	opts.SupplyAPI.Register(mux)
-	opts.AlertAPI.Register(mux)
-
-	handler := buildHandler(env, mux, opts.Logger, opts.AuthMiddleware, rateLimitConfig)
+	mux := buildRouteMux(buildRouteMuxOptions{
+		SupplyAPI:        opts.SupplyAPI,
+		AlertAPI:         opts.AlertAPI,
+		DBHealthCheck:    opts.DBHealthCheck,
+		RedisHealthCheck: opts.RedisHealthCheck,
+	})
+	handler := buildMiddlewareChain(middlewareChainOptions{
+		Env:             env,
+		Logger:          opts.Logger,
+		AuthMiddleware:  opts.AuthMiddleware,
+		RateLimitConfig: rateLimitConfig,
+	}, mux)
 
 	serverConfig := normalizeServerConfig(opts.ServerConfig)
 
@@ -91,24 +110,27 @@ func normalizeServerConfig(serverConfig config.ServerConfig) config.ServerConfig
 	return serverConfig
 }
 
-func buildHandler(
-	env string,
-	mux *http.ServeMux,
-	logger logging.Logger,
-	authMiddleware *middleware.AuthMiddleware,
-	rateLimitConfig *middleware.RateLimitConfig,
-) http.Handler {
-	var handler http.Handler = mux
+func buildRouteMux(opts buildRouteMuxOptions) *http.ServeMux {
+	mux := http.NewServeMux()
+	healthHandler := httpapi.NewHealthHandlerWithDefaults(opts.DBHealthCheck, opts.RedisHealthCheck)
+	healthHandler.RegisterRoutes(mux)
+	opts.SupplyAPI.Register(mux)
+	opts.AlertAPI.Register(mux)
+	return mux
+}
+
+func buildMiddlewareChain(opts middlewareChainOptions, next http.Handler) http.Handler {
+	var handler http.Handler = next
 	handler = middleware.RequestID(handler)
 	handler = middleware.Recovery(handler)
-	handler = middleware.Logging(handler, logger)
+	handler = middleware.Logging(handler, opts.Logger)
 	handler = middleware.TracingMiddleware(handler)
 
-	if env != "dev" {
-		handler = middleware.NewRateLimitHandler(rateLimitConfig, handler)
-		handler = authMiddleware.TokenVerifyMiddleware(handler)
-		handler = authMiddleware.BearerExtractMiddleware(handler)
-		handler = authMiddleware.QueryKeyRejectMiddleware(handler)
+	if opts.Env != "dev" {
+		handler = middleware.NewRateLimitHandler(opts.RateLimitConfig, handler)
+		handler = opts.AuthMiddleware.TokenVerifyMiddleware(handler)
+		handler = opts.AuthMiddleware.BearerExtractMiddleware(handler)
+		handler = opts.AuthMiddleware.QueryKeyRejectMiddleware(handler)
 	}
 
 	return handler
