@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"lijiaoqiao/supply-api/internal/config"
 	"lijiaoqiao/supply-api/internal/httpapi"
@@ -59,10 +60,7 @@ func BuildServer(opts BuildServerOptions) (*http.Server, error) {
 
 	handler := buildHandler(env, mux, opts.Logger, opts.AuthMiddleware, rateLimitConfig)
 
-	serverConfig := opts.ServerConfig
-	if strings.TrimSpace(serverConfig.Addr) == "" {
-		serverConfig.Addr = ":18082"
-	}
+	serverConfig := normalizeServerConfig(opts.ServerConfig)
 
 	return &http.Server{
 		Addr:              serverConfig.Addr,
@@ -72,6 +70,25 @@ func BuildServer(opts BuildServerOptions) (*http.Server, error) {
 		WriteTimeout:      serverConfig.WriteTimeout,
 		IdleTimeout:       serverConfig.IdleTimeout,
 	}, nil
+}
+
+func normalizeServerConfig(serverConfig config.ServerConfig) config.ServerConfig {
+	if strings.TrimSpace(serverConfig.Addr) == "" {
+		serverConfig.Addr = ":18082"
+	}
+	if serverConfig.ReadTimeout == 0 {
+		serverConfig.ReadTimeout = 10 * time.Second
+	}
+	if serverConfig.WriteTimeout == 0 {
+		serverConfig.WriteTimeout = 15 * time.Second
+	}
+	if serverConfig.IdleTimeout == 0 {
+		serverConfig.IdleTimeout = 30 * time.Second
+	}
+	if serverConfig.ShutdownTimeout == 0 {
+		serverConfig.ShutdownTimeout = 5 * time.Second
+	}
+	return serverConfig
 }
 
 func buildHandler(

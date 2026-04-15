@@ -256,7 +256,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		logger:               opts.Logger,
 		now:                  now,
 		tuning:               tuning,
-		serverConfig:         opts.Config.Server,
+		serverConfig:         normalizeServerConfig(opts.Config.Server),
 		db:                   db,
 		redisCache:           redisCache,
 		supplyAPI:            supplyAPI,

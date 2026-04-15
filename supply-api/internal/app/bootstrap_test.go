@@ -115,6 +115,35 @@ func TestBuildServer_RegistersHealthRoute(t *testing.T) {
 	}
 }
 
+func TestBuildServer_DefaultsTimeoutsWhenUnset(t *testing.T) {
+	supplyAPI, alertAPI := mustBuildTestAPIs(t)
+
+	srv, err := BuildServer(BuildServerOptions{
+		Env:       "dev",
+		Logger:    testLogger{},
+		SupplyAPI: supplyAPI,
+		AlertAPI:  alertAPI,
+	})
+	if err != nil {
+		t.Fatalf("BuildServer returned error: %v", err)
+	}
+	if srv.Addr != ":18082" {
+		t.Fatalf("unexpected addr: %s", srv.Addr)
+	}
+	if srv.ReadHeaderTimeout != 10*time.Second {
+		t.Fatalf("unexpected read header timeout: %s", srv.ReadHeaderTimeout)
+	}
+	if srv.ReadTimeout != 10*time.Second {
+		t.Fatalf("unexpected read timeout: %s", srv.ReadTimeout)
+	}
+	if srv.WriteTimeout != 15*time.Second {
+		t.Fatalf("unexpected write timeout: %s", srv.WriteTimeout)
+	}
+	if srv.IdleTimeout != 30*time.Second {
+		t.Fatalf("unexpected idle timeout: %s", srv.IdleTimeout)
+	}
+}
+
 func mustBuildTestAPIs(t *testing.T) (*httpapi.SupplyAPI, *httpapi.AlertAPI) {
 	t.Helper()
 

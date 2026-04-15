@@ -136,6 +136,37 @@ func TestBuildRuntime_DevFallsBackToInMemoryDependencies(t *testing.T) {
 	}
 }
 
+func TestBuildRuntime_NormalizesServerConfigDefaults(t *testing.T) {
+	cfg := testRuntimeConfig()
+	cfg.Server = config.ServerConfig{}
+
+	runtime, err := buildRuntimeWithFactory(RuntimeOptions{
+		Env:         "dev",
+		Config:      cfg,
+		Logger:      testLogger{},
+		InitContext: context.Background(),
+		Now: func() time.Time {
+			return time.Unix(1712800000, 0).UTC()
+		},
+	}, runtimeFactory{
+		newDB: func(context.Context, config.DatabaseConfig) (*repository.DB, error) {
+			return nil, errors.New("db down")
+		},
+		newRedisCache: func(config.RedisConfig) (*cache.RedisCache, error) {
+			return nil, errors.New("redis down")
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected runtime build to succeed, got %v", err)
+	}
+	if runtime.serverConfig.Addr != ":18082" {
+		t.Fatalf("unexpected addr: %s", runtime.serverConfig.Addr)
+	}
+	if runtime.ShutdownTimeout() != 5*time.Second {
+		t.Fatalf("unexpected shutdown timeout: %s", runtime.ShutdownTimeout())
+	}
+}
+
 func TestBuildRuntime_SeedsDefaultTuning(t *testing.T) {
 	runtime, err := buildRuntimeWithFactory(RuntimeOptions{
 		Env:         "dev",
