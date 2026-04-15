@@ -37,9 +37,9 @@ func BuildServer(opts BuildServerOptions) (*http.Server, error) {
 		return nil, errors.New("logger is required")
 	}
 
-	env := strings.ToLower(strings.TrimSpace(opts.Env))
-	if env == "" {
-		env = "dev"
+	env, err := resolveEnv(opts.Env)
+	if err != nil {
+		return nil, err
 	}
 	if env != "dev" && opts.AuthMiddleware == nil {
 		return nil, errors.New("auth middleware is required outside dev")

@@ -87,7 +87,10 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		factory.newRedisCache = cache.NewRedisCache
 	}
 
-	env := normalizeEnv(opts.Env)
+	env, err := resolveEnv(opts.Env)
+	if err != nil {
+		return nil, err
+	}
 	now := opts.Now
 	if now == nil {
 		now = time.Now
@@ -328,12 +331,17 @@ func (r *Runtime) ShutdownTimeout() time.Duration {
 	return r.serverConfig.ShutdownTimeout
 }
 
-func normalizeEnv(env string) string {
+func resolveEnv(env string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(env))
 	if normalized == "" {
-		return "dev"
+		return "dev", nil
 	}
-	return normalized
+	switch normalized {
+	case "dev", "staging", "prod":
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unsupported env %q", env)
+	}
 }
 
 func infof(logger logging.Logger, format string, args ...any) {

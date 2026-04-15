@@ -63,6 +63,26 @@ func TestBuildServer_ProdRequiresAuthMiddleware(t *testing.T) {
 	}
 }
 
+func TestBuildServer_RejectsUnsupportedEnv(t *testing.T) {
+	supplyAPI, alertAPI := mustBuildTestAPIs(t)
+
+	srv, err := BuildServer(BuildServerOptions{
+		Env:       "qa",
+		Logger:    testLogger{},
+		SupplyAPI: supplyAPI,
+		AlertAPI:  alertAPI,
+	})
+	if err == nil {
+		t.Fatal("expected unsupported env to fail")
+	}
+	if srv != nil {
+		t.Fatal("expected nil server when env is unsupported")
+	}
+	if !strings.Contains(err.Error(), "unsupported env") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestBuildServer_RegistersHealthRoute(t *testing.T) {
 	supplyAPI, alertAPI := mustBuildTestAPIs(t)
 

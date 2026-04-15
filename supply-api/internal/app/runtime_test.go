@@ -64,6 +64,28 @@ func TestBuildRuntime_ProdRequiresDatabase(t *testing.T) {
 	}
 }
 
+func TestBuildRuntime_RejectsUnsupportedEnv(t *testing.T) {
+	_, err := buildRuntimeWithFactory(RuntimeOptions{
+		Env:         "qa",
+		Config:      testRuntimeConfig(),
+		Logger:      testLogger{},
+		InitContext: context.Background(),
+	}, runtimeFactory{
+		newDB: func(context.Context, config.DatabaseConfig) (*repository.DB, error) {
+			return nil, errors.New("db down")
+		},
+		newRedisCache: func(config.RedisConfig) (*cache.RedisCache, error) {
+			return nil, nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected unsupported env to fail")
+	}
+	if !strings.Contains(err.Error(), "unsupported env") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestBuildRuntime_DevFallsBackToInMemoryDependencies(t *testing.T) {
 	runtime, err := buildRuntimeWithFactory(RuntimeOptions{
 		Env:         "dev",
