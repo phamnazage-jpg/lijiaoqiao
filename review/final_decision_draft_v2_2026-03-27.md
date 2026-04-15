@@ -1,3 +1,9 @@
+> 归档状态：已归档
+> 归档批次：ARCHIVE-HISTORY-2026-04-14-A01
+> 归档标识：AHR-20260414-032
+> 当前用途：历史快照，仅供追溯；不得作为现行门禁、发布决议或实现状态事实源。
+> 当前事实源：`docs/plans/2026-04-14-repo-integrity-refactor-plan.md`、`reports/archive/gate_verification/` 与仍在维护的签署/门禁文档。
+
 # 最终决议稿（Draft v2，2026-03-27）
 
 - 目的：基于当前执行进度输出可签发草案（G-003）

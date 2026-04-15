@@ -1,3 +1,9 @@
+> 归档状态：已归档
+> 归档批次：ARCHIVE-HISTORY-2026-04-14-A01
+> 归档标识：AHR-20260414-033
+> 当前用途：历史快照，仅供追溯；不得作为现行门禁、发布决议或实现状态事实源。
+> 当前事实源：`docs/plans/2026-04-14-repo-integrity-refactor-plan.md`、`reports/archive/gate_verification/` 与仍在维护的签署/门禁文档。
+
 # 规划设计四专家联合评审报告（技术/测试/业主/UIUX）
 
 - 版本：v1.0

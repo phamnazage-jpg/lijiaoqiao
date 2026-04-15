@@ -1,3 +1,9 @@
+> 归档状态：已归档
+> 归档批次：ARCHIVE-HISTORY-2026-04-14-A01
+> 归档标识：AHR-20260414-005
+> 当前用途：历史快照，仅供追溯；不得作为现行门禁、发布决议或实现状态事实源。
+> 当前事实源：`docs/plans/2026-04-14-repo-integrity-refactor-plan.md`、`reports/archive/gate_verification/` 与仍在维护的签署/门禁文档。
+
 # 数据库基线执行验证报告（2026-03-27）
 
 - 执行环境：PostgreSQL 15 (`127.0.0.1:34603`)

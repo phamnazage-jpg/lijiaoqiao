@@ -1,3 +1,9 @@
+> 归档状态：已归档
+> 归档批次：ARCHIVE-HISTORY-2026-04-14-A01
+> 归档标识：AHP-20260414-019
+> 当前用途：历史快照，仅供追溯；不得作为现行门禁、发布决议或实现状态事实源。
+> 当前事实源：`docs/plans/2026-04-14-repo-integrity-refactor-plan.md`、`reports/archive/gate_verification/` 与仍在维护的签署/门禁文档。
+
 # 立交桥项目每日Review报告
 
 > 生成时间：2026-04-02 17:46:41
