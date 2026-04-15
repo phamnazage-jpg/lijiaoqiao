@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"lijiaoqiao/supply-api/internal/audit"
 	"lijiaoqiao/supply-api/internal/cache"
 	"lijiaoqiao/supply-api/internal/config"
 	"lijiaoqiao/supply-api/internal/domain"
@@ -61,6 +62,72 @@ func TestBuildRuntime_ProdRequiresDatabase(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "database unavailable") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildStoreBundle_UsesInMemoryStoresWithoutDatabase(t *testing.T) {
+	bundle := buildStoreBundle(nil, testLogger{})
+	if bundle.accountStore == nil {
+		t.Fatal("expected account store")
+	}
+	if bundle.packageStore == nil {
+		t.Fatal("expected package store")
+	}
+	if bundle.settlementStore == nil {
+		t.Fatal("expected settlement store")
+	}
+	if bundle.earningStore == nil {
+		t.Fatal("expected earning store")
+	}
+	if bundle.auditStore == nil {
+		t.Fatal("expected audit store")
+	}
+	if bundle.alertService == nil {
+		t.Fatal("expected alert service")
+	}
+	if bundle.tokenStatusRepo != nil {
+		t.Fatal("expected nil token status repo without database")
+	}
+	if bundle.idempotencyRepo != nil {
+		t.Fatal("expected nil idempotency repo without database")
+	}
+}
+
+func TestBuildStoreBundle_UsesDatabaseBackedStoresWithDatabase(t *testing.T) {
+	bundle := buildStoreBundle(&repository.DB{}, testLogger{})
+	if bundle.accountStore == nil {
+		t.Fatal("expected account store")
+	}
+	if bundle.packageStore == nil {
+		t.Fatal("expected package store")
+	}
+	if bundle.settlementStore == nil {
+		t.Fatal("expected settlement store")
+	}
+	if bundle.earningStore == nil {
+		t.Fatal("expected earning store")
+	}
+	if bundle.auditStore == nil {
+		t.Fatal("expected audit store")
+	}
+	if bundle.alertService == nil {
+		t.Fatal("expected alert service")
+	}
+	if bundle.tokenStatusRepo == nil {
+		t.Fatal("expected token status repo with database")
+	}
+	if bundle.idempotencyRepo == nil {
+		t.Fatal("expected idempotency repo with database")
+	}
+}
+
+func TestBuildSecurityBundle_UsesMemoryTokenBackendWithoutRepository(t *testing.T) {
+	security := buildSecurityBundle("dev", testRuntimeConfig(), testLogger{}, audit.NewMemoryAuditStore(), nil, nil)
+	if security.authMiddleware == nil {
+		t.Fatal("expected auth middleware")
+	}
+	if security.revocationSubscriber != nil {
+		t.Fatal("expected nil revocation subscriber without token repository")
 	}
 }
 

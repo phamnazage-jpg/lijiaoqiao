@@ -64,6 +64,29 @@ type runtimeFactory struct {
 	newRedisCache func(cfg config.RedisConfig) (*cache.RedisCache, error)
 }
 
+type runtimeStoreBundle struct {
+	accountStore    domain.AccountStore
+	packageStore    domain.PackageStore
+	settlementStore domain.SettlementStore
+	earningStore    domain.EarningStore
+	auditStore      audit.AuditStore
+	alertService    *auditservice.AlertService
+	fkValidator     *repository.ForeignKeyValidator
+	tokenStatusRepo *repository.TokenStatusRepository
+	idempotencyRepo *repository.IdempotencyRepository
+}
+
+type runtimeSecurityBundle struct {
+	authMiddleware       *middleware.AuthMiddleware
+	revocationSubscriber revocationSubscriber
+}
+
+type runtimeAPIBundle struct {
+	supplyAPI       *httpapi.SupplyAPI
+	alertAPI        *httpapi.AlertAPI
+	rateLimitConfig *middleware.RateLimitConfig
+}
+
 // BuildRuntime 构建 supply-api 运行时依赖。
 func BuildRuntime(opts RuntimeOptions) (*Runtime, error) {
 	return buildRuntimeWithFactory(opts, runtimeFactory{
@@ -126,129 +149,11 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		infof(opts.Logger, "connected to redis at %s:%d", opts.Config.Redis.Host, opts.Config.Redis.Port)
 	}
 
-	var accountStore domain.AccountStore
-	var packageStore domain.PackageStore
-	var settlementStore domain.SettlementStore
-	var earningStore domain.EarningStore
-	var auditRepository *auditrepo.PostgresAuditRepository
-	var tokenStatusRepo *repository.TokenStatusRepository
-	var idempotencyRepo *repository.IdempotencyRepository
-
-	if db != nil {
-		accountRepo := repository.NewAccountRepository(db.Pool)
-		packageRepo := repository.NewPackageRepository(db.Pool)
-		settlementRepo := repository.NewSettlementRepository(db.Pool)
-		usageRepo := repository.NewUsageRepository(db.Pool)
-		idempotencyRepo = repository.NewIdempotencyRepository(db.Pool)
-		auditRepository = auditrepo.NewPostgresAuditRepository(db.Pool)
-		tokenStatusRepo = repository.NewTokenStatusRepository(db.Pool)
-
-		accountStore = adapter.NewDBAccountStore(accountRepo)
-		packageStore = adapter.NewDBPackageStore(packageRepo)
-		settlementStore = adapter.NewDBSettlementStore(settlementRepo, accountRepo, db.Pool)
-		earningStore = adapter.NewDBEarningStore(usageRepo)
-	} else {
-		accountStore = adapter.NewInMemoryAccountStoreAdapter()
-		packageStore = adapter.NewInMemoryPackageStoreAdapter()
-		settlementStore = adapter.NewInMemorySettlementStoreAdapter()
-		earningStore = adapter.NewInMemoryEarningStoreAdapter()
-	}
-
-	var auditStore audit.AuditStore
-	if auditRepository != nil {
-		auditStore = audit.NewPostgresAuditStore(auditRepository)
-		opts.Logger.Info("审计存储: 使用PostgreSQL (DB-backed)", nil)
-	} else {
-		auditStore = audit.NewMemoryAuditStore()
-		opts.Logger.Warn("审计存储使用内存实现 (生产环境不应使用)", nil)
-	}
-
-	var alertStore auditservice.AlertStoreInterface
-	if db != nil {
-		alertStore = auditrepo.NewPostgresAlertRepository(db.Pool)
-		opts.Logger.Info("告警存储: 使用PostgreSQL (DB-backed)", nil)
-	} else {
-		alertStore = auditservice.NewInMemoryAlertStore()
-		opts.Logger.Warn("告警存储使用内存实现 (仅开发环境允许)", nil)
-	}
-	alertService := auditservice.NewAlertService(alertStore)
-
-	var fkValidator *repository.ForeignKeyValidator
-	if db != nil {
-		fkValidator = repository.NewForeignKeyValidator(db.Pool)
-		opts.Logger.Info("外键校验器: 已初始化 (PostgreSQL-backed)", nil)
-	} else {
-		opts.Logger.Warn("外键校验器未启用 (db不可用)", nil)
-	}
-
-	_ = domain.NewInvariantChecker(accountStore, packageStore, settlementStore)
-
-	accountService := domain.NewAccountService(accountStore, auditStore)
-	packageService := domain.NewPackageService(packageStore, accountStore, auditStore)
-	settlementService := domain.NewSettlementService(settlementStore, earningStore, auditStore)
-	earningService := domain.NewEarningService(earningStore)
-
-	tokenCache := middleware.NewTokenCache()
-	var tokenBackend middleware.TokenStatusBackend
-	var revocationSubscriber revocationSubscriber
-	if tokenStatusRepo != nil {
-		dbTokenBackend := middleware.NewDBTokenStatusBackend(tokenStatusRepo, redisCache, opts.Config.Token.RevocationCacheTTL)
-		tokenBackend = dbTokenBackend
-		revocationSubscriber = dbTokenBackend
-		opts.Logger.Info("Token状态后端: 使用PostgreSQL (DB-backed)", nil)
-	} else {
-		tokenBackend = adapter.NewMemoryTokenBackend()
-		opts.Logger.Warn("Token状态后端使用内存实现 (生产环境不应使用)", nil)
-	}
-
-	auditEmitter := adapter.NewAuditEmitterAdapter(auditStore)
-	authMiddleware := middleware.NewAuthMiddleware(middleware.AuthConfig{
-		SecretKey: opts.Config.Token.SecretKey,
-		PublicKey: opts.Config.Token.PublicKey,
-		Algorithm: opts.Config.Token.Algorithm,
-		Issuer:    opts.Config.Token.Issuer,
-		CacheTTL:  opts.Config.Token.RevocationCacheTTL,
-		Enabled:   env != "dev",
-	}, tokenCache, tokenBackend, auditEmitter)
-
-	var idempotencyMiddleware *middleware.IdempotencyMiddleware
-	if db != nil && idempotencyRepo != nil {
-		idempotencyMiddleware = middleware.NewIdempotencyMiddleware(idempotencyRepo, middleware.IdempotencyConfig{
-			TTL:     tuning.idempotencyTTL,
-			Enabled: env != "dev",
-		})
-		opts.Logger.Info("幂等中间件已启用（DB-backed）", nil)
-	} else {
-		if isProd {
-			return nil, errors.New("idempotency repository unavailable")
-		}
-		opts.Logger.Warn("幂等中间件未启用（db或repo不可用）- 需要幂等的写接口将返回 503", nil)
-	}
-
-	rateLimitConfig := middleware.DefaultRateLimitConfig()
-	rateLimitConfig.Enabled = env != "dev"
-	opts.Logger.Info("限流中间件已初始化", nil)
-
-	supplyAPI, err := httpapi.NewSupplyAPI(
-		accountService,
-		packageService,
-		settlementService,
-		earningService,
-		idempotencyMiddleware,
-		auditStore,
-		fkValidator,
-		opts.Config.Server.DefaultSupplierID,
-		opts.Config.Server.StatementBaseURL,
-		now,
-	)
+	storeBundle := buildStoreBundle(db, opts.Logger)
+	securityBundle := buildSecurityBundle(env, opts.Config, opts.Logger, storeBundle.auditStore, redisCache, storeBundle.tokenStatusRepo)
+	apiBundle, err := buildAPIBundle(env, opts.Config, now, tuning, opts.Logger, isProd, storeBundle)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize supply api: %w", err)
-	}
-	supplyAPI.SetWithdrawEnabled(opts.Config.Settlement.WithdrawEnabled)
-
-	alertAPI, err := httpapi.NewAlertAPI(alertService)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize alert api: %w", err)
+		return nil, err
 	}
 
 	return &Runtime{
@@ -259,11 +164,147 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		serverConfig:         normalizeServerConfig(opts.Config.Server),
 		db:                   db,
 		redisCache:           redisCache,
-		supplyAPI:            supplyAPI,
-		alertAPI:             alertAPI,
-		authMiddleware:       authMiddleware,
-		rateLimitConfig:      rateLimitConfig,
+		supplyAPI:            apiBundle.supplyAPI,
+		alertAPI:             apiBundle.alertAPI,
+		authMiddleware:       securityBundle.authMiddleware,
+		rateLimitConfig:      apiBundle.rateLimitConfig,
+		revocationSubscriber: securityBundle.revocationSubscriber,
+	}, nil
+}
+
+func buildStoreBundle(db *repository.DB, logger logging.Logger) runtimeStoreBundle {
+	var bundle runtimeStoreBundle
+
+	if db != nil {
+		accountRepo := repository.NewAccountRepository(db.Pool)
+		packageRepo := repository.NewPackageRepository(db.Pool)
+		settlementRepo := repository.NewSettlementRepository(db.Pool)
+		usageRepo := repository.NewUsageRepository(db.Pool)
+
+		bundle.idempotencyRepo = repository.NewIdempotencyRepository(db.Pool)
+		bundle.tokenStatusRepo = repository.NewTokenStatusRepository(db.Pool)
+		bundle.accountStore = adapter.NewDBAccountStore(accountRepo)
+		bundle.packageStore = adapter.NewDBPackageStore(packageRepo)
+		bundle.settlementStore = adapter.NewDBSettlementStore(settlementRepo, accountRepo, db.Pool)
+		bundle.earningStore = adapter.NewDBEarningStore(usageRepo)
+		bundle.auditStore = audit.NewPostgresAuditStore(auditrepo.NewPostgresAuditRepository(db.Pool))
+		bundle.alertService = auditservice.NewAlertService(auditrepo.NewPostgresAlertRepository(db.Pool))
+		bundle.fkValidator = repository.NewForeignKeyValidator(db.Pool)
+
+		logger.Info("审计存储: 使用PostgreSQL (DB-backed)", nil)
+		logger.Info("告警存储: 使用PostgreSQL (DB-backed)", nil)
+		logger.Info("外键校验器: 已初始化 (PostgreSQL-backed)", nil)
+		return bundle
+	}
+
+	bundle.accountStore = adapter.NewInMemoryAccountStoreAdapter()
+	bundle.packageStore = adapter.NewInMemoryPackageStoreAdapter()
+	bundle.settlementStore = adapter.NewInMemorySettlementStoreAdapter()
+	bundle.earningStore = adapter.NewInMemoryEarningStoreAdapter()
+	bundle.auditStore = audit.NewMemoryAuditStore()
+	bundle.alertService = auditservice.NewAlertService(auditservice.NewInMemoryAlertStore())
+
+	logger.Warn("审计存储使用内存实现 (生产环境不应使用)", nil)
+	logger.Warn("告警存储使用内存实现 (仅开发环境允许)", nil)
+	logger.Warn("外键校验器未启用 (db不可用)", nil)
+	return bundle
+}
+
+func buildSecurityBundle(
+	env string,
+	cfg *config.Config,
+	logger logging.Logger,
+	auditStore audit.AuditStore,
+	redisCache *cache.RedisCache,
+	tokenStatusRepo *repository.TokenStatusRepository,
+) runtimeSecurityBundle {
+	tokenCache := middleware.NewTokenCache()
+	var tokenBackend middleware.TokenStatusBackend
+	var revocationSubscriber revocationSubscriber
+
+	if tokenStatusRepo != nil {
+		dbTokenBackend := middleware.NewDBTokenStatusBackend(tokenStatusRepo, redisCache, cfg.Token.RevocationCacheTTL)
+		tokenBackend = dbTokenBackend
+		revocationSubscriber = dbTokenBackend
+		logger.Info("Token状态后端: 使用PostgreSQL (DB-backed)", nil)
+	} else {
+		tokenBackend = adapter.NewMemoryTokenBackend()
+		logger.Warn("Token状态后端使用内存实现 (生产环境不应使用)", nil)
+	}
+
+	return runtimeSecurityBundle{
+		authMiddleware: middleware.NewAuthMiddleware(middleware.AuthConfig{
+			SecretKey: cfg.Token.SecretKey,
+			PublicKey: cfg.Token.PublicKey,
+			Algorithm: cfg.Token.Algorithm,
+			Issuer:    cfg.Token.Issuer,
+			CacheTTL:  cfg.Token.RevocationCacheTTL,
+			Enabled:   env != "dev",
+		}, tokenCache, tokenBackend, adapter.NewAuditEmitterAdapter(auditStore)),
 		revocationSubscriber: revocationSubscriber,
+	}
+}
+
+func buildAPIBundle(
+	env string,
+	cfg *config.Config,
+	now func() time.Time,
+	tuning runtimeTuning,
+	logger logging.Logger,
+	isProd bool,
+	storeBundle runtimeStoreBundle,
+) (runtimeAPIBundle, error) {
+	_ = domain.NewInvariantChecker(storeBundle.accountStore, storeBundle.packageStore, storeBundle.settlementStore)
+
+	accountService := domain.NewAccountService(storeBundle.accountStore, storeBundle.auditStore)
+	packageService := domain.NewPackageService(storeBundle.packageStore, storeBundle.accountStore, storeBundle.auditStore)
+	settlementService := domain.NewSettlementService(storeBundle.settlementStore, storeBundle.earningStore, storeBundle.auditStore)
+	earningService := domain.NewEarningService(storeBundle.earningStore)
+
+	var idempotencyMiddleware *middleware.IdempotencyMiddleware
+	if storeBundle.idempotencyRepo != nil {
+		idempotencyMiddleware = middleware.NewIdempotencyMiddleware(storeBundle.idempotencyRepo, middleware.IdempotencyConfig{
+			TTL:     tuning.idempotencyTTL,
+			Enabled: env != "dev",
+		})
+		logger.Info("幂等中间件已启用（DB-backed）", nil)
+	} else {
+		if isProd {
+			return runtimeAPIBundle{}, errors.New("idempotency repository unavailable")
+		}
+		logger.Warn("幂等中间件未启用（db或repo不可用）- 需要幂等的写接口将返回 503", nil)
+	}
+
+	rateLimitConfig := middleware.DefaultRateLimitConfig()
+	rateLimitConfig.Enabled = env != "dev"
+	logger.Info("限流中间件已初始化", nil)
+
+	supplyAPI, err := httpapi.NewSupplyAPI(
+		accountService,
+		packageService,
+		settlementService,
+		earningService,
+		idempotencyMiddleware,
+		storeBundle.auditStore,
+		storeBundle.fkValidator,
+		cfg.Server.DefaultSupplierID,
+		cfg.Server.StatementBaseURL,
+		now,
+	)
+	if err != nil {
+		return runtimeAPIBundle{}, fmt.Errorf("failed to initialize supply api: %w", err)
+	}
+	supplyAPI.SetWithdrawEnabled(cfg.Settlement.WithdrawEnabled)
+
+	alertAPI, err := httpapi.NewAlertAPI(storeBundle.alertService)
+	if err != nil {
+		return runtimeAPIBundle{}, fmt.Errorf("failed to initialize alert api: %w", err)
+	}
+
+	return runtimeAPIBundle{
+		supplyAPI:       supplyAPI,
+		alertAPI:        alertAPI,
+		rateLimitConfig: rateLimitConfig,
 	}, nil
 }
 
