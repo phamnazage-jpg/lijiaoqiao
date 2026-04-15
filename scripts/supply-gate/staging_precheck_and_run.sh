@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="${1:-${SCRIPT_DIR}/.env}"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 mkdir -p "${OUT_DIR}"
 TS="$(date +%F_%H%M%S)"
 LOG_FILE="${OUT_DIR}/staging_run_${TS}.log"
@@ -13,6 +13,46 @@ LOG_FILE="${OUT_DIR}/staging_run_${TS}.log"
 source "${ENV_FILE}"
 ENABLE_TOK005_DRYRUN="${ENABLE_TOK005_DRYRUN:-1}"
 ENABLE_M021_PRECHECK="${ENABLE_M021_PRECHECK:-1}"
+
+classify_env() {
+  local env_path="$1"
+  local api_base="${API_BASE_URL:-}"
+  local owner="${OWNER_BEARER_TOKEN:-}"
+  local viewer="${VIEWER_BEARER_TOKEN:-}"
+  local admin="${ADMIN_BEARER_TOKEN:-}"
+
+  if [[ "${env_path}" == *".env.local-mock"* ]]; then
+    echo "local-mock"
+    return
+  fi
+
+  if [[ -z "${api_base}" || "${api_base}" == *"staging.example.com"* ]]; then
+    echo "placeholder"
+    return
+  fi
+
+  if echo "${api_base}" | grep -Eiq '127\.0\.0\.1|localhost'; then
+    echo "local-mock"
+    return
+  fi
+
+  for token in "${owner}" "${viewer}" "${admin}"; do
+    if [[ -z "${token}" || "${token}" == replace-me-* || "${token}" == placeholder* ]]; then
+      echo "placeholder"
+      return
+    fi
+  done
+
+  echo "real-staging"
+}
+
+ENV_CLASS="$(classify_env "${ENV_FILE}")"
+echo "[INFO] env_class=${ENV_CLASS}" | tee "${LOG_FILE}"
+
+if [[ "${ENV_CLASS}" == "local-mock" ]]; then
+  echo "[DEFERRED] env_class=local-mock; PHASE-07 requires real staging inputs" | tee -a "${LOG_FILE}"
+  exit 2
+fi
 
 required=(API_BASE_URL OWNER_BEARER_TOKEN VIEWER_BEARER_TOKEN ADMIN_BEARER_TOKEN)
 for v in "${required[@]}"; do
@@ -34,7 +74,7 @@ if [[ "${API_BASE_URL}" == *"staging.example.com"* ]]; then
   exit 1
 fi
 
-echo "[INFO] precheck pass, API_BASE_URL=${API_BASE_URL}" | tee "${LOG_FILE}"
+echo "[INFO] precheck pass, env_class=${ENV_CLASS}, API_BASE_URL=${API_BASE_URL}" | tee -a "${LOG_FILE}"
 
 if [[ "${ENABLE_M021_PRECHECK}" == "1" ]]; then
   echo "[INFO] run M-021 token runtime readiness precheck" | tee -a "${LOG_FILE}"

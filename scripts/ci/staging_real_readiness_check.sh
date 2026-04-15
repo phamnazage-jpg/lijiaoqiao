@@ -9,7 +9,7 @@ else
   ENV_FILE="${ROOT_DIR}/${ENV_REL}"
 fi
 
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 mkdir -p "${OUT_DIR}"
 TS="$(date +%F_%H%M%S)"
 REPORT_FILE="${OUT_DIR}/staging_real_readiness_${TS}.md"
@@ -43,6 +43,7 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     echo
     echo "- 时间戳：${TS}"
     echo "- 输入环境：\`${ENV_REL}\`"
+    echo "- 环境分类：\`${ENV_CLASS}\`"
     echo "- 结果：**BLOCKED**"
     echo
     echo "| 检查项 | 结果 | 说明 | 证据 |"
@@ -63,6 +64,35 @@ API_BASE_URL_VALUE="${API_BASE_URL:-}"
 OWNER_TOKEN_VALUE="${OWNER_BEARER_TOKEN:-}"
 VIEWER_TOKEN_VALUE="${VIEWER_BEARER_TOKEN:-}"
 ADMIN_TOKEN_VALUE="${ADMIN_BEARER_TOKEN:-}"
+
+classify_env() {
+  if [[ "${ENV_FILE}" == *".env.local-mock"* ]]; then
+    echo "local-mock"
+    return
+  fi
+
+  if [[ -z "${API_BASE_URL_VALUE}" || "${API_BASE_URL_VALUE}" == *"staging.example.com"* ]]; then
+    echo "placeholder"
+    return
+  fi
+
+  if echo "${API_BASE_URL_VALUE}" | grep -Eiq '127\.0\.0\.1|localhost'; then
+    echo "local-mock"
+    return
+  fi
+
+  for token in "${OWNER_TOKEN_VALUE}" "${VIEWER_TOKEN_VALUE}" "${ADMIN_TOKEN_VALUE}"; do
+    if [[ -z "${token}" || "${token}" == replace-me-* || "${token}" == placeholder* ]]; then
+      echo "placeholder"
+      return
+    fi
+  done
+
+  echo "real-staging"
+}
+
+ENV_CLASS="$(classify_env)"
+log "[INFO] env_class=${ENV_CLASS}"
 
 if [[ -n "${API_BASE_URL_VALUE}" ]]; then
   add_check "STG-RDY-002" "PASS" "API_BASE_URL 已配置" "${API_BASE_URL_VALUE}"
@@ -139,6 +169,7 @@ fi
   echo
   echo "- 时间戳：${TS}"
   echo "- 输入环境：\`${ENV_REL}\`"
+  echo "- 环境分类：\`${ENV_CLASS}\`"
   echo "- 结果：**${RESULT}**"
   echo "- 说明：${NOTE}"
   echo

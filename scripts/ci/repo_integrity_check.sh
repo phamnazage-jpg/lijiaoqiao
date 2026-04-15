@@ -2,38 +2,17 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-GO_BIN="${ROOT_DIR}/.tools/go-current/bin/go"
+LIB_FILE="${ROOT_DIR}/scripts/ci/lib/verification_common.sh"
+# shellcheck disable=SC1091
+source "${LIB_FILE}"
 
-if [[ ! -x "${GO_BIN}" ]]; then
-  GO_BIN="$(command -v go || true)"
-fi
-
+GO_BIN="$(resolve_go_bin "${ROOT_DIR}" || true)"
 if [[ -z "${GO_BIN}" ]]; then
   echo "[repo] go binary not found" >&2
   exit 1
 fi
 
-export PATH="$(dirname "${GO_BIN}"):${PATH}"
-export GOCACHE="${GOCACHE:-/tmp/lijiaoqiao-go-cache-repo-integrity}"
-
-check_current_fact_sources() {
-  echo "[repo] fact-sources"
-
-  local matches
-  matches="$(
-    rg -n "platform_core_schema_v1\\.sql|AUDIT_QUERY_NOT_READY|not implemented" \
-      "${ROOT_DIR}/gateway/README.md" \
-      "${ROOT_DIR}/platform-token-runtime/README.md" \
-      "${ROOT_DIR}/platform-token-runtime/internal/httpapi/token_api.go" \
-      "${ROOT_DIR}/supply-api/README.md" \
-      "${ROOT_DIR}/supply-api/scripts/migrate.sh" || true
-  )"
-
-  if [[ -n "${matches}" ]]; then
-    echo "${matches}" >&2
-    exit 1
-  fi
-}
+setup_go_env "${GO_BIN}" "/tmp/lijiaoqiao-go-cache-repo-integrity"
 
 check_shell_syntax() {
   echo "[repo] shell"
@@ -41,21 +20,10 @@ check_shell_syntax() {
   bash -n "${ROOT_DIR}/supply-api/scripts/run_integration_tests.sh"
 }
 
-run_suite() {
-  local label="$1"
-  local workdir="$2"
-  shift 2
-
-  echo "[repo] ${label}"
-  (
-    cd "${ROOT_DIR}/${workdir}"
-    "${GO_BIN}" "$@"
-  )
-}
-
-check_current_fact_sources
+echo "[repo] fact-sources"
+check_fact_sources "${ROOT_DIR}"
 check_shell_syntax
-run_suite "gateway" "gateway" test ./...
-run_suite "platform-token-runtime" "platform-token-runtime" test ./...
-run_suite "supply-api unit" "supply-api" test ./...
-run_suite "supply-api e2e" "supply-api" test -tags=e2e ./e2e
+run_go_suite "${ROOT_DIR}" "${GO_BIN}" "gateway" "gateway" test ./...
+run_go_suite "${ROOT_DIR}" "${GO_BIN}" "platform-token-runtime" "platform-token-runtime" test ./...
+run_go_suite "${ROOT_DIR}" "${GO_BIN}" "supply-api unit" "supply-api" test ./...
+run_go_suite "${ROOT_DIR}" "${GO_BIN}" "supply-api e2e" "supply-api" test -tags=e2e ./e2e

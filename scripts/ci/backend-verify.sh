@@ -2,35 +2,24 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT_DIR="${ROOT_DIR}/reports/gates"
+OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 TS="$(date +%F_%H%M%S)"
 LOG_FILE="${OUT_DIR}/backend_verify_${TS}.log"
 REPORT_FILE="${OUT_DIR}/backend_verify_${TS}.md"
-GO_BIN="${ROOT_DIR}/.tools/go-current/bin/go"
-DEFAULT_GOPATH=""
-DEFAULT_GOMODCACHE=""
+LIB_FILE="${ROOT_DIR}/scripts/ci/lib/verification_common.sh"
+# shellcheck disable=SC1091
+source "${LIB_FILE}"
 
 mkdir -p "${OUT_DIR}"
 : > "${LOG_FILE}"
 
-if [[ ! -x "${GO_BIN}" ]]; then
-  GO_BIN="$(command -v go || true)"
-fi
+GO_BIN="$(resolve_go_bin "${ROOT_DIR}" || true)"
 if [[ -z "${GO_BIN}" ]]; then
   echo "[FAIL] go binary not found" | tee -a "${LOG_FILE}"
   exit 1
 fi
 
-export PATH="$(dirname "${GO_BIN}"):${PATH}"
-export GOCACHE="${ROOT_DIR}/.tools/go-cache"
-DEFAULT_GOPATH="$("${GO_BIN}" env GOPATH 2>/dev/null || true)"
-DEFAULT_GOMODCACHE="$("${GO_BIN}" env GOMODCACHE 2>/dev/null || true)"
-if [[ -n "${DEFAULT_GOPATH}" ]]; then
-  export GOPATH="${DEFAULT_GOPATH}"
-fi
-if [[ -n "${DEFAULT_GOMODCACHE}" ]]; then
-  export GOMODCACHE="${DEFAULT_GOMODCACHE}"
-fi
+setup_go_env "${GO_BIN}" "${ROOT_DIR}/.tools/go-cache"
 
 STEP_RESULTS=()
 
@@ -52,10 +41,10 @@ run_step() {
 
   if [[ "${rc}" -eq 0 ]]; then
     log "[PASS] ${step_id} rc=${rc}"
-    STEP_RESULTS+=("${step_id}|PASS|${title}|${out_file}")
+    write_step_result STEP_RESULTS "${step_id}" "PASS" "${title}" "${out_file}"
   else
     log "[FAIL] ${step_id} rc=${rc}"
-    STEP_RESULTS+=("${step_id}|FAIL|${title}|${out_file}")
+    write_step_result STEP_RESULTS "${step_id}" "FAIL" "${title}" "${out_file}"
   fi
 }
 
@@ -72,16 +61,16 @@ run_e2e_skip_gate() {
 
   if grep -Eiq 'SKIP|需要完整环境运行 E2E 测试|Skipping E2E test' "${out_file}"; then
     log "[FAIL] ${step_id} placeholder E2E detected"
-    STEP_RESULTS+=("${step_id}|FAIL|${title}|${out_file}")
+    write_step_result STEP_RESULTS "${step_id}" "FAIL" "${title}" "${out_file}"
     return
   fi
 
   if [[ "${rc}" -eq 0 ]]; then
     log "[PASS] ${step_id} rc=${rc}"
-    STEP_RESULTS+=("${step_id}|PASS|${title}|${out_file}")
+    write_step_result STEP_RESULTS "${step_id}" "PASS" "${title}" "${out_file}"
   else
     log "[FAIL] ${step_id} rc=${rc}"
-    STEP_RESULTS+=("${step_id}|FAIL|${title}|${out_file}")
+    write_step_result STEP_RESULTS "${step_id}" "FAIL" "${title}" "${out_file}"
   fi
 }
 
