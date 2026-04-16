@@ -198,6 +198,95 @@ func TestResolveEnv_RejectsUnsupportedValue(t *testing.T) {
 	}
 }
 
+func TestResolveRuntimeBuildInputs_NormalizesDefaults(t *testing.T) {
+	inputs, err := resolveRuntimeBuildInputs(RuntimeOptions{
+		Config: testRuntimeConfig(),
+		Logger: testLogger{},
+	})
+	if err != nil {
+		t.Fatalf("expected input normalization to succeed, got %v", err)
+	}
+	if inputs.cfg == nil {
+		t.Fatal("expected config to be preserved")
+	}
+	if inputs.logger == nil {
+		t.Fatal("expected logger to be preserved")
+	}
+	if inputs.env != "dev" {
+		t.Fatalf("unexpected env: %s", inputs.env)
+	}
+	if inputs.isProd {
+		t.Fatal("expected default env to be non-prod")
+	}
+	if inputs.now == nil {
+		t.Fatal("expected now func to be defaulted")
+	}
+	if inputs.initCtx == nil {
+		t.Fatal("expected init context to be defaulted")
+	}
+	if inputs.tuning.outboxStreamName != "supply:outbox:stream" {
+		t.Fatalf("unexpected outbox stream: %s", inputs.tuning.outboxStreamName)
+	}
+}
+
+func TestInitializeRuntimeExternalResources_ProdRejectsDatabaseFailure(t *testing.T) {
+	_, err := initializeRuntimeExternalResources(runtimeBuildInputs{
+		env:     "prod",
+		cfg:     testRuntimeConfig(),
+		logger:  testLogger{},
+		initCtx: context.Background(),
+		isProd:  true,
+		tuning:  defaultRuntimeTuning(),
+		now:     time.Now,
+	}, runtimeFactory{
+		newDB: func(context.Context, config.DatabaseConfig) (*repository.DB, error) {
+			return nil, errors.New("db down")
+		},
+		newRedisCache: func(config.RedisConfig) (*cache.RedisCache, error) {
+			return nil, nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected prod runtime resources to reject database outage")
+	}
+	if !strings.Contains(err.Error(), "database unavailable") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInitializeRuntimeExternalResources_DevFallsBackToNilResources(t *testing.T) {
+	logger := &captureLogger{}
+
+	resources, err := initializeRuntimeExternalResources(runtimeBuildInputs{
+		env:     "dev",
+		cfg:     testRuntimeConfig(),
+		logger:  logger,
+		initCtx: context.Background(),
+		isProd:  false,
+		tuning:  defaultRuntimeTuning(),
+		now:     time.Now,
+	}, runtimeFactory{
+		newDB: func(context.Context, config.DatabaseConfig) (*repository.DB, error) {
+			return nil, errors.New("db down")
+		},
+		newRedisCache: func(config.RedisConfig) (*cache.RedisCache, error) {
+			return nil, errors.New("redis down")
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected dev runtime resources to fall back, got %v", err)
+	}
+	if resources.db != nil {
+		t.Fatal("expected nil db after dev fallback")
+	}
+	if resources.redisCache != nil {
+		t.Fatal("expected nil redis cache after dev fallback")
+	}
+	if len(logger.warnMessages) == 0 {
+		t.Fatal("expected warning logs during dev resource fallback")
+	}
+}
+
 func TestBuildRuntime_RejectsUnsupportedEnv(t *testing.T) {
 	_, err := buildRuntimeWithFactory(RuntimeOptions{
 		Env:         "qa",
@@ -352,6 +441,74 @@ func TestBuildRuntime_DevFallbackLogsWarnings(t *testing.T) {
 	}
 	if len(logger.infoMessages) == 0 {
 		t.Fatal("expected info logs during successful in-memory runtime initialization")
+	}
+}
+
+func TestBuildRuntimeResources_GroupsExternalDependencies(t *testing.T) {
+	db := &repository.DB{}
+	redisCache := &cache.RedisCache{}
+
+	resources := buildRuntimeResources(db, redisCache)
+	if resources.db != db {
+		t.Fatal("expected db resource to be preserved")
+	}
+	if resources.redisCache != redisCache {
+		t.Fatal("expected redis cache resource to be preserved")
+	}
+}
+
+func TestBuildRuntimeStartupViews_GroupsHTTPAndBackgroundDependencies(t *testing.T) {
+	supplyAPI, alertAPI := mustBuildTestAPIs(t)
+	logger := testLogger{}
+	authMiddleware := &middleware.AuthMiddleware{}
+	rateLimitConfig := &middleware.RateLimitConfig{Enabled: true}
+	tuning := defaultRuntimeTuning()
+	subscriber := stubRevocationSubscriber{}
+
+	views := buildRuntimeStartupViews(
+		"staging",
+		logger,
+		config.ServerConfig{},
+		tuning,
+		runtimeSecurityBundle{
+			authMiddleware:       authMiddleware,
+			revocationSubscriber: subscriber,
+		},
+		runtimeAPIBundle{
+			supplyAPI:       supplyAPI,
+			alertAPI:        alertAPI,
+			rateLimitConfig: rateLimitConfig,
+		},
+	)
+	if views.http.env != "staging" {
+		t.Fatalf("unexpected http env: %s", views.http.env)
+	}
+	if views.background.env != "staging" {
+		t.Fatalf("unexpected background env: %s", views.background.env)
+	}
+	if views.http.serverConfig.Addr != ":18082" {
+		t.Fatalf("unexpected default addr: %s", views.http.serverConfig.Addr)
+	}
+	if views.http.serverConfig.ShutdownTimeout != 5*time.Second {
+		t.Fatalf("unexpected default shutdown timeout: %s", views.http.serverConfig.ShutdownTimeout)
+	}
+	if views.http.supplyAPI != supplyAPI {
+		t.Fatal("expected supply api to be preserved")
+	}
+	if views.http.alertAPI != alertAPI {
+		t.Fatal("expected alert api to be preserved")
+	}
+	if views.http.authMiddleware != authMiddleware {
+		t.Fatal("expected auth middleware to be preserved")
+	}
+	if views.http.rateLimitConfig != rateLimitConfig {
+		t.Fatal("expected rate limit config to be preserved")
+	}
+	if views.background.revocationSubscriber != subscriber {
+		t.Fatal("expected revocation subscriber to be preserved")
+	}
+	if views.background.tuning.outboxStreamName != tuning.outboxStreamName {
+		t.Fatalf("unexpected background outbox stream: %s", views.background.tuning.outboxStreamName)
 	}
 }
 

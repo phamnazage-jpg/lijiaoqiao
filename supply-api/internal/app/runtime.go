@@ -81,6 +81,16 @@ type runtimeFactory struct {
 	newRedisCache func(cfg config.RedisConfig) (*cache.RedisCache, error)
 }
 
+type runtimeBuildInputs struct {
+	env     string
+	cfg     *config.Config
+	logger  logging.Logger
+	initCtx context.Context
+	now     func() time.Time
+	isProd  bool
+	tuning  runtimeTuning
+}
+
 type runtimeStoreBundle struct {
 	accountStore    domain.AccountStore
 	packageStore    domain.PackageStore
@@ -129,23 +139,42 @@ func BuildRuntime(opts RuntimeOptions) (*Runtime, error) {
 }
 
 func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runtime, error) {
-	if opts.Config == nil {
-		return nil, errors.New("config is required")
-	}
-	if opts.Logger == nil {
-		return nil, errors.New("logger is required")
+	inputs, err := resolveRuntimeBuildInputs(opts)
+	if err != nil {
+		return nil, err
 	}
 
-	if factory.newDB == nil {
-		factory.newDB = repository.NewDB
+	resources, err := initializeRuntimeExternalResources(inputs, factory)
+	if err != nil {
+		return nil, err
 	}
-	if factory.newRedisCache == nil {
-		factory.newRedisCache = cache.NewRedisCache
+
+	storeBundle := buildStoreBundle(resources.db, inputs.logger)
+	securityBundle := buildSecurityBundle(inputs.env, inputs.cfg, inputs.logger, storeBundle.auditStore, resources.redisCache, storeBundle.tokenStatusRepo)
+	apiBundle, err := buildAPIBundle(inputs.env, inputs.cfg, inputs.now, inputs.tuning, inputs.logger, inputs.isProd, storeBundle)
+	if err != nil {
+		return nil, err
+	}
+
+	startupViews := buildRuntimeStartupViews(inputs.env, inputs.logger, inputs.cfg.Server, inputs.tuning, securityBundle, apiBundle)
+
+	return &Runtime{
+		resources:    resources,
+		startupViews: startupViews,
+	}, nil
+}
+
+func resolveRuntimeBuildInputs(opts RuntimeOptions) (runtimeBuildInputs, error) {
+	if opts.Config == nil {
+		return runtimeBuildInputs{}, errors.New("config is required")
+	}
+	if opts.Logger == nil {
+		return runtimeBuildInputs{}, errors.New("logger is required")
 	}
 
 	env, err := ResolveEnv(opts.Env)
 	if err != nil {
-		return nil, err
+		return runtimeBuildInputs{}, err
 	}
 	now := opts.Now
 	if now == nil {
@@ -156,62 +185,88 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 		initCtx = context.Background()
 	}
 
-	isProd := env == "prod"
-	tuning := defaultRuntimeTuning()
+	return runtimeBuildInputs{
+		env:     env,
+		cfg:     opts.Config,
+		logger:  opts.Logger,
+		initCtx: initCtx,
+		now:     now,
+		isProd:  env == "prod",
+		tuning:  defaultRuntimeTuning(),
+	}, nil
+}
 
-	db, err := factory.newDB(initCtx, opts.Config.Database)
+func withDefaultRuntimeFactory(factory runtimeFactory) runtimeFactory {
+	if factory.newDB == nil {
+		factory.newDB = repository.NewDB
+	}
+	if factory.newRedisCache == nil {
+		factory.newRedisCache = cache.NewRedisCache
+	}
+	return factory
+}
+
+func initializeRuntimeExternalResources(inputs runtimeBuildInputs, factory runtimeFactory) (runtimeExternalResources, error) {
+	factory = withDefaultRuntimeFactory(factory)
+
+	db, err := factory.newDB(inputs.initCtx, inputs.cfg.Database)
 	if err != nil {
-		if isProd {
-			return nil, fmt.Errorf("database unavailable: %w", err)
+		if inputs.isProd {
+			return runtimeExternalResources{}, fmt.Errorf("database unavailable: %w", err)
 		}
-		warnf(opts.Logger, "failed to connect to database: %v (using in-memory store)", err)
+		warnf(inputs.logger, "failed to connect to database: %v (using in-memory store)", err)
 		db = nil
 	} else if db != nil {
-		infof(opts.Logger, "connected to database at %s:%d", opts.Config.Database.Host, opts.Config.Database.Port)
+		infof(inputs.logger, "connected to database at %s:%d", inputs.cfg.Database.Host, inputs.cfg.Database.Port)
 	}
 
-	redisCache, err := factory.newRedisCache(opts.Config.Redis)
+	redisCache, err := factory.newRedisCache(inputs.cfg.Redis)
 	if err != nil {
-		if isProd {
-			warnf(opts.Logger, "redis unavailable at startup: %v", err)
+		if inputs.isProd {
+			warnf(inputs.logger, "redis unavailable at startup: %v", err)
 		} else {
-			warnf(opts.Logger, "failed to connect to redis: %v (caching disabled)", err)
+			warnf(inputs.logger, "failed to connect to redis: %v (caching disabled)", err)
 		}
 		redisCache = nil
 	} else if redisCache != nil {
-		infof(opts.Logger, "connected to redis at %s:%d", opts.Config.Redis.Host, opts.Config.Redis.Port)
+		infof(inputs.logger, "connected to redis at %s:%d", inputs.cfg.Redis.Host, inputs.cfg.Redis.Port)
 	}
 
-	storeBundle := buildStoreBundle(db, opts.Logger)
-	securityBundle := buildSecurityBundle(env, opts.Config, opts.Logger, storeBundle.auditStore, redisCache, storeBundle.tokenStatusRepo)
-	apiBundle, err := buildAPIBundle(env, opts.Config, now, tuning, opts.Logger, isProd, storeBundle)
-	if err != nil {
-		return nil, err
-	}
+	return buildRuntimeResources(db, redisCache), nil
+}
 
-	return &Runtime{
-		resources: runtimeExternalResources{
-			db:         db,
-			redisCache: redisCache,
+func buildRuntimeResources(db *repository.DB, redisCache *cache.RedisCache) runtimeExternalResources {
+	return runtimeExternalResources{
+		db:         db,
+		redisCache: redisCache,
+	}
+}
+
+func buildRuntimeStartupViews(
+	env string,
+	logger logging.Logger,
+	serverConfig config.ServerConfig,
+	tuning runtimeTuning,
+	securityBundle runtimeSecurityBundle,
+	apiBundle runtimeAPIBundle,
+) runtimeStartupViews {
+	return runtimeStartupViews{
+		http: runtimeHTTPStartupView{
+			env:             env,
+			logger:          logger,
+			serverConfig:    normalizeServerConfig(serverConfig),
+			supplyAPI:       apiBundle.supplyAPI,
+			alertAPI:        apiBundle.alertAPI,
+			authMiddleware:  securityBundle.authMiddleware,
+			rateLimitConfig: apiBundle.rateLimitConfig,
 		},
-		startupViews: runtimeStartupViews{
-			http: runtimeHTTPStartupView{
-				env:             env,
-				logger:          opts.Logger,
-				serverConfig:    normalizeServerConfig(opts.Config.Server),
-				supplyAPI:       apiBundle.supplyAPI,
-				alertAPI:        apiBundle.alertAPI,
-				authMiddleware:  securityBundle.authMiddleware,
-				rateLimitConfig: apiBundle.rateLimitConfig,
-			},
-			background: runtimeBackgroundStartupView{
-				env:                  env,
-				logger:               opts.Logger,
-				tuning:               tuning,
-				revocationSubscriber: securityBundle.revocationSubscriber,
-			},
+		background: runtimeBackgroundStartupView{
+			env:                  env,
+			logger:               logger,
+			tuning:               tuning,
+			revocationSubscriber: securityBundle.revocationSubscriber,
 		},
-	}, nil
+	}
 }
 
 func buildStoreBundle(db *repository.DB, logger logging.Logger) runtimeStoreBundle {
