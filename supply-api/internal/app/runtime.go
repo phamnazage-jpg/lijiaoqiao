@@ -92,6 +92,17 @@ type runtimeHealthChecks struct {
 	RedisHealthCheck func(context.Context) error
 }
 
+type runtimeHTTPView struct {
+	env             string
+	logger          logging.Logger
+	serverConfig    config.ServerConfig
+	supplyAPI       *httpapi.SupplyAPI
+	alertAPI        *httpapi.AlertAPI
+	authMiddleware  *middleware.AuthMiddleware
+	rateLimitConfig *middleware.RateLimitConfig
+	healthChecks    runtimeHealthChecks
+}
+
 // BuildRuntime 构建 supply-api 运行时依赖。
 func BuildRuntime(opts RuntimeOptions) (*Runtime, error) {
 	return buildRuntimeWithFactory(opts, runtimeFactory{
@@ -338,11 +349,11 @@ func defaultRuntimeTuning() runtimeTuning {
 
 // BuildServer 使用运行时依赖构建 HTTP server。
 func (r *Runtime) BuildServer() (*http.Server, error) {
-	opts, err := adaptRuntimeToBuildServerOptions(r)
+	view, err := buildRuntimeHTTPView(r)
 	if err != nil {
 		return nil, err
 	}
-	return BuildServer(opts)
+	return BuildServer(adaptRuntimeHTTPViewToBuildServerOptions(view))
 }
 
 func resolveRuntimeHealthChecks(runtime *Runtime) runtimeHealthChecks {
@@ -359,23 +370,43 @@ func resolveRuntimeHealthChecks(runtime *Runtime) runtimeHealthChecks {
 	return checks
 }
 
-func adaptRuntimeToBuildServerOptions(runtime *Runtime) (BuildServerOptions, error) {
+func buildRuntimeHTTPView(runtime *Runtime) (runtimeHTTPView, error) {
 	if runtime == nil {
-		return BuildServerOptions{}, errors.New("runtime is required")
+		return runtimeHTTPView{}, errors.New("runtime is required")
 	}
 
-	healthChecks := resolveRuntimeHealthChecks(runtime)
-	return BuildServerOptions{
-		Env:              runtime.env,
-		ServerConfig:     runtime.serverConfig,
-		Logger:           runtime.logger,
-		SupplyAPI:        runtime.supplyAPI,
-		AlertAPI:         runtime.alertAPI,
-		AuthMiddleware:   runtime.authMiddleware,
-		RateLimitConfig:  runtime.rateLimitConfig,
-		DBHealthCheck:    healthChecks.DBHealthCheck,
-		RedisHealthCheck: healthChecks.RedisHealthCheck,
+	return runtimeHTTPView{
+		env:             runtime.env,
+		logger:          runtime.logger,
+		serverConfig:    runtime.serverConfig,
+		supplyAPI:       runtime.supplyAPI,
+		alertAPI:        runtime.alertAPI,
+		authMiddleware:  runtime.authMiddleware,
+		rateLimitConfig: runtime.rateLimitConfig,
+		healthChecks:    resolveRuntimeHealthChecks(runtime),
 	}, nil
+}
+
+func adaptRuntimeHTTPViewToBuildServerOptions(view runtimeHTTPView) BuildServerOptions {
+	return BuildServerOptions{
+		Env:              view.env,
+		ServerConfig:     view.serverConfig,
+		Logger:           view.logger,
+		SupplyAPI:        view.supplyAPI,
+		AlertAPI:         view.alertAPI,
+		AuthMiddleware:   view.authMiddleware,
+		RateLimitConfig:  view.rateLimitConfig,
+		DBHealthCheck:    view.healthChecks.DBHealthCheck,
+		RedisHealthCheck: view.healthChecks.RedisHealthCheck,
+	}
+}
+
+func adaptRuntimeToBuildServerOptions(runtime *Runtime) (BuildServerOptions, error) {
+	view, err := buildRuntimeHTTPView(runtime)
+	if err != nil {
+		return BuildServerOptions{}, err
+	}
+	return adaptRuntimeHTTPViewToBuildServerOptions(view), nil
 }
 
 // Close 关闭运行时持有的外部资源。

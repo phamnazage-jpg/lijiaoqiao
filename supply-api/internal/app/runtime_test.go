@@ -378,6 +378,61 @@ func TestResolveRuntimeHealthChecks_ExposesAvailableDependencies(t *testing.T) {
 	}
 }
 
+func TestBuildRuntimeHTTPView_RequiresRuntime(t *testing.T) {
+	_, err := buildRuntimeHTTPView(nil)
+	if err == nil {
+		t.Fatal("expected nil runtime to fail")
+	}
+	if !strings.Contains(err.Error(), "runtime is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildRuntimeHTTPView_MapsHTTPFields(t *testing.T) {
+	supplyAPI, alertAPI := mustBuildTestAPIs(t)
+	authMiddleware := &middleware.AuthMiddleware{}
+	rateLimitConfig := &middleware.RateLimitConfig{Enabled: true}
+
+	view, err := buildRuntimeHTTPView(&Runtime{
+		env:             "staging",
+		logger:          testLogger{},
+		serverConfig:    config.ServerConfig{Addr: ":19090"},
+		supplyAPI:       supplyAPI,
+		alertAPI:        alertAPI,
+		authMiddleware:  authMiddleware,
+		rateLimitConfig: rateLimitConfig,
+		db:              &repository.DB{},
+		redisCache:      &cache.RedisCache{},
+	})
+	if err != nil {
+		t.Fatalf("expected view build to succeed, got %v", err)
+	}
+	if view.env != "staging" {
+		t.Fatalf("unexpected env: %s", view.env)
+	}
+	if view.serverConfig.Addr != ":19090" {
+		t.Fatalf("unexpected server addr: %s", view.serverConfig.Addr)
+	}
+	if view.supplyAPI != supplyAPI {
+		t.Fatal("expected supply api to be preserved")
+	}
+	if view.alertAPI != alertAPI {
+		t.Fatal("expected alert api to be preserved")
+	}
+	if view.authMiddleware != authMiddleware {
+		t.Fatal("expected auth middleware to be preserved")
+	}
+	if view.rateLimitConfig != rateLimitConfig {
+		t.Fatal("expected rate limit config to be preserved")
+	}
+	if view.healthChecks.DBHealthCheck == nil {
+		t.Fatal("expected db health check")
+	}
+	if view.healthChecks.RedisHealthCheck == nil {
+		t.Fatal("expected redis health check")
+	}
+}
+
 func TestAdaptRuntimeToBuildServerOptions_RequiresRuntime(t *testing.T) {
 	_, err := adaptRuntimeToBuildServerOptions(nil)
 	if err == nil {
@@ -412,6 +467,48 @@ func TestAdaptRuntimeToBuildServerOptions_MapsRuntimeFields(t *testing.T) {
 	}
 	if opts.ServerConfig.Addr != ":19090" {
 		t.Fatalf("unexpected server addr: %s", opts.ServerConfig.Addr)
+	}
+	if opts.SupplyAPI != supplyAPI {
+		t.Fatal("expected supply api to be preserved")
+	}
+	if opts.AlertAPI != alertAPI {
+		t.Fatal("expected alert api to be preserved")
+	}
+	if opts.AuthMiddleware != authMiddleware {
+		t.Fatal("expected auth middleware to be preserved")
+	}
+	if opts.RateLimitConfig != rateLimitConfig {
+		t.Fatal("expected rate limit config to be preserved")
+	}
+	if opts.DBHealthCheck == nil {
+		t.Fatal("expected db health check")
+	}
+	if opts.RedisHealthCheck == nil {
+		t.Fatal("expected redis health check")
+	}
+}
+
+func TestAdaptRuntimeHTTPViewToBuildServerOptions_MapsHealthChecks(t *testing.T) {
+	supplyAPI, alertAPI := mustBuildTestAPIs(t)
+	authMiddleware := &middleware.AuthMiddleware{}
+	rateLimitConfig := &middleware.RateLimitConfig{Enabled: true}
+	view := runtimeHTTPView{
+		env:             "staging",
+		logger:          testLogger{},
+		serverConfig:    config.ServerConfig{Addr: ":19090"},
+		supplyAPI:       supplyAPI,
+		alertAPI:        alertAPI,
+		authMiddleware:  authMiddleware,
+		rateLimitConfig: rateLimitConfig,
+		healthChecks: runtimeHealthChecks{
+			DBHealthCheck:    func(context.Context) error { return nil },
+			RedisHealthCheck: func(context.Context) error { return nil },
+		},
+	}
+
+	opts := adaptRuntimeHTTPViewToBuildServerOptions(view)
+	if opts.Env != "staging" {
+		t.Fatalf("unexpected env: %s", opts.Env)
 	}
 	if opts.SupplyAPI != supplyAPI {
 		t.Fatal("expected supply api to be preserved")
