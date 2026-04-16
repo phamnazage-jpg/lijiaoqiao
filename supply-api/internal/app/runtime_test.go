@@ -530,6 +530,50 @@ func TestAdaptRuntimeHTTPViewToBuildServerOptions_MapsHealthChecks(t *testing.T)
 	}
 }
 
+func TestBuildRuntimeBackgroundView_RequiresRuntime(t *testing.T) {
+	_, err := buildRuntimeBackgroundView(nil)
+	if err == nil {
+		t.Fatal("expected nil runtime to fail")
+	}
+	if !strings.Contains(err.Error(), "runtime is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildRuntimeBackgroundView_MapsBackgroundFields(t *testing.T) {
+	subscriber := stubRevocationSubscriber{}
+
+	view, err := buildRuntimeBackgroundView(&Runtime{
+		env:                  "prod",
+		logger:               testLogger{},
+		tuning:               defaultRuntimeTuning(),
+		db:                   &repository.DB{},
+		redisCache:           &cache.RedisCache{},
+		revocationSubscriber: subscriber,
+	})
+	if err != nil {
+		t.Fatalf("expected background view build to succeed, got %v", err)
+	}
+	if view.env != "prod" {
+		t.Fatalf("unexpected env: %s", view.env)
+	}
+	if view.logger == nil {
+		t.Fatal("expected logger to be preserved")
+	}
+	if view.db == nil {
+		t.Fatal("expected db to be preserved")
+	}
+	if view.redisCache == nil {
+		t.Fatal("expected redis cache to be preserved")
+	}
+	if view.revocationSubscriber == nil {
+		t.Fatal("expected revocation subscriber to be preserved")
+	}
+	if view.tuning.outboxStreamName != "supply:outbox:stream" {
+		t.Fatalf("unexpected outbox stream: %s", view.tuning.outboxStreamName)
+	}
+}
+
 func TestRuntime_StartBackgroundWorkers_WithoutDatabaseIsNoop(t *testing.T) {
 	var outboxRepoCalled bool
 
@@ -572,7 +616,7 @@ func TestRuntime_StartBackgroundWorkers_ProdRequiresOutboxBroker(t *testing.T) {
 }
 
 func TestStartOutboxProcessor_ProdRequiresBroker(t *testing.T) {
-	err := startOutboxProcessor(context.Background(), &Runtime{
+	err := startOutboxProcessor(context.Background(), runtimeBackgroundView{
 		env:    "prod",
 		logger: testLogger{},
 		db:     &repository.DB{},
@@ -643,7 +687,7 @@ func TestRuntime_StartBackgroundWorkers_UsesDefaultCompensationInterval(t *testi
 func TestStartCompensationWorker_UsesConfiguredInterval(t *testing.T) {
 	var gotInterval time.Duration
 
-	startCompensationWorker(context.Background(), &Runtime{
+	startCompensationWorker(context.Background(), runtimeBackgroundView{
 		env:    "dev",
 		logger: testLogger{},
 		db:     &repository.DB{},
@@ -754,6 +798,12 @@ func testRuntimeConfig() *config.Config {
 }
 
 type stubOutboxRepository struct{}
+
+type stubRevocationSubscriber struct{}
+
+func (stubRevocationSubscriber) StartRevocationSubscriber(context.Context) error {
+	return nil
+}
 
 func (stubOutboxRepository) FetchAndLock(context.Context, int) ([]*repository.OutboxEvent, error) {
 	return nil, nil
