@@ -79,17 +79,17 @@ func buildRuntimeBackgroundView(runtime *Runtime) (runtimeBackgroundView, error)
 	if runtime == nil {
 		return runtimeBackgroundView{}, errors.New("runtime is required")
 	}
-	if runtime.logger == nil {
+	if runtime.startupViews.background.logger == nil {
 		return runtimeBackgroundView{}, errors.New("runtime logger is required")
 	}
 
 	view := runtimeBackgroundView{
-		env:                  runtime.env,
-		logger:               runtime.logger,
-		tuning:               runtime.tuning,
-		db:                   runtime.db,
-		redisCache:           runtime.redisCache,
-		revocationSubscriber: runtime.revocationSubscriber,
+		env:                  runtime.startupViews.background.env,
+		logger:               runtime.startupViews.background.logger,
+		tuning:               runtime.startupViews.background.tuning,
+		db:                   runtime.resources.db,
+		redisCache:           runtime.resources.redisCache,
+		revocationSubscriber: runtime.startupViews.background.revocationSubscriber,
 	}
 	if view.tuning.outboxStreamName == "" {
 		view.tuning = defaultRuntimeTuning()

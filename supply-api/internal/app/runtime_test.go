@@ -243,19 +243,19 @@ func TestBuildRuntime_DevFallsBackToInMemoryDependencies(t *testing.T) {
 	if runtime == nil {
 		t.Fatal("expected runtime")
 	}
-	if runtime.db != nil {
+	if runtime.resources.db != nil {
 		t.Fatal("expected nil db after dev fallback")
 	}
-	if runtime.redisCache != nil {
+	if runtime.resources.redisCache != nil {
 		t.Fatal("expected nil redis cache after dev fallback")
 	}
-	if runtime.supplyAPI == nil || runtime.alertAPI == nil {
+	if runtime.startupViews.http.supplyAPI == nil || runtime.startupViews.http.alertAPI == nil {
 		t.Fatal("expected apis to be initialized")
 	}
-	if runtime.authMiddleware == nil {
+	if runtime.startupViews.http.authMiddleware == nil {
 		t.Fatal("expected auth middleware to be initialized")
 	}
-	if runtime.rateLimitConfig == nil {
+	if runtime.startupViews.http.rateLimitConfig == nil {
 		t.Fatal("expected rate limit config to be initialized")
 	}
 }
@@ -283,8 +283,8 @@ func TestBuildRuntime_NormalizesServerConfigDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected runtime build to succeed, got %v", err)
 	}
-	if runtime.serverConfig.Addr != ":18082" {
-		t.Fatalf("unexpected addr: %s", runtime.serverConfig.Addr)
+	if runtime.startupViews.http.serverConfig.Addr != ":18082" {
+		t.Fatalf("unexpected addr: %s", runtime.startupViews.http.serverConfig.Addr)
 	}
 	if runtime.ShutdownTimeout() != 5*time.Second {
 		t.Fatalf("unexpected shutdown timeout: %s", runtime.ShutdownTimeout())
@@ -311,20 +311,20 @@ func TestBuildRuntime_SeedsDefaultTuning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected runtime build to succeed, got %v", err)
 	}
-	if runtime.tuning.outboxStreamName != "supply:outbox:stream" {
-		t.Fatalf("unexpected outbox stream: %s", runtime.tuning.outboxStreamName)
+	if runtime.startupViews.background.tuning.outboxStreamName != "supply:outbox:stream" {
+		t.Fatalf("unexpected outbox stream: %s", runtime.startupViews.background.tuning.outboxStreamName)
 	}
-	if runtime.tuning.outboxConsumerGroup != "outbox-processor" {
-		t.Fatalf("unexpected outbox group: %s", runtime.tuning.outboxConsumerGroup)
+	if runtime.startupViews.background.tuning.outboxConsumerGroup != "outbox-processor" {
+		t.Fatalf("unexpected outbox group: %s", runtime.startupViews.background.tuning.outboxConsumerGroup)
 	}
-	if runtime.tuning.idempotencyTTL != 24*time.Hour {
-		t.Fatalf("unexpected idempotency ttl: %s", runtime.tuning.idempotencyTTL)
+	if runtime.startupViews.background.tuning.idempotencyTTL != 24*time.Hour {
+		t.Fatalf("unexpected idempotency ttl: %s", runtime.startupViews.background.tuning.idempotencyTTL)
 	}
-	if runtime.tuning.partitionMaintenanceInterval != time.Hour {
-		t.Fatalf("unexpected partition maintenance interval: %s", runtime.tuning.partitionMaintenanceInterval)
+	if runtime.startupViews.background.tuning.partitionMaintenanceInterval != time.Hour {
+		t.Fatalf("unexpected partition maintenance interval: %s", runtime.startupViews.background.tuning.partitionMaintenanceInterval)
 	}
-	if runtime.tuning.compensationCheckInterval != 5*time.Minute {
-		t.Fatalf("unexpected compensation interval: %s", runtime.tuning.compensationCheckInterval)
+	if runtime.startupViews.background.tuning.compensationCheckInterval != 5*time.Minute {
+		t.Fatalf("unexpected compensation interval: %s", runtime.startupViews.background.tuning.compensationCheckInterval)
 	}
 }
 
@@ -355,6 +355,49 @@ func TestBuildRuntime_DevFallbackLogsWarnings(t *testing.T) {
 	}
 }
 
+func TestBuildRuntime_GroupsResourcesAndStartupViews(t *testing.T) {
+	runtime, err := buildRuntimeWithFactory(RuntimeOptions{
+		Env:         "dev",
+		Config:      testRuntimeConfig(),
+		Logger:      testLogger{},
+		InitContext: context.Background(),
+		Now: func() time.Time {
+			return time.Unix(1712800000, 0).UTC()
+		},
+	}, runtimeFactory{
+		newDB: func(context.Context, config.DatabaseConfig) (*repository.DB, error) {
+			return nil, errors.New("db down")
+		},
+		newRedisCache: func(config.RedisConfig) (*cache.RedisCache, error) {
+			return nil, errors.New("redis down")
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected runtime build to succeed, got %v", err)
+	}
+	if runtime.startupViews.http.env != "dev" {
+		t.Fatalf("unexpected http env: %s", runtime.startupViews.http.env)
+	}
+	if runtime.startupViews.background.env != "dev" {
+		t.Fatalf("unexpected background env: %s", runtime.startupViews.background.env)
+	}
+	if runtime.resources.db != nil {
+		t.Fatal("expected nil db resource after dev fallback")
+	}
+	if runtime.resources.redisCache != nil {
+		t.Fatal("expected nil redis resource after dev fallback")
+	}
+	if runtime.startupViews.http.supplyAPI == nil || runtime.startupViews.http.alertAPI == nil {
+		t.Fatal("expected http startup view apis to be initialized")
+	}
+	if runtime.startupViews.http.authMiddleware == nil {
+		t.Fatal("expected http startup view auth middleware")
+	}
+	if runtime.startupViews.background.tuning.outboxStreamName != "supply:outbox:stream" {
+		t.Fatalf("unexpected background outbox stream: %s", runtime.startupViews.background.tuning.outboxStreamName)
+	}
+}
+
 func TestResolveRuntimeHealthChecks_OmitsUnavailableDependencies(t *testing.T) {
 	checks := resolveRuntimeHealthChecks(&Runtime{})
 	if checks.DBHealthCheck != nil {
@@ -367,8 +410,10 @@ func TestResolveRuntimeHealthChecks_OmitsUnavailableDependencies(t *testing.T) {
 
 func TestResolveRuntimeHealthChecks_ExposesAvailableDependencies(t *testing.T) {
 	checks := resolveRuntimeHealthChecks(&Runtime{
-		db:         &repository.DB{},
-		redisCache: &cache.RedisCache{},
+		resources: runtimeExternalResources{
+			db:         &repository.DB{},
+			redisCache: &cache.RedisCache{},
+		},
 	})
 	if checks.DBHealthCheck == nil {
 		t.Fatal("expected db health check")
@@ -394,15 +439,21 @@ func TestBuildRuntimeHTTPView_MapsHTTPFields(t *testing.T) {
 	rateLimitConfig := &middleware.RateLimitConfig{Enabled: true}
 
 	view, err := buildRuntimeHTTPView(&Runtime{
-		env:             "staging",
-		logger:          testLogger{},
-		serverConfig:    config.ServerConfig{Addr: ":19090"},
-		supplyAPI:       supplyAPI,
-		alertAPI:        alertAPI,
-		authMiddleware:  authMiddleware,
-		rateLimitConfig: rateLimitConfig,
-		db:              &repository.DB{},
-		redisCache:      &cache.RedisCache{},
+		resources: runtimeExternalResources{
+			db:         &repository.DB{},
+			redisCache: &cache.RedisCache{},
+		},
+		startupViews: runtimeStartupViews{
+			http: runtimeHTTPStartupView{
+				env:             "staging",
+				logger:          testLogger{},
+				serverConfig:    config.ServerConfig{Addr: ":19090"},
+				supplyAPI:       supplyAPI,
+				alertAPI:        alertAPI,
+				authMiddleware:  authMiddleware,
+				rateLimitConfig: rateLimitConfig,
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("expected view build to succeed, got %v", err)
@@ -449,15 +500,21 @@ func TestAdaptRuntimeToBuildServerOptions_MapsRuntimeFields(t *testing.T) {
 	rateLimitConfig := &middleware.RateLimitConfig{Enabled: true}
 
 	opts, err := adaptRuntimeToBuildServerOptions(&Runtime{
-		env:             "staging",
-		logger:          testLogger{},
-		serverConfig:    config.ServerConfig{Addr: ":19090"},
-		supplyAPI:       supplyAPI,
-		alertAPI:        alertAPI,
-		authMiddleware:  authMiddleware,
-		rateLimitConfig: rateLimitConfig,
-		db:              &repository.DB{},
-		redisCache:      &cache.RedisCache{},
+		resources: runtimeExternalResources{
+			db:         &repository.DB{},
+			redisCache: &cache.RedisCache{},
+		},
+		startupViews: runtimeStartupViews{
+			http: runtimeHTTPStartupView{
+				env:             "staging",
+				logger:          testLogger{},
+				serverConfig:    config.ServerConfig{Addr: ":19090"},
+				supplyAPI:       supplyAPI,
+				alertAPI:        alertAPI,
+				authMiddleware:  authMiddleware,
+				rateLimitConfig: rateLimitConfig,
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("expected adapter to succeed, got %v", err)
@@ -544,12 +601,18 @@ func TestBuildRuntimeBackgroundView_MapsBackgroundFields(t *testing.T) {
 	subscriber := stubRevocationSubscriber{}
 
 	view, err := buildRuntimeBackgroundView(&Runtime{
-		env:                  "prod",
-		logger:               testLogger{},
-		tuning:               defaultRuntimeTuning(),
-		db:                   &repository.DB{},
-		redisCache:           &cache.RedisCache{},
-		revocationSubscriber: subscriber,
+		resources: runtimeExternalResources{
+			db:         &repository.DB{},
+			redisCache: &cache.RedisCache{},
+		},
+		startupViews: runtimeStartupViews{
+			background: runtimeBackgroundStartupView{
+				env:                  "prod",
+				logger:               testLogger{},
+				tuning:               defaultRuntimeTuning(),
+				revocationSubscriber: subscriber,
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("expected background view build to succeed, got %v", err)
@@ -578,8 +641,12 @@ func TestRuntime_StartBackgroundWorkers_WithoutDatabaseIsNoop(t *testing.T) {
 	var outboxRepoCalled bool
 
 	err := startBackgroundWorkersWithFactory(context.Background(), context.Background(), &Runtime{
-		env:    "dev",
-		logger: testLogger{},
+		startupViews: runtimeStartupViews{
+			background: runtimeBackgroundStartupView{
+				env:    "dev",
+				logger: testLogger{},
+			},
+		},
 	}, backgroundFactory{
 		newOutboxRepository: func(*repository.DB) outboxRepository {
 			outboxRepoCalled = true
@@ -596,9 +663,15 @@ func TestRuntime_StartBackgroundWorkers_WithoutDatabaseIsNoop(t *testing.T) {
 
 func TestRuntime_StartBackgroundWorkers_ProdRequiresOutboxBroker(t *testing.T) {
 	err := startBackgroundWorkersWithFactory(context.Background(), context.Background(), &Runtime{
-		env:    "prod",
-		logger: testLogger{},
-		db:     &repository.DB{},
+		resources: runtimeExternalResources{
+			db: &repository.DB{},
+		},
+		startupViews: runtimeStartupViews{
+			background: runtimeBackgroundStartupView{
+				env:    "prod",
+				logger: testLogger{},
+			},
+		},
 	}, backgroundFactory{
 		newOutboxRepository: func(*repository.DB) outboxRepository {
 			return stubOutboxRepository{}
@@ -641,10 +714,16 @@ func TestRuntime_StartBackgroundWorkers_UsesDefaultCompensationInterval(t *testi
 	var gotInterval time.Duration
 
 	err := startBackgroundWorkersWithFactory(context.Background(), context.Background(), &Runtime{
-		env:    "dev",
-		logger: testLogger{},
-		db:     &repository.DB{},
-		tuning: defaultRuntimeTuning(),
+		resources: runtimeExternalResources{
+			db: &repository.DB{},
+		},
+		startupViews: runtimeStartupViews{
+			background: runtimeBackgroundStartupView{
+				env:    "dev",
+				logger: testLogger{},
+				tuning: defaultRuntimeTuning(),
+			},
+		},
 	}, backgroundFactory{
 		newOutboxRepository: func(*repository.DB) outboxRepository {
 			return stubOutboxRepository{}
@@ -720,10 +799,16 @@ func TestRuntime_StartBackgroundWorkers_DevMissingOutboxBrokerLogsWarning(t *tes
 	logger := &captureLogger{}
 
 	err := startBackgroundWorkersWithFactory(context.Background(), context.Background(), &Runtime{
-		env:    "dev",
-		logger: logger,
-		db:     &repository.DB{},
-		tuning: defaultRuntimeTuning(),
+		resources: runtimeExternalResources{
+			db: &repository.DB{},
+		},
+		startupViews: runtimeStartupViews{
+			background: runtimeBackgroundStartupView{
+				env:    "dev",
+				logger: logger,
+				tuning: defaultRuntimeTuning(),
+			},
+		},
 	}, backgroundFactory{
 		newOutboxRepository: func(*repository.DB) outboxRepository {
 			return stubOutboxRepository{}

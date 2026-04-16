@@ -41,22 +41,39 @@ type runtimeTuning struct {
 
 // Runtime 聚合 HTTP 启动和后台任务启动所需的运行时依赖。
 type Runtime struct {
-	env                  string
-	logger               logging.Logger
-	now                  func() time.Time
-	tuning               runtimeTuning
-	serverConfig         config.ServerConfig
-	db                   *repository.DB
-	redisCache           *cache.RedisCache
-	supplyAPI            *httpapi.SupplyAPI
-	alertAPI             *httpapi.AlertAPI
-	authMiddleware       *middleware.AuthMiddleware
-	rateLimitConfig      *middleware.RateLimitConfig
-	revocationSubscriber revocationSubscriber
+	resources    runtimeExternalResources
+	startupViews runtimeStartupViews
 }
 
 type revocationSubscriber interface {
 	StartRevocationSubscriber(ctx context.Context) error
+}
+
+type runtimeExternalResources struct {
+	db         *repository.DB
+	redisCache *cache.RedisCache
+}
+
+type runtimeHTTPStartupView struct {
+	env             string
+	logger          logging.Logger
+	serverConfig    config.ServerConfig
+	supplyAPI       *httpapi.SupplyAPI
+	alertAPI        *httpapi.AlertAPI
+	authMiddleware  *middleware.AuthMiddleware
+	rateLimitConfig *middleware.RateLimitConfig
+}
+
+type runtimeBackgroundStartupView struct {
+	env                  string
+	logger               logging.Logger
+	tuning               runtimeTuning
+	revocationSubscriber revocationSubscriber
+}
+
+type runtimeStartupViews struct {
+	http       runtimeHTTPStartupView
+	background runtimeBackgroundStartupView
 }
 
 type runtimeFactory struct {
@@ -173,18 +190,27 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 	}
 
 	return &Runtime{
-		env:                  env,
-		logger:               opts.Logger,
-		now:                  now,
-		tuning:               tuning,
-		serverConfig:         normalizeServerConfig(opts.Config.Server),
-		db:                   db,
-		redisCache:           redisCache,
-		supplyAPI:            apiBundle.supplyAPI,
-		alertAPI:             apiBundle.alertAPI,
-		authMiddleware:       securityBundle.authMiddleware,
-		rateLimitConfig:      apiBundle.rateLimitConfig,
-		revocationSubscriber: securityBundle.revocationSubscriber,
+		resources: runtimeExternalResources{
+			db:         db,
+			redisCache: redisCache,
+		},
+		startupViews: runtimeStartupViews{
+			http: runtimeHTTPStartupView{
+				env:             env,
+				logger:          opts.Logger,
+				serverConfig:    normalizeServerConfig(opts.Config.Server),
+				supplyAPI:       apiBundle.supplyAPI,
+				alertAPI:        apiBundle.alertAPI,
+				authMiddleware:  securityBundle.authMiddleware,
+				rateLimitConfig: apiBundle.rateLimitConfig,
+			},
+			background: runtimeBackgroundStartupView{
+				env:                  env,
+				logger:               opts.Logger,
+				tuning:               tuning,
+				revocationSubscriber: securityBundle.revocationSubscriber,
+			},
+		},
 	}, nil
 }
 
@@ -361,11 +387,11 @@ func resolveRuntimeHealthChecks(runtime *Runtime) runtimeHealthChecks {
 	if runtime == nil {
 		return checks
 	}
-	if runtime.db != nil {
-		checks.DBHealthCheck = runtime.db.HealthCheck
+	if runtime.resources.db != nil {
+		checks.DBHealthCheck = runtime.resources.db.HealthCheck
 	}
-	if runtime.redisCache != nil {
-		checks.RedisHealthCheck = runtime.redisCache.HealthCheck
+	if runtime.resources.redisCache != nil {
+		checks.RedisHealthCheck = runtime.resources.redisCache.HealthCheck
 	}
 	return checks
 }
@@ -376,13 +402,13 @@ func buildRuntimeHTTPView(runtime *Runtime) (runtimeHTTPView, error) {
 	}
 
 	return runtimeHTTPView{
-		env:             runtime.env,
-		logger:          runtime.logger,
-		serverConfig:    runtime.serverConfig,
-		supplyAPI:       runtime.supplyAPI,
-		alertAPI:        runtime.alertAPI,
-		authMiddleware:  runtime.authMiddleware,
-		rateLimitConfig: runtime.rateLimitConfig,
+		env:             runtime.startupViews.http.env,
+		logger:          runtime.startupViews.http.logger,
+		serverConfig:    runtime.startupViews.http.serverConfig,
+		supplyAPI:       runtime.startupViews.http.supplyAPI,
+		alertAPI:        runtime.startupViews.http.alertAPI,
+		authMiddleware:  runtime.startupViews.http.authMiddleware,
+		rateLimitConfig: runtime.startupViews.http.rateLimitConfig,
 		healthChecks:    resolveRuntimeHealthChecks(runtime),
 	}, nil
 }
@@ -414,11 +440,11 @@ func (r *Runtime) Close() {
 	if r == nil {
 		return
 	}
-	if r.redisCache != nil {
-		_ = r.redisCache.Close()
+	if r.resources.redisCache != nil {
+		_ = r.resources.redisCache.Close()
 	}
-	if r.db != nil {
-		r.db.Close()
+	if r.resources.db != nil {
+		r.resources.db.Close()
 	}
 }
 
@@ -427,7 +453,7 @@ func (r *Runtime) ShutdownTimeout() time.Duration {
 	if r == nil {
 		return 0
 	}
-	return r.serverConfig.ShutdownTimeout
+	return r.startupViews.http.serverConfig.ShutdownTimeout
 }
 
 func ResolveEnv(env string) (string, error) {
