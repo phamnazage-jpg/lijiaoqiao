@@ -1,5 +1,10 @@
 -- Platform core schema baseline (PostgreSQL 15)
 -- Purpose: provide non-supply core domain tables required by PRD P0/P1.
+-- Boundary:
+--   - This file is the platform-side fresh setup baseline under repository root /sql/postgresql.
+--   - audit_events in this file belongs to the platform/core domain timeline.
+--   - It is not the same baseline as supply-api/sql/postgresql/partition_strategy_v1.sql.
+--   - Do not stack both audit_events definitions into one fresh database without an explicit schema/database split.
 -- Updated: 2026-03-27
 
 BEGIN;

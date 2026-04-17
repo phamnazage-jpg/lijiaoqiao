@@ -8,6 +8,7 @@
 -- 说明：
 -- - 审计事件、分区策略、outbox、token 状态、告警表仍由各自独立 DDL 维护。
 -- - 当前仓库仍使用应用层外键校验，因此这里先不引入数据库级外键，避免把未收口的关系语义写死。
+-- - status CHECK 只收敛当前代码真实使用的状态集合；如果领域状态扩展，必须先修改 domain 常量与仓储测试，再更新本 DDL。
 
 CREATE TABLE IF NOT EXISTS supply_accounts (
     id BIGSERIAL PRIMARY KEY,
@@ -17,7 +18,8 @@ CREATE TABLE IF NOT EXISTS supply_accounts (
     account_name VARCHAR(255) NOT NULL DEFAULT '',
     encrypted_credentials TEXT NOT NULL DEFAULT '',
     key_id VARCHAR(255) NOT NULL DEFAULT '',
-    status VARCHAR(32) NOT NULL,
+    status VARCHAR(32) NOT NULL
+        CHECK (status IN ('pending', 'active', 'suspended', 'disabled')),
     risk_level VARCHAR(32) NOT NULL DEFAULT '',
     total_quota NUMERIC(20, 6) NOT NULL DEFAULT 0,
     available_quota NUMERIC(20, 6) NOT NULL DEFAULT 0,
@@ -77,7 +79,8 @@ CREATE TABLE IF NOT EXISTS supply_packages (
     start_at TIMESTAMPTZ,
     end_at TIMESTAMPTZ,
     valid_days INTEGER NOT NULL DEFAULT 0,
-    status VARCHAR(32) NOT NULL,
+    status VARCHAR(32) NOT NULL
+        CHECK (status IN ('draft', 'active', 'paused', 'sold_out', 'expired')),
     max_concurrent INTEGER NOT NULL DEFAULT 0,
     rate_limit_rpm INTEGER NOT NULL DEFAULT 0,
     total_orders INTEGER NOT NULL DEFAULT 0,
@@ -113,7 +116,8 @@ CREATE TABLE IF NOT EXISTS supply_settlements (
     total_amount NUMERIC(20, 6) NOT NULL DEFAULT 0,
     fee_amount NUMERIC(20, 6) NOT NULL DEFAULT 0,
     net_amount NUMERIC(20, 6) NOT NULL DEFAULT 0,
-    status VARCHAR(32) NOT NULL,
+    status VARCHAR(32) NOT NULL
+        CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
     payment_method VARCHAR(32) NOT NULL DEFAULT '',
     payment_account VARCHAR(255) NOT NULL DEFAULT '',
     period_start TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

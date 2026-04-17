@@ -1,5 +1,9 @@
 -- Token runtime schema baseline (PostgreSQL 15)
 -- Purpose: persistent storage for platform token lifecycle and audit timeline.
+-- Boundary:
+--   - auth_platform_tokens and auth_token_audit_events belong only to platform-token-runtime.
+--   - auth_token_audit_events is the token-runtime local audit timeline, not a replacement for platform_core_schema_v1.sql::audit_events.
+--   - This file can be initialized independently from the platform core schema.
 -- Updated: 2026-03-30
 
 BEGIN;
