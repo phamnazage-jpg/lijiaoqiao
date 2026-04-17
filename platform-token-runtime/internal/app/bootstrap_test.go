@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,5 +75,72 @@ func TestBuildServer_HealthEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"status":"UP"`) {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+type stubRuntimeStore struct{}
+
+func (stubRuntimeStore) Save(context.Context, service.TokenRecord, string, string) error {
+	return nil
+}
+
+func (stubRuntimeStore) GetByTokenID(context.Context, string) (*service.TokenRecord, bool, error) {
+	return nil, false, nil
+}
+
+func (stubRuntimeStore) GetByAccessToken(context.Context, string) (*service.TokenRecord, bool, error) {
+	return nil, false, nil
+}
+
+func (stubRuntimeStore) LookupIdempotency(context.Context, string) (service.IdempotencyEntry, bool, error) {
+	return service.IdempotencyEntry{}, false, nil
+}
+
+type stubAuditStore struct{}
+
+func (stubAuditStore) Emit(context.Context, service.AuditEvent) error { return nil }
+
+func (stubAuditStore) QueryEvents(context.Context, service.AuditEventFilter) ([]service.AuditEvent, error) {
+	return nil, nil
+}
+
+func TestBuildPostgresStores_RequiresDatabaseURL(t *testing.T) {
+	_, _, closeFn, err := BuildPostgresStores(context.Background(), "")
+	if err == nil {
+		t.Fatal("expected empty database url error")
+	}
+	if closeFn != nil {
+		t.Fatal("expected nil close function on error")
+	}
+}
+
+func TestBuildPostgresStores_UsesFactory(t *testing.T) {
+	oldFactory := newPostgresStoreBundle
+	defer func() { newPostgresStoreBundle = oldFactory }()
+
+	closed := false
+	newPostgresStoreBundle = func(ctx context.Context, databaseURL string) (service.RuntimeStore, service.AuditStore, func(), error) {
+		if databaseURL != "postgres://token-runtime" {
+			t.Fatalf("unexpected database url: %s", databaseURL)
+		}
+		return stubRuntimeStore{}, stubAuditStore{}, func() { closed = true }, nil
+	}
+
+	runtimeStore, auditStore, closeFn, err := BuildPostgresStores(context.Background(), "postgres://token-runtime")
+	if err != nil {
+		t.Fatalf("BuildPostgresStores returned error: %v", err)
+	}
+	if runtimeStore == nil {
+		t.Fatal("expected runtime store")
+	}
+	if auditStore == nil {
+		t.Fatal("expected audit store")
+	}
+	if closeFn == nil {
+		t.Fatal("expected close function")
+	}
+	closeFn()
+	if !closed {
+		t.Fatal("expected close function to run")
 	}
 }

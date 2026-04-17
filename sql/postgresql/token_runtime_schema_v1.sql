@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS auth_platform_tokens (
     revoked_reason VARCHAR(256),
     issue_request_id VARCHAR(128) NOT NULL,
     issue_idempotency_key VARCHAR(128),
+    issue_request_hash CHAR(64),
     last_seen_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -29,6 +30,9 @@ CREATE TABLE IF NOT EXISTS auth_platform_tokens (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_auth_platform_tokens_fingerprint
     ON auth_platform_tokens (token_fingerprint);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_auth_platform_tokens_issue_idempotency_key
+    ON auth_platform_tokens (issue_idempotency_key)
+    WHERE issue_idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_auth_platform_tokens_subject_status
     ON auth_platform_tokens (subject_id, status);
 CREATE INDEX IF NOT EXISTS idx_auth_platform_tokens_expires_at

@@ -7,7 +7,7 @@
 - 服务入口是 `cmd/platform-token-runtime/main.go`，装配逻辑收口在 `internal/app/bootstrap.go`。
 - 当前可用接口包括 `issue`、`refresh`、`revoke`、`introspect`、`audit-events`。
 - `TOKEN_RUNTIME_ENV=dev` 且未显式注入 store 时，bootstrap 会自动使用内存 runtime store 与内存 audit store。
-- `TOKEN_RUNTIME_ENV=staging` 或 `TOKEN_RUNTIME_ENV=prod` 时，必须显式注入 runtime store 与 audit store；当前仓库仍未提供持久化 store，因此这两种环境会快速失败，而不是伪装成可上线服务。
+- `TOKEN_RUNTIME_ENV=staging` 或 `TOKEN_RUNTIME_ENV=prod` 时，支持通过 `TOKEN_RUNTIME_DATABASE_URL` 自动装配 PostgreSQL runtime store 与 audit store；未提供 DSN 时仍会快速失败，而不是回退到内存实现。
 - `audit-events` 当前始终保持可查询接口语义；默认内存 audit store 会返回真实事件，未提供查询能力的自定义 emitter 会返回空结果而不是 `501` 占位响应。
 
 ## 设计边界
@@ -28,6 +28,14 @@ go run ./cmd/platform-token-runtime
 ```bash
 export TOKEN_RUNTIME_ADDR=":18081"
 export TOKEN_RUNTIME_ENV="dev"
+```
+
+PostgreSQL 模式：
+
+```bash
+export TOKEN_RUNTIME_ENV="prod"
+export TOKEN_RUNTIME_DATABASE_URL="postgres://postgres:secret@127.0.0.1:5432/token_runtime?sslmode=disable"
+go run ./cmd/platform-token-runtime
 ```
 
 ## 验证命令
@@ -52,3 +60,5 @@ bash scripts/ci/repo_integrity_check.sh
 - `internal/httpapi/token_api.go`：HTTP 接口与审计查询输出。
 - `internal/auth/service/runtime_store.go`：内存 runtime store。
 - `internal/auth/service/audit_store.go`：内存 audit store 与审计查询。
+- `internal/auth/service/postgres_runtime_store.go`：PostgreSQL runtime store。
+- `internal/auth/service/postgres_audit_store.go`：PostgreSQL audit store。

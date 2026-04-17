@@ -1,10 +1,13 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"lijiaoqiao/platform-token-runtime/internal/auth/service"
 	"lijiaoqiao/platform-token-runtime/internal/httpapi"
@@ -16,6 +19,28 @@ type Config struct {
 	RuntimeStore service.RuntimeStore
 	AuditStore   service.AuditStore
 	Now          func() time.Time
+}
+
+var newPostgresStoreBundle = func(ctx context.Context, databaseURL string) (service.RuntimeStore, service.AuditStore, func(), error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	pool, err := pgxpool.New(ctx, strings.TrimSpace(databaseURL))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, nil, nil, err
+	}
+	return service.NewPostgresRuntimeStore(pool), service.NewPostgresAuditStore(pool), pool.Close, nil
+}
+
+func BuildPostgresStores(ctx context.Context, databaseURL string) (service.RuntimeStore, service.AuditStore, func(), error) {
+	if strings.TrimSpace(databaseURL) == "" {
+		return nil, nil, nil, fmt.Errorf("token runtime database url is required")
+	}
+	return newPostgresStoreBundle(ctx, databaseURL)
 }
 
 func BuildRuntime(cfg Config) (*service.InMemoryTokenRuntime, service.AuditStore, error) {
