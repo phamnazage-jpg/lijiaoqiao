@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -195,16 +197,18 @@ func (s *KMSService) getDEKForVersion(version int) ([]byte, error) {
 	}
 }
 
-// deriveDEK 派生DEK（简化实现）
-// 实际生产环境应使用KMS的Decrypt API
+// deriveDEK derives a DEK from the key ID and version using HKDF-SHA256.
+// This replaces the previous trivial byte-rotation derivation.
+// In production, real KMS should supply the DEK; this HKDF-based
+// derivation is a secure stand-in for the local/dev mode.
 func deriveDEK(keyID string, version int) []byte {
-	// 简化：返回固定派生密钥（仅用于开发）
-	// 生产环境必须使用真正的KMS密钥派生
-	derived := make([]byte, AES256GCMKeySize)
-	for i := 0; i < AES256GCMKeySize; i++ {
-		derived[i] = byte((i + version) % 256)
-	}
-	return derived
+	masterKey := make([]byte, AES256GCMKeySize)
+	// Use the keyID + version as HKDF input material
+	ikm := append([]byte(keyID), byte(version&0xff))
+
+	hkdfReader := hkdf.New(sha256.New, ikm, nil, []byte("supply-api-dek-v1"))
+	hkdfReader.Read(masterKey)
+	return masterKey
 }
 
 // ValidateKeyID 验证密钥ID格式

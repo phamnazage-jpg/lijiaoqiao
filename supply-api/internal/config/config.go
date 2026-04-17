@@ -310,11 +310,10 @@ func validateForEnv(env string, cfg *Config) error {
 		return fmt.Errorf("invalid prod config: settlement.withdraw_enabled cannot be true until SMS integration is production-ready")
 	}
 
+	// P1-2: Reject HMAC algorithms (HS256/HS384/HS512) in production — only RSA is allowed
 	switch cfg.Token.Algorithm {
 	case "HS256", "HS384", "HS512":
-		if strings.TrimSpace(cfg.Token.SecretKey) == "" {
-			return fmt.Errorf("invalid prod config: token.secret_key is required for %s", cfg.Token.Algorithm)
-		}
+		return fmt.Errorf("invalid prod config: token.algorithm %q is not allowed in production (HS keys cannot be rotated and expose key material); use RS256/RS384/RS512 instead", cfg.Token.Algorithm)
 	case "RS256", "RS384", "RS512":
 		if strings.TrimSpace(cfg.Token.PublicKey) == "" {
 			return fmt.Errorf("invalid prod config: token.public_key is required for %s", cfg.Token.Algorithm)

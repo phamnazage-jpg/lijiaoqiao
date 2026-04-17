@@ -9,6 +9,7 @@ import (
 	"lijiaoqiao/supply-api/internal/iam/model"
 	"lijiaoqiao/supply-api/internal/iam/service"
 	"lijiaoqiao/supply-api/internal/middleware"
+	"lijiaoqiao/supply-api/internal/pkg/pathutil"
 )
 
 // IAMHandler IAM HTTP处理器
@@ -427,7 +428,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 // extractRoleCode 从URL路径提取角色代码
 func extractRoleCode(path string) string {
 	// /api/v1/iam/roles/developer -> developer
-	parts := splitPath(path)
+	parts := pathutil.SplitPath(path)
 	if len(parts) >= 5 {
 		return parts[4]
 	}
@@ -437,7 +438,7 @@ func extractRoleCode(path string) string {
 // extractUserID 从URL路径提取用户ID
 func extractUserID(path string) string {
 	// /api/v1/iam/users/123/roles -> 123
-	parts := splitPath(path)
+	parts := pathutil.SplitPath(path)
 	if len(parts) >= 5 {
 		return parts[4]
 	}
@@ -447,31 +448,11 @@ func extractUserID(path string) string {
 // extractRoleCodeFromUserPath 从用户路径提取角色代码
 func extractRoleCodeFromUserPath(path string) string {
 	// /api/v1/iam/users/123/roles/developer -> developer
-	parts := splitPath(path)
+	parts := pathutil.SplitPath(path)
 	if len(parts) >= 7 {
 		return parts[6]
 	}
 	return ""
-}
-
-// splitPath 分割URL路径
-func splitPath(path string) []string {
-	var parts []string
-	var current string
-	for _, c := range path {
-		if c == '/' {
-			if current != "" {
-				parts = append(parts, current)
-				current = ""
-			}
-		} else {
-			current += string(c)
-		}
-	}
-	if current != "" {
-		parts = append(parts, current)
-	}
-	return parts
 }
 
 // RequireScope 返回一个要求特定Scope的中间件函数

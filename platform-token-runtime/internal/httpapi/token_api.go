@@ -334,6 +334,19 @@ func (a *TokenAPI) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Require bearer token for audit events access
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid authorization header")
+		return
+	}
+	accessToken := strings.TrimPrefix(authHeader, "Bearer ")
+	record, err := a.runtime.Introspect(r.Context(), accessToken)
+	if err != nil || record.Status != service.TokenStatusActive {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid or expired token")
+		return
+	}
+
 	limit := parseLimit(r.URL.Query().Get("limit"))
 	filter := service.AuditEventFilter{
 		RequestID:  strings.TrimSpace(r.URL.Query().Get("request_id")),

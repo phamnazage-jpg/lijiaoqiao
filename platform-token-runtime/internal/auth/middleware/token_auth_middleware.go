@@ -25,18 +25,19 @@ const (
 )
 
 type AuthMiddlewareConfig struct {
-	Verifier         service.TokenVerifier
-	StatusResolver   service.TokenStatusResolver
-	Authorizer       service.RouteAuthorizer
-	Auditor          service.AuditEmitter
+	Verifier           service.TokenVerifier
+	StatusResolver     service.TokenStatusResolver
+	Authorizer         service.RouteAuthorizer
+	Auditor            service.AuditEmitter
 	ProtectedPrefixes []string
-	ExcludedPrefixes []string
-	Now              func() time.Time
+	ExcludedPrefixes   []string
+	Now                func() time.Time
+	TrustedProxies     []string // 可信代理IP列表，只有来自这些IP的请求才信任 X-Forwarded-For
 }
 
 func BuildTokenAuthChain(cfg AuthMiddlewareConfig, next http.Handler) http.Handler {
 	handler := TokenAuthMiddleware(cfg)(next)
-	handler = QueryKeyRejectMiddleware(handler, cfg.Auditor, cfg.Now)
+	handler = QueryKeyRejectMiddleware(handler, cfg.Auditor, cfg.Now, cfg.TrustedProxies)
 	handler = RequestIDMiddleware(handler, cfg.Now)
 	return handler
 }
@@ -80,7 +81,7 @@ func TokenAuthMiddleware(cfg AuthMiddlewareConfig) func(http.Handler) http.Handl
 					RequestID:  requestID,
 					Route:      r.URL.Path,
 					ResultCode: service.CodeAuthMissingBearer,
-					ClientIP:   extractClientIP(r),
+					ClientIP:   extractClientIP(r, cfg.TrustedProxies),
 					CreatedAt:  cfg.Now(),
 				})
 				writeError(w, http.StatusUnauthorized, requestID, service.CodeAuthMissingBearer, "missing bearer token")
@@ -94,7 +95,7 @@ func TokenAuthMiddleware(cfg AuthMiddlewareConfig) func(http.Handler) http.Handl
 					RequestID:  requestID,
 					Route:      r.URL.Path,
 					ResultCode: service.CodeAuthInvalidToken,
-					ClientIP:   extractClientIP(r),
+					ClientIP:   extractClientIP(r, cfg.TrustedProxies),
 					CreatedAt:  cfg.Now(),
 				})
 				writeError(w, http.StatusUnauthorized, requestID, service.CodeAuthInvalidToken, "invalid bearer token")
@@ -110,7 +111,7 @@ func TokenAuthMiddleware(cfg AuthMiddlewareConfig) func(http.Handler) http.Handl
 					SubjectID:  claims.SubjectID,
 					Route:      r.URL.Path,
 					ResultCode: service.CodeAuthTokenInactive,
-					ClientIP:   extractClientIP(r),
+					ClientIP:   extractClientIP(r, cfg.TrustedProxies),
 					CreatedAt:  cfg.Now(),
 				})
 				writeError(w, http.StatusUnauthorized, requestID, service.CodeAuthTokenInactive, "token is inactive")
@@ -125,7 +126,7 @@ func TokenAuthMiddleware(cfg AuthMiddlewareConfig) func(http.Handler) http.Handl
 					SubjectID:  claims.SubjectID,
 					Route:      r.URL.Path,
 					ResultCode: service.CodeAuthScopeDenied,
-					ClientIP:   extractClientIP(r),
+					ClientIP:   extractClientIP(r, cfg.TrustedProxies),
 					CreatedAt:  cfg.Now(),
 				})
 				writeError(w, http.StatusForbidden, requestID, service.CodeAuthScopeDenied, "scope denied")
@@ -149,7 +150,7 @@ func TokenAuthMiddleware(cfg AuthMiddlewareConfig) func(http.Handler) http.Handl
 				SubjectID:  claims.SubjectID,
 				Route:      r.URL.Path,
 				ResultCode: "OK",
-				ClientIP:   extractClientIP(r),
+				ClientIP:   extractClientIP(r, cfg.TrustedProxies),
 				CreatedAt:  cfg.Now(),
 			})
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -256,15 +257,33 @@ func writeError(w http.ResponseWriter, status int, requestID, code, message stri
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-func extractClientIP(r *http.Request) string {
-	xForwardedFor := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
-	if xForwardedFor != "" {
-		parts := strings.Split(xForwardedFor, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+// extractClientIP 安全提取客户端IP，参考 gateway 实现：
+// - 仅在请求来自可信代理时才信任 X-Forwarded-For
+// - 防止 IP 欺骗攻击
+func extractClientIP(r *http.Request, trustedProxies []string) string {
+	isFromTrustedProxy := false
+	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
-		return host
+		for _, proxy := range trustedProxies {
+			if remoteHost == proxy {
+				isFromTrustedProxy = true
+				break
+			}
+		}
+	}
+
+	// 只有来自可信代理的请求才使用 X-Forwarded-For
+	if isFromTrustedProxy {
+		xForwardedFor := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+		if xForwardedFor != "" {
+			parts := strings.Split(xForwardedFor, ",")
+			return strings.TrimSpace(parts[0])
+		}
+	}
+
+	// 否则使用 RemoteAddr
+	if err == nil {
+		return remoteHost
 	}
 	return r.RemoteAddr
 }

@@ -33,13 +33,15 @@ type TokenClaims struct {
 
 // AuthConfig 鉴权中间件配置
 type AuthConfig struct {
-	SecretKey      string
-	PublicKey      string
-	Algorithm      string
-	Issuer         string
-	CacheTTL       time.Duration // token状态缓存TTL
-	Enabled        bool          // 是否启用鉴权
-	TrustedProxies []string      // 可信代理IP列表CIDR，如 "10.0.0.0/8"
+	SecretKey                   string        // JWT签名密钥
+	PublicKey                   string        // JWT公钥（用于RS256等算法）
+	Algorithm                   string        // JWT算法
+	Issuer                      string        // Token发行者
+	CacheTTL                    time.Duration // token状态缓存TTL
+	Enabled                     bool          // 是否启用鉴权
+	TrustedProxies              []string      // 可信代理IP列表CIDR，如 "10.0.0.0/8"
+	BruteForceMaxAttempts       int           // 暴力破解保护：最大失败尝试次数（0=禁用）
+	BruteForceLockoutDuration   time.Duration // 暴力破解保护：锁定时长
 }
 
 // AuthMiddleware 鉴权中间件
@@ -79,13 +81,18 @@ func NewAuthMiddleware(config AuthConfig, tokenCache *TokenCache, tokenBackend T
 	if config.CacheTTL == 0 {
 		config.CacheTTL = 30 * time.Second
 	}
-	return &AuthMiddleware{
+	m := &AuthMiddleware{
 		config:         config,
 		tokenCache:     tokenCache,
 		tokenBackend:   tokenBackend,
 		auditEmitter:   auditEmitter,
 		trustedProxies: config.TrustedProxies,
 	}
+	// 初始化暴力破解保护（当配置了 max attempts 时启用）
+	if config.BruteForceMaxAttempts > 0 {
+		m.bruteForce = NewBruteForceProtection(config.BruteForceMaxAttempts, config.BruteForceLockoutDuration)
+	}
+	return m
 }
 
 // BruteForceProtection 暴力破解保护

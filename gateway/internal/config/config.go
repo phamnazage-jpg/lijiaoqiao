@@ -40,9 +40,11 @@ type ServerConfig struct {
 
 // AuthConfig 鉴权运行时配置
 type AuthConfig struct {
-	Env              string
-	TokenRuntimeMode string
-	TokenRuntimeURL  string
+	Env               string
+	TokenRuntimeMode  string
+	TokenRuntimeURL   string
+	TrustedProxies    []string // 可信的代理IP列表，用于IP伪造防护
+	CORSAllowOrigins  []string // 允许的CORS来源，为空则使用默认通配符
 }
 
 // DatabaseConfig 数据库配置

@@ -143,6 +143,7 @@ func (r *InMemoryTokenRuntime) Refresh(_ context.Context, tokenID string, ttl ti
 	}
 
 	record.ExpiresAt = r.now().Add(ttl)
+	r.store.Save(*record, "", "")
 	return cloneRecord(*record), nil
 }
 

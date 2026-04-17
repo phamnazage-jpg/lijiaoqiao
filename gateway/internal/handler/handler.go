@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"lijiaoqiao/gateway/internal/adapter"
@@ -55,10 +56,10 @@ func NewHandler(r *router.Router) *Handler {
 	}
 }
 
-// ChatCompletionsHandle /v1/chat/completions端点
+// ChatCompletionsHandle /v1/chat/completions endpoint
 func (h *Handler) ChatCompletionsHandle(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
-	requestID := r.Header.Get("X-Request-ID")
+	requestID := sanitizeRequestID(r.Header.Get("X-Request-ID"))
 	if requestID == "" {
 		requestID = generateRequestID()
 	}
@@ -189,18 +190,21 @@ func (h *Handler) handleStream(ctx context.Context, w http.ResponseWriter, r *ht
 	flusher.Flush()
 }
 
-// CompletionsHandle /v1/completions端点
+// CompletionsHandle /v1/completions endpoint
 func (h *Handler) CompletionsHandle(w http.ResponseWriter, r *http.Request) {
-	requestID := r.Header.Get("X-Request-ID")
+	startTime := time.Now()
+	requestID := sanitizeRequestID(r.Header.Get("X-Request-ID"))
 	if requestID == "" {
 		requestID = generateRequestID()
 	}
+
+	ctx := context.WithValue(r.Context(), "request_id", requestID)
+	ctx = context.WithValue(ctx, "start_time", startTime)
 
 	// 解析请求 - 使用限制reader防止过大的请求体
 	var req model.CompletionRequest
 	limitedBody := &maxBytesReader{reader: r.Body, remaining: MaxRequestBytes}
 	if err := json.NewDecoder(limitedBody).Decode(&req); err != nil {
-		// 检查是否是请求体过大的错误
 		if err.Error() == "http: request body too large" || limitedBody.remaining <= 0 {
 			h.writeError(w, r, gwerror.NewGatewayError(gwerror.COMMON_REQUEST_TOO_LARGE, "request body exceeds maximum size limit").WithRequestID(requestID))
 			return
@@ -210,11 +214,11 @@ func (h *Handler) CompletionsHandle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 构造消息
-	ctx := r.Context()
 	messages := []adapter.Message{{Role: "user", Content: req.Prompt}}
 
 	provider, err := h.router.SelectProvider(ctx, req.Model)
 	if err != nil {
+		h.router.RecordResult(ctx, provider.ProviderName(), false, time.Since(startTime).Milliseconds())
 		h.writeError(w, r, err.(*gwerror.GatewayError).WithRequestID(requestID))
 		return
 	}
@@ -234,9 +238,12 @@ func (h *Handler) CompletionsHandle(w http.ResponseWriter, r *http.Request) {
 
 	response, err := provider.ChatCompletion(ctx, req.Model, messages, options)
 	if err != nil {
+		h.router.RecordResult(ctx, provider.ProviderName(), false, time.Since(startTime).Milliseconds())
 		h.writeError(w, r, err.(*gwerror.GatewayError).WithRequestID(requestID))
 		return
 	}
+
+	h.router.RecordResult(ctx, provider.ProviderName(), true, time.Since(startTime).Milliseconds())
 
 	// 转换响应为Completion格式
 	compResp := model.CompletionResponse{
@@ -264,14 +271,13 @@ func (h *Handler) CompletionsHandle(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, compResp, requestID)
 }
 
-// ModelsHandle /v1/models端点
+// ModelsHandle /v1/models endpoint
 func (h *Handler) ModelsHandle(w http.ResponseWriter, r *http.Request) {
-	requestID := r.Header.Get("X-Request-ID")
+	requestID := sanitizeRequestID(r.Header.Get("X-Request-ID"))
 	if requestID == "" {
 		requestID = generateRequestID()
 	}
 
-	// 返回支持的模型列表
 	models := []map[string]interface{}{
 		{"id": "gpt-4", "object": "model", "created": 1687882411, "owned_by": "openai"},
 		{"id": "gpt-3.5-turbo", "object": "model", "created": 1677610602, "owned_by": "openai"},
@@ -285,7 +291,7 @@ func (h *Handler) ModelsHandle(w http.ResponseWriter, r *http.Request) {
 	}, requestID)
 }
 
-// HealthHandle /health端点
+// HealthHandle /health endpoint
 func (h *Handler) HealthHandle(w http.ResponseWriter, r *http.Request) {
 	healthStatus := h.router.GetHealthStatus()
 
@@ -321,6 +327,7 @@ func (h *Handler) writeJSON(w http.ResponseWriter, status int, data interface{},
 	json.NewEncoder(w).Encode(data)
 }
 
+// P1-7: writeError strips internal error details before sending to client
 func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err *gwerror.GatewayError) {
 	info := err.GetErrorInfo()
 	w.Header().Set("Content-Type", "application/json")
@@ -329,9 +336,27 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err *gwerro
 	}
 	w.WriteHeader(info.HTTPStatus)
 
+	// Strip internal details — only expose safe generic messages to clients
+	safeMessage := err.Message
+	switch err.Code {
+	case gwerror.COMMON_INTERNAL_ERROR:
+		safeMessage = "internal server error"
+	case gwerror.COMMON_INVALID_REQUEST:
+		// For validation errors, show which field was invalid (not the underlying reason)
+		if strings.Contains(err.Message, "messages is required") {
+			safeMessage = "messages is required"
+		} else {
+			safeMessage = "invalid request"
+		}
+	case gwerror.COMMON_REQUEST_TOO_LARGE:
+		safeMessage = "request body too large"
+	case gwerror.PROVIDER_ERROR:
+		safeMessage = "upstream provider error"
+	}
+
 	resp := model.ErrorResponse{
 		Error: model.ErrorDetail{
-			Message: err.Message,
+			Message: safeMessage,
 			Type:    "gateway_error",
 			Code:    string(err.Code),
 		},
@@ -346,4 +371,23 @@ func generateRequestID() string {
 func marshalJSON(v interface{}) string {
 	data, _ := json.Marshal(v)
 	return string(data)
+}
+
+// sanitizeRequestID removes dangerous characters from client-provided X-Request-ID
+// to prevent log injection attacks. Only allows safe alphanumeric, hyphens, underscores.
+func sanitizeRequestID(rid string) string {
+	if rid == "" {
+		return ""
+	}
+	var result []byte
+	for i := 0; i < len(rid) && i < 128; i++ {
+		c := rid[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' {
+			result = append(result, c)
+		}
+	}
+	if len(result) == 0 {
+		return ""
+	}
+	return string(result)
 }

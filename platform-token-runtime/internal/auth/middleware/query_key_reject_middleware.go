@@ -10,7 +10,7 @@ import (
 
 var disallowedQueryKeys = []string{"key", "api_key", "token"}
 
-func QueryKeyRejectMiddleware(next http.Handler, auditor service.AuditEmitter, now func() time.Time) http.Handler {
+func QueryKeyRejectMiddleware(next http.Handler, auditor service.AuditEmitter, now func() time.Time, trustedProxies []string) http.Handler {
 	if next == nil {
 		next = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	}
@@ -30,7 +30,7 @@ func QueryKeyRejectMiddleware(next http.Handler, auditor service.AuditEmitter, n
 			RequestID:  requestID,
 			Route:      r.URL.Path,
 			ResultCode: service.CodeQueryKeyNotAllowed,
-			ClientIP:   extractClientIP(r),
+			ClientIP:   extractClientIP(r, trustedProxies),
 			CreatedAt:  now(),
 		})
 		writeError(w, http.StatusUnauthorized, requestID, service.CodeQueryKeyNotAllowed, "query key ingress is not allowed")

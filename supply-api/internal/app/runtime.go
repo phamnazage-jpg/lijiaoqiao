@@ -339,12 +339,14 @@ func buildSecurityBundle(
 
 	return runtimeSecurityBundle{
 		authMiddleware: middleware.NewAuthMiddleware(middleware.AuthConfig{
-			SecretKey: cfg.Token.SecretKey,
-			PublicKey: cfg.Token.PublicKey,
-			Algorithm: cfg.Token.Algorithm,
-			Issuer:    cfg.Token.Issuer,
-			CacheTTL:  cfg.Token.RevocationCacheTTL,
-			Enabled:   env != "dev",
+			SecretKey:                 cfg.Token.SecretKey,
+			PublicKey:                 cfg.Token.PublicKey,
+			Algorithm:                 cfg.Token.Algorithm,
+			Issuer:                    cfg.Token.Issuer,
+			CacheTTL:                  cfg.Token.RevocationCacheTTL,
+			Enabled:                   env != "dev",
+			BruteForceMaxAttempts:     5,             // MED-12: 暴力破解保护，默认5次失败后锁定
+			BruteForceLockoutDuration: 15 * time.Minute, // MED-12: 默认锁定15分钟
 		}, tokenCache, tokenBackend, adapter.NewAuditEmitterAdapter(auditStore)),
 		revocationSubscriber: revocationSubscriber,
 	}

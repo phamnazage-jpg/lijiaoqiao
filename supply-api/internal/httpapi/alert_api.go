@@ -7,6 +7,7 @@ import (
 
 	"lijiaoqiao/supply-api/internal/audit/handler"
 	"lijiaoqiao/supply-api/internal/audit/service"
+	"lijiaoqiao/supply-api/internal/pkg/pathutil"
 )
 
 // AlertAPI 告警API处理器
@@ -54,7 +55,7 @@ func (a *AlertAPI) handleAlertByID(w http.ResponseWriter, r *http.Request) {
 		path = path[:len(path)-1]
 	}
 
-	parts := splitPath(path)
+	parts := pathutil.SplitPath(path)
 	if len(parts) < 5 {
 		writeError(w, http.StatusBadRequest, CodeInvalidPath, "invalid path")
 		return
@@ -102,24 +103,4 @@ func (a *AlertAPI) handleAlertByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 	}
-}
-
-// splitPath 分割路径
-func splitPath(path string) []string {
-	var parts []string
-	var current []byte
-	for i := 0; i < len(path); i++ {
-		if path[i] == '/' {
-			if len(current) > 0 {
-				parts = append(parts, string(current))
-				current = nil
-			}
-		} else {
-			current = append(current, path[i])
-		}
-	}
-	if len(current) > 0 {
-		parts = append(parts, string(current))
-	}
-	return parts
 }

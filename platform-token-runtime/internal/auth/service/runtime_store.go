@@ -1,20 +1,25 @@
 package service
 
+import "sync"
+
 type InMemoryRuntimeStore struct {
-	records          map[string]*TokenRecord
-	tokenToID        map[string]string
+	mu              sync.RWMutex
+	records         map[string]*TokenRecord
+	tokenToID       map[string]string
 	idempotencyByKey map[string]idempotencyEntry
 }
 
 func NewInMemoryRuntimeStore() *InMemoryRuntimeStore {
 	return &InMemoryRuntimeStore{
-		records:          make(map[string]*TokenRecord),
-		tokenToID:        make(map[string]string),
+		records:         make(map[string]*TokenRecord),
+		tokenToID:       make(map[string]string),
 		idempotencyByKey: make(map[string]idempotencyEntry),
 	}
 }
 
 func (s *InMemoryRuntimeStore) Save(record TokenRecord, idempotencyKey, requestHash string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	recordCopy := cloneRecord(record)
 	s.records[record.TokenID] = &recordCopy
 	s.tokenToID[record.AccessToken] = record.TokenID
@@ -27,6 +32,8 @@ func (s *InMemoryRuntimeStore) Save(record TokenRecord, idempotencyKey, requestH
 }
 
 func (s *InMemoryRuntimeStore) GetByTokenID(tokenID string) (*TokenRecord, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	record, ok := s.records[tokenID]
 	return record, ok
 }
