@@ -83,6 +83,7 @@ type runtimeStartupViews struct {
 type runtimeFactory struct {
 	newDB         func(ctx context.Context, cfg config.DatabaseConfig) (*repository.DB, error)
 	newRedisCache func(cfg config.RedisConfig) (*cache.RedisCache, error)
+	newSMSVerifier func(cfg config.SMSConfig) (domain.SMSVerifier, error)
 }
 
 type runtimeBuildInputs struct {
@@ -149,6 +150,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 	if err != nil {
 		return nil, err
 	}
+	factory = withDefaultRuntimeFactory(factory)
 
 	resources, err := initializeRuntimeExternalResources(inputs, factory)
 	if err != nil {
@@ -157,7 +159,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 
 	storeBundle := buildStoreBundle(resources.db, inputs.logger)
 	securityBundle := buildSecurityBundle(inputs.env, inputs.cfg, inputs.logger, storeBundle.auditStore, resources.redisCache, storeBundle.tokenStatusRepo)
-	apiBundle, err := buildAPIBundle(inputs.env, inputs.cfg, inputs.now, inputs.tuning, inputs.logger, inputs.isProd, resources.db, storeBundle)
+	apiBundle, err := buildAPIBundle(inputs.env, inputs.cfg, inputs.now, inputs.tuning, inputs.logger, inputs.isProd, factory, resources.db, storeBundle)
 	if err != nil {
 		return nil, err
 	}
@@ -208,6 +210,11 @@ func withDefaultRuntimeFactory(factory runtimeFactory) runtimeFactory {
 	}
 	if factory.newRedisCache == nil {
 		factory.newRedisCache = cache.NewRedisCache
+	}
+	if factory.newSMSVerifier == nil {
+		factory.newSMSVerifier = func(config.SMSConfig) (domain.SMSVerifier, error) {
+			return nil, nil
+		}
 	}
 	return factory
 }
@@ -366,6 +373,7 @@ func buildAPIBundle(
 	tuning runtimeTuning,
 	logger logging.Logger,
 	isProd bool,
+	factory runtimeFactory,
 	db *repository.DB,
 	storeBundle runtimeStoreBundle,
 ) (runtimeAPIBundle, error) {
@@ -374,6 +382,7 @@ func buildAPIBundle(
 	accountService := domain.NewAccountService(storeBundle.accountStore, storeBundle.auditStore)
 	packageService := domain.NewPackageService(storeBundle.packageStore, storeBundle.accountStore, storeBundle.auditStore)
 	settlementService := domain.NewSettlementService(storeBundle.settlementStore, storeBundle.earningStore, storeBundle.auditStore)
+	withdrawEnabled := false
 	earningService := domain.NewEarningService(storeBundle.earningStore)
 	var iamAPI routeRegistrar
 
@@ -394,6 +403,26 @@ func buildAPIBundle(
 	rateLimitConfig := middleware.DefaultRateLimitConfig()
 	rateLimitConfig.Enabled = env != "dev"
 	logger.Info("限流中间件已初始化", nil)
+
+	if cfg.Settlement.WithdrawEnabled {
+		if !cfg.SMS.IsReadyForWithdraw() {
+			logger.Warn("提现能力未启用：SMS is not ready", nil)
+		} else {
+			smsVerifier, err := factory.newSMSVerifier(cfg.SMS)
+			if err != nil {
+				return runtimeAPIBundle{}, fmt.Errorf("failed to initialize SMS verifier: %w", err)
+			}
+			if smsVerifier == nil {
+				logger.Warn("提现能力未启用：SMS verifier is not wired", nil)
+			} else {
+				settlementService = domain.NewSettlementServiceWithSMS(storeBundle.settlementStore, storeBundle.earningStore, storeBundle.auditStore, smsVerifier)
+				withdrawEnabled = true
+				logger.Info("提现能力已启用（SMS verifier wired）", nil)
+			}
+		}
+	} else {
+		logger.Info("提现能力未启用（settlement.withdraw_enabled=false）", nil)
+	}
 
 	if cfg.Server.IAMEnabled {
 		if db == nil {
@@ -424,7 +453,7 @@ func buildAPIBundle(
 	if err != nil {
 		return runtimeAPIBundle{}, fmt.Errorf("failed to initialize supply api: %w", err)
 	}
-	supplyAPI.SetWithdrawEnabled(cfg.Settlement.WithdrawEnabled)
+	supplyAPI.SetWithdrawEnabled(withdrawEnabled)
 
 	alertAPI, err := httpapi.NewAlertAPI(storeBundle.alertService)
 	if err != nil {

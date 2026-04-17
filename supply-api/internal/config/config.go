@@ -17,6 +17,7 @@ type Config struct {
 	Redis      RedisConfig
 	Token      TokenConfig
 	Settlement SettlementConfig
+	SMS        SMSConfig
 	Audit      AuditConfig
 }
 
@@ -68,6 +69,30 @@ type TokenConfig struct {
 // SettlementConfig 结算与提现能力配置
 type SettlementConfig struct {
 	WithdrawEnabled bool
+}
+
+// SMSConfig 短信验证码服务配置。
+type SMSConfig struct {
+	Enabled        bool
+	Provider       string
+	AppID          string
+	AppSecret      string
+	SignName       string
+	TemplateCode   string
+	Region         string
+	Endpoint       string
+	CodeLength     int
+	CodeExpireMins int
+}
+
+// IsReadyForWithdraw 返回提现能力所需的最小 SMS 配置是否齐备。
+func (c SMSConfig) IsReadyForWithdraw() bool {
+	return c.Enabled &&
+		strings.TrimSpace(c.Provider) != "" &&
+		strings.TrimSpace(c.AppID) != "" &&
+		strings.TrimSpace(c.AppSecret) != "" &&
+		strings.TrimSpace(c.SignName) != "" &&
+		strings.TrimSpace(c.TemplateCode) != ""
 }
 
 // AuditConfig 审计配置
@@ -200,6 +225,18 @@ func load(env, configPath string) (*Config, error) {
 	// Settlement配置
 	cfg.Settlement.WithdrawEnabled = v.GetBool("settlement.withdraw_enabled")
 
+	// SMS 配置
+	cfg.SMS.Enabled = v.GetBool("sms.enabled")
+	cfg.SMS.Provider = v.GetString("sms.provider")
+	cfg.SMS.AppID = v.GetString("sms.app_id")
+	cfg.SMS.AppSecret = v.GetString("sms.app_secret")
+	cfg.SMS.SignName = v.GetString("sms.sign_name")
+	cfg.SMS.TemplateCode = v.GetString("sms.template_code")
+	cfg.SMS.Region = v.GetString("sms.region")
+	cfg.SMS.Endpoint = v.GetString("sms.endpoint")
+	cfg.SMS.CodeLength = v.GetInt("sms.code_length")
+	cfg.SMS.CodeExpireMins = v.GetInt("sms.code_expire_mins")
+
 	if err := validateForEnv(env, &cfg); err != nil {
 		return nil, err
 	}
@@ -247,6 +284,13 @@ func setDefaults(v *viper.Viper) {
 	// Settlement defaults
 	v.SetDefault("settlement.withdraw_enabled", false)
 
+	// SMS defaults
+	v.SetDefault("sms.enabled", false)
+	v.SetDefault("sms.provider", "tencent")
+	v.SetDefault("sms.region", "ap-guangzhou")
+	v.SetDefault("sms.code_length", 6)
+	v.SetDefault("sms.code_expire_mins", 5)
+
 	// Audit defaults
 	v.SetDefault("audit.buffer_size", 1000)
 	v.SetDefault("audit.flush_interval", 5*time.Second)
@@ -278,6 +322,16 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("token.algorithm", "SUPPLY_TOKEN_ALGORITHM")
 	_ = v.BindEnv("token.issuer", "SUPPLY_TOKEN_ISSUER")
 	_ = v.BindEnv("settlement.withdraw_enabled", "SUPPLY_SETTLEMENT_WITHDRAW_ENABLED")
+	_ = v.BindEnv("sms.enabled", "SUPPLY_SMS_ENABLED")
+	_ = v.BindEnv("sms.provider", "SUPPLY_SMS_PROVIDER")
+	_ = v.BindEnv("sms.app_id", "SUPPLY_SMS_APP_ID")
+	_ = v.BindEnv("sms.app_secret", "SUPPLY_SMS_APP_SECRET")
+	_ = v.BindEnv("sms.sign_name", "SUPPLY_SMS_SIGN_NAME")
+	_ = v.BindEnv("sms.template_code", "SUPPLY_SMS_TEMPLATE_CODE")
+	_ = v.BindEnv("sms.region", "SUPPLY_SMS_REGION")
+	_ = v.BindEnv("sms.endpoint", "SUPPLY_SMS_ENDPOINT")
+	_ = v.BindEnv("sms.code_length", "SUPPLY_SMS_CODE_LENGTH")
+	_ = v.BindEnv("sms.code_expire_mins", "SUPPLY_SMS_CODE_EXPIRE_MINS")
 }
 
 // GetEnvInt 获取环境变量int值
@@ -310,8 +364,8 @@ func validateForEnv(env string, cfg *Config) error {
 	if strings.TrimSpace(cfg.Token.Issuer) == "" {
 		return fmt.Errorf("invalid prod config: token.issuer is required")
 	}
-	if cfg.Settlement.WithdrawEnabled {
-		return fmt.Errorf("invalid prod config: settlement.withdraw_enabled cannot be true until SMS integration is production-ready")
+	if cfg.Settlement.WithdrawEnabled && !cfg.SMS.IsReadyForWithdraw() {
+		return fmt.Errorf("invalid prod config: settlement.withdraw_enabled requires SMS to be ready; SMS is not ready")
 	}
 
 	// P1-2: Reject HMAC algorithms (HS256/HS384/HS512) in production — only RSA is allowed

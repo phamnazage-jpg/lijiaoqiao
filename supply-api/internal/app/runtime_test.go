@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -405,6 +407,95 @@ func TestBuildRuntime_EnablesIAMRoutesWhenConfigured(t *testing.T) {
 	}
 	if runtime.startupViews.http.iamHandler == nil {
 		t.Fatal("expected IAM handler to be wired when enabled")
+	}
+}
+
+func TestBuildRuntime_KeepsWithdrawDisabledWithoutSMSVerifier(t *testing.T) {
+	cfg := testRuntimeConfig()
+	cfg.Settlement.WithdrawEnabled = true
+	cfg.SMS.Enabled = true
+
+	runtime, err := buildRuntimeWithFactory(RuntimeOptions{
+		Env:         "dev",
+		Config:      cfg,
+		Logger:      testLogger{},
+		InitContext: context.Background(),
+		Now: func() time.Time {
+			return time.Unix(1712800000, 0).UTC()
+		},
+	}, runtimeFactory{
+		newDB: func(context.Context, config.DatabaseConfig) (*repository.DB, error) {
+			return nil, errors.New("db down")
+		},
+		newRedisCache: func(config.RedisConfig) (*cache.RedisCache, error) {
+			return nil, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected runtime build to succeed with withdraw forced closed, got %v", err)
+	}
+
+	srv, err := runtime.BuildServer()
+	if err != nil {
+		t.Fatalf("expected server build to succeed, got %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/supply/settlements/withdraw", strings.NewReader(`{"withdraw_amount":1000,"payment_method":"bank","payment_account":"13800138000","sms_code":"123456"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected withdraw to stay disabled, got=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "SMS is not ready") {
+		t.Fatalf("expected disabled response to mention SMS readiness, got %s", rec.Body.String())
+	}
+}
+
+func TestBuildRuntime_EnablesWithdrawWhenSMSVerifierIsWired(t *testing.T) {
+	cfg := testRuntimeConfig()
+	cfg.Settlement.WithdrawEnabled = true
+	cfg.SMS.Enabled = true
+
+	runtime, err := buildRuntimeWithFactory(RuntimeOptions{
+		Env:         "dev",
+		Config:      cfg,
+		Logger:      testLogger{},
+		InitContext: context.Background(),
+		Now: func() time.Time {
+			return time.Unix(1712800000, 0).UTC()
+		},
+	}, runtimeFactory{
+		newDB: func(context.Context, config.DatabaseConfig) (*repository.DB, error) {
+			return nil, errors.New("db down")
+		},
+		newRedisCache: func(config.RedisConfig) (*cache.RedisCache, error) {
+			return nil, nil
+		},
+		newSMSVerifier: func(config.SMSConfig) (domain.SMSVerifier, error) {
+			return &mockSMSVerifierForRuntime{verifyResult: true}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected runtime build to succeed, got %v", err)
+	}
+
+	srv, err := runtime.BuildServer()
+	if err != nil {
+		t.Fatalf("expected server build to succeed, got %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/supply/settlements/withdraw", strings.NewReader(`{"withdraw_amount":1000,"payment_method":"bank","payment_account":"13800138000","sms_code":"123456"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected request to stop at idempotency gate, got=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "idempotency middleware is required") {
+		t.Fatalf("expected withdraw gate to move past SMS readiness, got %s", rec.Body.String())
 	}
 }
 
@@ -1091,13 +1182,13 @@ func testRuntimeConfig() *config.Config {
 			ConnMaxLifetime: time.Minute,
 			ConnMaxIdleTime: time.Minute,
 		},
-		Redis: config.RedisConfig{
-			Host:     "127.0.0.1",
-			Port:     6379,
-			Password: "",
-			DB:       0,
-			PoolSize: 2,
-		},
+	Redis: config.RedisConfig{
+		Host:     "127.0.0.1",
+		Port:     6379,
+		Password: "",
+		DB:       0,
+		PoolSize: 2,
+	},
 		Token: config.TokenConfig{
 			SecretKey:          "runtime-test-secret",
 			Algorithm:          "HS256",
@@ -1105,12 +1196,34 @@ func testRuntimeConfig() *config.Config {
 			RevocationCacheTTL: 10 * time.Second,
 		},
 		Settlement: config.SettlementConfig{
-			WithdrawEnabled: true,
+			WithdrawEnabled: false,
+		},
+		SMS: config.SMSConfig{
+			Provider:       "tencent",
+			AppID:          "test-app-id",
+			AppSecret:      "test-app-secret",
+			SignName:       "SupplyAPI",
+			TemplateCode:   "SMS_123456",
+			Region:         "ap-guangzhou",
+			CodeLength:     6,
+			CodeExpireMins: 5,
 		},
 	}
 }
 
 type stubOutboxRepository struct{}
+
+type mockSMSVerifierForRuntime struct {
+	verifyResult bool
+	verifyError  error
+}
+
+func (m *mockSMSVerifierForRuntime) Verify(context.Context, string, string) (bool, error) {
+	if m.verifyError != nil {
+		return false, m.verifyError
+	}
+	return m.verifyResult, nil
+}
 
 type stubRevocationSubscriber struct{}
 

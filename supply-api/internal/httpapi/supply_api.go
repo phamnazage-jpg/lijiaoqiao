@@ -763,7 +763,7 @@ func (a *SupplyAPI) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !a.withdrawEnabled {
-		writeError(w, http.StatusServiceUnavailable, CodeFeatureDisabled, "withdraw is disabled until SMS verification is integrated")
+		writeError(w, http.StatusServiceUnavailable, CodeFeatureDisabled, "withdraw is disabled because SMS is not ready")
 		return
 	}
 	if !a.requireIdempotencyMiddleware(w) {

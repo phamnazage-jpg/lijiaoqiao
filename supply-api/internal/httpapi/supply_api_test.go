@@ -1441,6 +1441,9 @@ func TestSupplyAPI_WithdrawDisabled_ReturnsServiceUnavailable(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected status 503, got %d body=%s", w.Code, w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), "SMS is not ready") {
+		t.Fatalf("expected disabled response to mention SMS readiness, got %s", w.Body.String())
+	}
 }
 
 func TestSupplyAPI_EndToEnd_BillingSummary(t *testing.T) {

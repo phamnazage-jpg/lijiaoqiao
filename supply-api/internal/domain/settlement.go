@@ -192,7 +192,7 @@ func NewSettlementService(store SettlementStore, earningStore EarningStore, audi
 		store:        store,
 		earningStore: earningStore,
 		auditStore:   auditStore,
-		smsVerifier:  &DefaultSMSVerifier{}, // 默认使用硬编码验证码
+		smsVerifier:  resolveSMSVerifier(nil),
 	}
 }
 
@@ -202,8 +202,15 @@ func NewSettlementServiceWithSMS(store SettlementStore, earningStore EarningStor
 		store:        store,
 		earningStore: earningStore,
 		auditStore:   auditStore,
-		smsVerifier:  smsVerifier,
+		smsVerifier:  resolveSMSVerifier(smsVerifier),
 	}
+}
+
+func resolveSMSVerifier(verifier SMSVerifier) SMSVerifier {
+	if verifier == nil {
+		return &DefaultSMSVerifier{}
+	}
+	return verifier
 }
 
 // emitAudit 安全记录审计日志（失败只记录错误，不影响主流程）
