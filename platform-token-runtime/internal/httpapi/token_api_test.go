@@ -203,10 +203,13 @@ func TestTokenAPIAuditEventsQuery(t *testing.T) {
 		t.Fatalf("issue failed: code=%d body=%s", issueRec.Code, issueRec.Body.String())
 	}
 	issueResp := decodeMap(t, issueRec.Body.Bytes())
-	tokenID := issueResp["data"].(map[string]any)["token_id"].(string)
+	issueData := issueResp["data"].(map[string]any)
+	tokenID := issueData["token_id"].(string)
+	accessToken := issueData["access_token"].(string)
 
 	queryReq := httptest.NewRequest(http.MethodGet, "/api/v1/platform/tokens/audit-events?token_id="+tokenID+"&limit=5", nil)
 	queryReq.Header.Set("X-Request-Id", "req-audit-query-2")
+	queryReq.Header.Set("Authorization", "Bearer "+accessToken)
 	queryRec := httptest.NewRecorder()
 	mux.ServeHTTP(queryRec, queryReq)
 	if queryRec.Code != http.StatusOK {
@@ -236,8 +239,20 @@ func TestTokenAPIAuditEventsReady(t *testing.T) {
 	mux := http.NewServeMux()
 	api.Register(mux)
 
+	record, err := runtime.Issue(context.Background(), service.IssueTokenInput{
+		SubjectID: "2011",
+		Role:      "owner",
+		Scope:     []string{"supply:*"},
+		TTL:       5 * time.Minute,
+		RequestID: "req-audit-ready-issue",
+	})
+	if err != nil {
+		t.Fatalf("issue token failed: %v", err)
+	}
+
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/platform/tokens/audit-events?limit=3", nil)
 	req.Header.Set("X-Request-Id", "req-audit-ready")
+	req.Header.Set("Authorization", "Bearer "+record.AccessToken)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -254,8 +269,20 @@ func TestTokenAPIAuditEventsWithoutQuerierReturnsEmptyList(t *testing.T) {
 	mux := http.NewServeMux()
 	api.Register(mux)
 
+	record, err := runtime.Issue(context.Background(), service.IssueTokenInput{
+		SubjectID: "2012",
+		Role:      "owner",
+		Scope:     []string{"supply:*"},
+		TTL:       5 * time.Minute,
+		RequestID: "req-audit-query-3-issue",
+	})
+	if err != nil {
+		t.Fatalf("issue token failed: %v", err)
+	}
+
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/platform/tokens/audit-events?limit=3", nil)
 	req.Header.Set("X-Request-Id", "req-audit-query-3")
+	req.Header.Set("Authorization", "Bearer "+record.AccessToken)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -266,6 +293,24 @@ func TestTokenAPIAuditEventsWithoutQuerierReturnsEmptyList(t *testing.T) {
 	data := body["data"].(map[string]any)
 	if total := int(data["total"].(float64)); total != 0 {
 		t.Fatalf("expected total=0, got=%d body=%s", total, rec.Body.String())
+	}
+}
+
+func TestTokenAPIAuditEventsRequireAuthorization(t *testing.T) {
+	t.Parallel()
+
+	runtime := service.NewInMemoryTokenRuntime(nil)
+	api := NewTokenAPI(runtime, service.NewMemoryAuditStore(), time.Now)
+	mux := http.NewServeMux()
+	api.Register(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/platform/tokens/audit-events?limit=3", nil)
+	req.Header.Set("X-Request-Id", "req-audit-auth-required")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized audit query without bearer token: code=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

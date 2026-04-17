@@ -59,7 +59,7 @@ func TestQueryKeyRejectMiddleware(t *testing.T) {
 	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		nextCalled = true
 	})
-	handler := QueryKeyRejectMiddleware(next, auditor, fixedNow)
+	handler := QueryKeyRejectMiddleware(next, auditor, fixedNow, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/supply/accounts?api_key=secret", nil)
 	rec := httptest.NewRecorder()
 
