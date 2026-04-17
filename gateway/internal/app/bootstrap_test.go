@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"lijiaoqiao/gateway/internal/config"
+	"lijiaoqiao/gateway/internal/router"
 )
 
 func TestBuildServer_FromConfigProviders(t *testing.T) {
@@ -115,6 +116,15 @@ func TestBuildServer_DevelopmentAllowsDefaultSecurityFallbacks(t *testing.T) {
 	}
 	if server == nil {
 		t.Fatal("expected server")
+	}
+}
+
+func TestResolveStrategy_ExperimentalStrategiesFallbackToLatency(t *testing.T) {
+	tests := []string{"cost_based", "cost_aware", "fallback"}
+	for _, strategy := range tests {
+		if got := resolveStrategy(strategy); got != router.StrategyLatency {
+			t.Fatalf("strategy %s should fallback to latency, got %s", strategy, got)
+		}
 	}
 }
 

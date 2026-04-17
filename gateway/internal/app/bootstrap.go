@@ -168,6 +168,8 @@ func buildTokenRuntime(cfg config.AuthConfig) (interface {
 	}
 }
 
+// resolveStrategy 只暴露当前主启动链路已验证的策略。
+// cost_based、cost_aware 与 fallback 仍停留在实验模块，未接入 BuildServer。
 func resolveStrategy(strategy string) router.LoadBalancerStrategy {
 	switch strings.ToLower(strings.TrimSpace(strategy)) {
 	case string(router.StrategyRoundRobin):
