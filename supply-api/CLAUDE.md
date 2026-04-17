@@ -6,7 +6,7 @@ Supply API 是一个基于 Go 的微服务，提供供应链管理功能，包�
 
 ## 技术栈
 
-- **语言**: Go 1.21+
+- **语言**: Go 1.22+
 - **数据库**: PostgreSQL 15+
 - **缓存**: Redis
 - **框架**: 标准库 + 自定义中间件
@@ -23,19 +23,24 @@ Supply API 是一个基于 Go 的微服务，提供供应链管理功能，包�
 
 | 规范 | 示例 | 说明 |
 |------|------|------|
-| IP来源字段 | `SourceIP` | 统一使用 `SourceIP`，禁止使用 `ClientIP` |
+| IP来源字段 | `SourceIP` | 审计、持久化、对外 JSON 字段统一使用 `SourceIP`；HTTP 入口局部上下文允许保留 `ClientIP` |
 | 追踪ID字段 | `TraceID` | W3C Trace Context 标准 |
 | 请求ID字段 | `RequestID` | HTTP 请求追踪 |
 | 幂等键字段 | `IdempotencyKey` | 统一命名 |
 
 #### 1.2 结构体命名
 ```
-// ✅ 正确
+// ✅ 正确 - 审计/持久化模型统一使用 SourceIP
 type AuditEvent struct {
     SourceIP string `json:"source_ip"`
 }
 
-// ❌ 错误 - 与其他模块不一致
+// ⚠️ 仅限 HTTP 入口局部上下文，可使用 ClientIP
+type RequestContext struct {
+    ClientIP string
+}
+
+// ❌ 错误 - 对外/持久化结构继续使用 ClientIP
 type AuditEvent struct {
     ClientIP string `json:"client_ip"`
 }
@@ -165,6 +170,30 @@ return errors.New("SUP_SET_4001: withdraw amount exceeds available balance")
 // ❌ 错误 - 泄露内部实现
 return errors.New("database connection failed: connection refused")
 ```
+
+#### 6.3 条件能力必须 fail-closed
+**关键经验**: 依赖外部集成或运行时前提的能力，未满足条件时必须显式关闭，不能“假成功”或静默降级。
+
+```go
+// ✅ 正确 - 条件不满足时显式关闭
+if !cfg.SMS.IsReadyForWithdraw() {
+    writeError(w, http.StatusServiceUnavailable, CodeFeatureDisabled, "withdraw is disabled because SMS is not ready")
+    return
+}
+
+// ❌ 错误 - 只打日志，不阻断功能
+logger.Warn("sms verifier is not wired", nil)
+return nil
+```
+
+#### 6.4 运行时主链路才算已交付
+**关键经验**: 只有接入 `BuildServer` / `BuildRuntime` 主启动链路的能力，才能算“当前已完成”。
+
+判定规则：
+
+1. 只有 handler / service 实现、但未挂载到运行时，不算已交付。
+2. 实验模块未接入主链路，不算默认交付范围。
+3. 条件启用能力必须和默认能力分开描述，不能混写为“已完成”。
 
 ### 7. 数据库设计
 
@@ -333,6 +362,41 @@ database:
   password: ${DB_PASSWORD}
 ```
 
+### 3. 条件能力默认关闭
+
+必须遵循以下原则：
+
+1. `server.iam_enabled` 默认 `false`
+2. `settlement.withdraw_enabled` 默认 `false`
+3. 生产配置下，如果 `settlement.withdraw_enabled=true` 但 SMS 未 ready，配置加载必须失败
+4. 任何依赖 DB-backed runtime 的能力，在数据库依赖缺失时必须直接拒绝启动或拒绝挂载
+
+---
+
+## 运行时与完成度规范（2026-04-17）
+
+### 1. 完成度判断
+
+1. 路由是否在 `BuildServer` 中注册，是 HTTP 能力是否已交付的唯一准绳。
+2. 运行时是否在 `BuildRuntime` 中实际装配，是依赖能力是否可用的唯一准绳。
+3. 设计文档、竞品代码、历史归档、实验模块都不能直接算入当前完成度。
+
+### 2. 报告与审查结论分类
+
+审查结论至少分三类：
+
+1. `已证实`：当前代码和命令能直接证明
+2. `已过时`：曾经成立，但当前代码已不成立
+3. `漏报`：旧报告没有识别，但当前真实存在
+
+同时必须明确区分：
+
+1. `阻塞缺陷`
+2. `上线条件`
+3. `长期治理项`
+
+禁止把规范一致性问题直接等同于生产 readiness 阻塞项。
+
 ---
 
 ## 常见问题与解决方案
@@ -370,24 +434,34 @@ export SUPPLY_API_DB_PORT="5432"
 
 ### 2. 测试运行命令
 ```bash
-# 单元测试（跳过集成测试）
-go test -short ./...
+# 模块级回归（默认无缓存）
+go test -count=1 ./...
 
-# 集成测试（需真实数据库）
-go test -tags=integration ./...
+# 快速单元测试（显式 short）
+go test -count=1 -short ./...
+
+# 仓储集成测试（需真实数据库，默认使用脚本）
+bash scripts/run_integration_tests.sh ./internal/repository
 
 # 性能基准测试
 go test -tags=slow -bench=. -benchmem ./internal/benchmark/...
 
-# 完整测试（含集成）
-go test -tags=integration,benchmark ./...
-
 # E2E 测试
-go test -tags=e2e ./e2e/...
+go test -count=1 -tags=e2e ./e2e/...
+
+# 仓库级统一校验
+bash ../scripts/ci/repo_integrity_check.sh
 
 # 覆盖率报告
-go test -cover ./...
+go test -count=1 -cover ./...
 ```
+
+### 2.1 验证口径要求
+
+1. 任何“测试通过”默认指 `-count=1` 的无缓存结果。
+2. `scripts/run_integration_tests.sh` 内部必须保持无缓存执行。
+3. 修改 HTTP、runtime、配置门禁、持久化装配后，必须补跑仓库级统一校验。
+4. 没有实际运行命令时，不得声称“已验证”。
 
 ### 3. 服务启动
 ```bash
