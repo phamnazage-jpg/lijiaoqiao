@@ -13,12 +13,12 @@ import (
 type Config struct {
 	Addr         string
 	Env          string
-	RuntimeStore *service.InMemoryRuntimeStore
-	AuditStore   *service.MemoryAuditStore
+	RuntimeStore service.RuntimeStore
+	AuditStore   service.AuditStore
 	Now          func() time.Time
 }
 
-func BuildRuntime(cfg Config) (*service.InMemoryTokenRuntime, *service.MemoryAuditStore, error) {
+func BuildRuntime(cfg Config) (*service.InMemoryTokenRuntime, service.AuditStore, error) {
 	now := cfg.Now
 	if now == nil {
 		now = time.Now

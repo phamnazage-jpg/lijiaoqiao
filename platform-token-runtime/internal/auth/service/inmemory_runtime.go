@@ -40,19 +40,14 @@ type IssueTokenInput struct {
 type InMemoryTokenRuntime struct {
 	mu    sync.RWMutex
 	now   func() time.Time
-	store *InMemoryRuntimeStore
-}
-
-type idempotencyEntry struct {
-	RequestHash string
-	TokenID     string
+	store RuntimeStore
 }
 
 func NewInMemoryTokenRuntime(now func() time.Time) *InMemoryTokenRuntime {
 	return NewInMemoryTokenRuntimeWithStore(now, NewInMemoryRuntimeStore())
 }
 
-func NewInMemoryTokenRuntimeWithStore(now func() time.Time, store *InMemoryRuntimeStore) *InMemoryTokenRuntime {
+func NewInMemoryTokenRuntimeWithStore(now func() time.Time, store RuntimeStore) *InMemoryTokenRuntime {
 	if now == nil {
 		now = time.Now
 	}
@@ -65,7 +60,7 @@ func NewInMemoryTokenRuntimeWithStore(now func() time.Time, store *InMemoryRunti
 	}
 }
 
-func (r *InMemoryTokenRuntime) Issue(_ context.Context, input IssueTokenInput) (TokenRecord, error) {
+func (r *InMemoryTokenRuntime) Issue(ctx context.Context, input IssueTokenInput) (TokenRecord, error) {
 	if strings.TrimSpace(input.SubjectID) == "" {
 		return TokenRecord{}, errors.New("subject_id is required")
 	}
@@ -104,90 +99,156 @@ func (r *InMemoryTokenRuntime) Issue(_ context.Context, input IssueTokenInput) (
 		RevokedReason: "",
 	}
 
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	r.mu.Lock()
 	if idempotencyKey != "" {
-		entry, ok := r.store.LookupIdempotency(idempotencyKey)
+		entry, ok, err := r.store.LookupIdempotency(ctx, idempotencyKey)
+		if err != nil {
+			r.mu.Unlock()
+			return TokenRecord{}, err
+		}
 		if ok {
 			if entry.RequestHash != requestHash {
 				r.mu.Unlock()
 				return TokenRecord{}, errors.New("idempotency key payload mismatch")
 			}
-			existing, exists := r.store.GetByTokenID(entry.TokenID)
+			existing, exists, err := r.store.GetByTokenID(ctx, entry.TokenID)
+			if err != nil {
+				r.mu.Unlock()
+				return TokenRecord{}, err
+			}
 			if exists {
 				r.mu.Unlock()
 				return cloneRecord(*existing), nil
 			}
 		}
 	}
-	r.store.Save(record, idempotencyKey, requestHash)
+	if err := r.store.Save(ctx, record, idempotencyKey, requestHash); err != nil {
+		r.mu.Unlock()
+		return TokenRecord{}, err
+	}
 	r.mu.Unlock()
 
 	return record, nil
 }
 
-func (r *InMemoryTokenRuntime) Refresh(_ context.Context, tokenID string, ttl time.Duration) (TokenRecord, error) {
+func (r *InMemoryTokenRuntime) Refresh(ctx context.Context, tokenID string, ttl time.Duration) (TokenRecord, error) {
 	if ttl <= 0 {
 		return TokenRecord{}, errors.New("ttl must be positive")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	record, ok := r.store.GetByTokenID(tokenID)
+	record, ok, err := r.store.GetByTokenID(ctx, tokenID)
+	if err != nil {
+		return TokenRecord{}, err
+	}
 	if !ok {
 		return TokenRecord{}, errors.New("token not found")
 	}
-	r.applyExpiry(record)
+	if r.applyExpiry(record) {
+		if err := r.store.Save(ctx, *record, "", ""); err != nil {
+			return TokenRecord{}, err
+		}
+	}
 	if record.Status != TokenStatusActive {
 		return TokenRecord{}, errors.New("token is not active")
 	}
 
 	record.ExpiresAt = r.now().Add(ttl)
-	r.store.Save(*record, "", "")
+	if err := r.store.Save(ctx, *record, "", ""); err != nil {
+		return TokenRecord{}, err
+	}
 	return cloneRecord(*record), nil
 }
 
-func (r *InMemoryTokenRuntime) Revoke(_ context.Context, tokenID, reason string) (TokenRecord, error) {
+func (r *InMemoryTokenRuntime) Revoke(ctx context.Context, tokenID, reason string) (TokenRecord, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	record, ok := r.store.GetByTokenID(tokenID)
+	record, ok, err := r.store.GetByTokenID(ctx, tokenID)
+	if err != nil {
+		return TokenRecord{}, err
+	}
 	if !ok {
 		return TokenRecord{}, errors.New("token not found")
 	}
-	r.applyExpiry(record)
+	if r.applyExpiry(record) {
+		if err := r.store.Save(ctx, *record, "", ""); err != nil {
+			return TokenRecord{}, err
+		}
+	}
 	record.Status = TokenStatusRevoked
 	record.RevokedReason = strings.TrimSpace(reason)
+	if err := r.store.Save(ctx, *record, "", ""); err != nil {
+		return TokenRecord{}, err
+	}
 	return cloneRecord(*record), nil
 }
 
-func (r *InMemoryTokenRuntime) Introspect(_ context.Context, accessToken string) (TokenRecord, error) {
+func (r *InMemoryTokenRuntime) Introspect(ctx context.Context, accessToken string) (TokenRecord, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	record, ok := r.store.GetByAccessToken(accessToken)
+	record, ok, err := r.store.GetByAccessToken(ctx, accessToken)
+	if err != nil {
+		return TokenRecord{}, err
+	}
 	if !ok {
 		return TokenRecord{}, errors.New("token not found")
 	}
-	r.applyExpiry(record)
+	if r.applyExpiry(record) {
+		if err := r.store.Save(ctx, *record, "", ""); err != nil {
+			return TokenRecord{}, err
+		}
+	}
 	return cloneRecord(*record), nil
 }
 
-func (r *InMemoryTokenRuntime) Lookup(_ context.Context, tokenID string) (TokenRecord, error) {
+func (r *InMemoryTokenRuntime) Lookup(ctx context.Context, tokenID string) (TokenRecord, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	record, ok := r.store.GetByTokenID(tokenID)
+	record, ok, err := r.store.GetByTokenID(ctx, tokenID)
+	if err != nil {
+		return TokenRecord{}, err
+	}
 	if !ok {
 		return TokenRecord{}, errors.New("token not found")
 	}
-	r.applyExpiry(record)
+	if r.applyExpiry(record) {
+		if err := r.store.Save(ctx, *record, "", ""); err != nil {
+			return TokenRecord{}, err
+		}
+	}
 	return cloneRecord(*record), nil
 }
 
-func (r *InMemoryTokenRuntime) Verify(_ context.Context, rawToken string) (VerifiedToken, error) {
+func (r *InMemoryTokenRuntime) Verify(ctx context.Context, rawToken string) (VerifiedToken, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	r.mu.RLock()
-	record, ok := r.store.GetByAccessToken(rawToken)
+	record, ok, err := r.store.GetByAccessToken(ctx, rawToken)
+	if err != nil {
+		r.mu.RUnlock()
+		return VerifiedToken{}, NewAuthError(CodeAuthInvalidToken, err)
+	}
 	if !ok {
 		r.mu.RUnlock()
 		return VerifiedToken{}, NewAuthError(CodeAuthInvalidToken, errors.New("token not found"))
@@ -204,22 +265,33 @@ func (r *InMemoryTokenRuntime) Verify(_ context.Context, rawToken string) (Verif
 	return claims, nil
 }
 
-func (r *InMemoryTokenRuntime) Resolve(_ context.Context, tokenID string) (TokenStatus, error) {
+func (r *InMemoryTokenRuntime) Resolve(ctx context.Context, tokenID string) (TokenStatus, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	record, ok := r.store.GetByTokenID(tokenID)
+	record, ok, err := r.store.GetByTokenID(ctx, tokenID)
+	if err != nil {
+		return "", err
+	}
 	if !ok {
 		return "", NewAuthError(CodeAuthInvalidToken, errors.New("token not found"))
 	}
-	r.applyExpiry(record)
+	if r.applyExpiry(record) {
+		if err := r.store.Save(ctx, *record, "", ""); err != nil {
+			return "", err
+		}
+	}
 	return record.Status, nil
 }
 
 func (r *InMemoryTokenRuntime) TokenCount() int {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.store.TokenCount()
+	if counter, ok := r.store.(interface{ TokenCount() int }); ok {
+		return counter.TokenCount()
+	}
+	return 0
 }
 
 func (r *InMemoryTokenRuntime) IssueAndAudit(ctx context.Context, input IssueTokenInput, auditor AuditEmitter) (TokenRecord, error) {
@@ -269,13 +341,15 @@ func (r *InMemoryTokenRuntime) RevokeAndAudit(ctx context.Context, tokenID, reas
 	return record, nil
 }
 
-func (r *InMemoryTokenRuntime) applyExpiry(record *TokenRecord) {
+func (r *InMemoryTokenRuntime) applyExpiry(record *TokenRecord) bool {
 	if record == nil {
-		return
+		return false
 	}
 	if record.Status == TokenStatusActive && !record.ExpiresAt.IsZero() && !r.now().Before(record.ExpiresAt) {
 		record.Status = TokenStatusExpired
+		return true
 	}
+	return false
 }
 
 func cloneRecord(record TokenRecord) TokenRecord {

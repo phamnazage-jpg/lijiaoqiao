@@ -1,6 +1,9 @@
 package service
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestInMemoryRuntimeStore_SaveAndLookup(t *testing.T) {
 	store := NewInMemoryRuntimeStore()
@@ -12,9 +15,14 @@ func TestInMemoryRuntimeStore_SaveAndLookup(t *testing.T) {
 		Scope:       []string{"supply:*"},
 	}
 
-	store.Save(record, "idem-1", "hash-1")
+	if err := store.Save(context.Background(), record, "idem-1", "hash-1"); err != nil {
+		t.Fatalf("save record: %v", err)
+	}
 
-	byID, ok := store.GetByTokenID("tok_123")
+	byID, ok, err := store.GetByTokenID(context.Background(), "tok_123")
+	if err != nil {
+		t.Fatalf("get by token id: %v", err)
+	}
 	if !ok {
 		t.Fatal("expected record by token id")
 	}
@@ -22,7 +30,10 @@ func TestInMemoryRuntimeStore_SaveAndLookup(t *testing.T) {
 		t.Fatalf("unexpected token id: %s", byID.TokenID)
 	}
 
-	byToken, ok := store.GetByAccessToken("ptk_123")
+	byToken, ok, err := store.GetByAccessToken(context.Background(), "ptk_123")
+	if err != nil {
+		t.Fatalf("get by access token: %v", err)
+	}
 	if !ok {
 		t.Fatal("expected record by access token")
 	}
@@ -30,7 +41,10 @@ func TestInMemoryRuntimeStore_SaveAndLookup(t *testing.T) {
 		t.Fatalf("unexpected subject id: %s", byToken.SubjectID)
 	}
 
-	entry, ok := store.LookupIdempotency("idem-1")
+	entry, ok, err := store.LookupIdempotency(context.Background(), "idem-1")
+	if err != nil {
+		t.Fatalf("lookup idempotency: %v", err)
+	}
 	if !ok {
 		t.Fatal("expected idempotency entry")
 	}

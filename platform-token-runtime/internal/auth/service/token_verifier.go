@@ -79,6 +79,16 @@ type AuditEmitter interface {
 	Emit(ctx context.Context, event AuditEvent) error
 }
 
+type AuditStore interface {
+	AuditEmitter
+	AuditEventQuerier
+}
+
+type IdempotencyEntry struct {
+	RequestHash string
+	TokenID     string
+}
+
 type AuditEventFilter struct {
 	RequestID  string
 	TokenID    string
@@ -90,6 +100,13 @@ type AuditEventFilter struct {
 
 type AuditEventQuerier interface {
 	QueryEvents(ctx context.Context, filter AuditEventFilter) ([]AuditEvent, error)
+}
+
+type RuntimeStore interface {
+	Save(ctx context.Context, record TokenRecord, idempotencyKey, requestHash string) error
+	GetByTokenID(ctx context.Context, tokenID string) (*TokenRecord, bool, error)
+	GetByAccessToken(ctx context.Context, accessToken string) (*TokenRecord, bool, error)
+	LookupIdempotency(ctx context.Context, idempotencyKey string) (IdempotencyEntry, bool, error)
 }
 
 type AuthError struct {

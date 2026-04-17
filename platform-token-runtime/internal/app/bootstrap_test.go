@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"lijiaoqiao/platform-token-runtime/internal/auth/service"
 )
 
 func TestBuildRuntime_ProdRequiresConcreteStore(t *testing.T) {
@@ -27,6 +29,26 @@ func TestBuildRuntime_DevUsesInMemoryDefaults(t *testing.T) {
 		t.Fatal("expected runtime")
 	}
 	if auditStore == nil {
+		t.Fatal("expected audit store")
+	}
+}
+
+func TestBuildRuntime_ProdAcceptsStoreContracts(t *testing.T) {
+	runtimeStore := service.RuntimeStore(service.NewInMemoryRuntimeStore())
+	auditStore := service.AuditStore(service.NewMemoryAuditStore())
+
+	runtime, auditor, err := BuildRuntime(Config{
+		Env:          "prod",
+		RuntimeStore: runtimeStore,
+		AuditStore:   auditStore,
+	})
+	if err != nil {
+		t.Fatalf("BuildRuntime returned error: %v", err)
+	}
+	if runtime == nil {
+		t.Fatal("expected runtime")
+	}
+	if auditor == nil {
 		t.Fatal("expected audit store")
 	}
 }
