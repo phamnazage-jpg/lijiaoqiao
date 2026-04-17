@@ -12,10 +12,7 @@ import (
 	"time"
 )
 
-// Encryption key should be provided via environment variable or secure key management
-// In production, use a proper key management system (KMS)
-// Must be 16, 24, or 32 bytes for AES-128, AES-192, or AES-256
-var encryptionKey = []byte(getEnv("PASSWORD_ENCRYPTION_KEY", "default-key-32-bytes-long!!!!!!!"))
+const defaultEncryptionKey = "default-key-32-bytes-long!!!!!!!"
 
 // Config 网关配置
 type Config struct {
@@ -263,13 +260,17 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
+func currentEncryptionKey() []byte {
+	return []byte(getEnv("PASSWORD_ENCRYPTION_KEY", defaultEncryptionKey))
+}
+
 // encryptPassword 使用AES-GCM加密密码
 func encryptPassword(plaintext string) (string, error) {
 	if plaintext == "" {
 		return "", nil
 	}
 
-	block, err := aes.NewCipher(encryptionKey)
+	block, err := aes.NewCipher(currentEncryptionKey())
 	if err != nil {
 		return "", err
 	}
@@ -303,7 +304,7 @@ func decryptPassword(encrypted string) (string, error) {
 			return encrypted, nil
 		}
 
-		block, err := aes.NewCipher(encryptionKey)
+		block, err := aes.NewCipher(currentEncryptionKey())
 		if err != nil {
 			return "", err
 		}

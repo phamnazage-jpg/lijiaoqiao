@@ -24,6 +24,9 @@ func BuildServer(cfg *config.Config) (*http.Server, error) {
 	if err := config.ValidateAuthConfig(normalized.Auth); err != nil {
 		return nil, err
 	}
+	if err := validateStartupSecurity(normalized); err != nil {
+		return nil, err
+	}
 
 	r, err := buildRouter(&normalized)
 	if err != nil {
@@ -236,27 +239,13 @@ func normalizeConfig(cfg config.Config) config.Config {
 			}
 		}
 	}
-	// P0-1: Fail startup in production if encryption key is not explicitly set
-	if strings.EqualFold(cfg.Auth.Env, "production") || strings.EqualFold(cfg.Auth.Env, "prod") || strings.EqualFold(cfg.Auth.Env, "online") {
-		if _, isDefault := checkEncryptionKeyIsDefault(); isDefault {
-			panic("FATAL: PASSWORD_ENCRYPTION_KEY environment variable must be explicitly set in production environment. Using the default key is not allowed.")
-		}
-	}
 	return cfg
 }
 
-// buildCORSConfig builds CORS config from normalized config
-// In production (Env=production/prod/online), rejects wildcard if CORSAllowOrigins not explicitly set
 func buildCORSConfig(cfg config.Config) middleware.CORSConfig {
 	corsOrigins := cfg.Auth.CORSAllowOrigins
 	if len(corsOrigins) == 0 {
 		corsOrigins = []string{"*"}
-	}
-	// P0-2: Warn in production if using wildcard
-	if strings.EqualFold(cfg.Auth.Env, "production") || strings.EqualFold(cfg.Auth.Env, "prod") || strings.EqualFold(cfg.Auth.Env, "online") {
-		if len(corsOrigins) == 1 && corsOrigins[0] == "*" {
-			panic("FATAL: CORS_ALLOW_ORIGINS must be explicitly set in production environment. Using wildcard '*' is not allowed.")
-		}
 	}
 	return middleware.CORSConfig{
 		AllowOrigins:     corsOrigins,
@@ -268,10 +257,42 @@ func buildCORSConfig(cfg config.Config) middleware.CORSConfig {
 	}
 }
 
-func checkEncryptionKeyIsDefault() (string, bool) {
-	envKey := os.Getenv("PASSWORD_ENCRYPTION_KEY")
-	defaultKey := "default-key-32-bytes-long!!!!!!!"
-	return envKey, envKey == "" || envKey == defaultKey
+func validateStartupSecurity(cfg config.Config) error {
+	if !isProductionEnv(cfg.Auth.Env) {
+		return nil
+	}
+	if isDefaultEncryptionKey() {
+		return fmt.Errorf("PASSWORD_ENCRYPTION_KEY must be explicitly set in production environment")
+	}
+	if usesWildcardCORS(cfg.Auth.CORSAllowOrigins) {
+		return fmt.Errorf("CORS_ALLOW_ORIGINS must be explicitly set in production environment")
+	}
+	return nil
+}
+
+func isProductionEnv(env string) bool {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case "production", "prod", "online":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDefaultEncryptionKey() bool {
+	envKey := strings.TrimSpace(os.Getenv("PASSWORD_ENCRYPTION_KEY"))
+	return envKey == "" || envKey == configDefaultEncryptionKey()
+}
+
+func configDefaultEncryptionKey() string {
+	return "default-key-32-bytes-long!!!!!!!"
+}
+
+func usesWildcardCORS(origins []string) bool {
+	if len(origins) == 0 {
+		return true
+	}
+	return len(origins) == 1 && strings.TrimSpace(origins[0]) == "*"
 }
 
 func limitHandler(limiter *ratelimit.Middleware, next http.Handler) http.Handler {
