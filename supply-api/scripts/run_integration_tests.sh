@@ -213,4 +213,4 @@ echo ""
 
 cd "$PROJECT_DIR"
 export_test_env
-go test -tags=integration -v "$PACKAGE"
+go test -count=1 -tags=integration -v "$PACKAGE"
