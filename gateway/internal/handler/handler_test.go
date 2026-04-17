@@ -285,6 +285,8 @@ func TestCompletionsHandle_InvalidRequest(t *testing.T) {
 
 func TestModelsHandle(t *testing.T) {
 	r := router.NewRouter(router.StrategyLatency)
+	r.RegisterProvider("anthropic", &mockProvider{name: "anthropic", models: []string{"claude-3-opus", "claude-3-sonnet"}, healthy: true})
+	r.RegisterProvider("openai", &mockProvider{name: "openai", models: []string{"gpt-4o", "claude-3-opus", "gpt-4o-mini"}, healthy: true})
 	h := NewHandler(r)
 
 	req := httptest.NewRequest("GET", "/v1/models", nil)
@@ -311,6 +313,43 @@ func TestModelsHandle(t *testing.T) {
 	}
 	if len(data) != 4 {
 		t.Errorf("expected 4 models, got %d", len(data))
+	}
+	expectedIDs := []string{"claude-3-opus", "claude-3-sonnet", "gpt-4o", "gpt-4o-mini"}
+	for i, expectedID := range expectedIDs {
+		entry, ok := data[i].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected model entry to be object at index %d", i)
+		}
+		if entry["id"] != expectedID {
+			t.Fatalf("expected model %d to be %s, got %v", i, expectedID, entry["id"])
+		}
+	}
+}
+
+func TestModelsHandle_EmptyRouterReturnsEmptyList(t *testing.T) {
+	r := router.NewRouter(router.StrategyLatency)
+	h := NewHandler(r)
+
+	req := httptest.NewRequest("GET", "/v1/models", nil)
+	rr := httptest.NewRecorder()
+
+	h.ModelsHandle(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	data, ok := resp["data"].([]interface{})
+	if !ok {
+		t.Fatal("expected data to be array")
+	}
+	if len(data) != 0 {
+		t.Fatalf("expected 0 models, got %d", len(data))
 	}
 }
 

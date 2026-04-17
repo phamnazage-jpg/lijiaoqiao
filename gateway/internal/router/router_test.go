@@ -575,3 +575,38 @@ func TestSelectByLatency_MaxInt64(t *testing.T) {
 		t.Errorf("expected provider p1 (lower latency), got %s", selected.ProviderName())
 	}
 }
+
+func TestRegisteredModels_DedupesSortsAndKeepsOwner(t *testing.T) {
+	r := NewRouter(StrategyLatency)
+	r.RegisterProvider("anthropic", &mockProvider{name: "anthropic", models: []string{"claude-3-sonnet", "claude-3-opus"}, healthy: true})
+	r.RegisterProvider("openai", &mockProvider{name: "openai", models: []string{"gpt-4o", "claude-3-opus", "gpt-4o-mini"}, healthy: true})
+
+	models := r.RegisteredModels()
+	if len(models) != 4 {
+		t.Fatalf("expected 4 models, got %d", len(models))
+	}
+
+	expectedIDs := []string{"claude-3-opus", "claude-3-sonnet", "gpt-4o", "gpt-4o-mini"}
+	for i, expectedID := range expectedIDs {
+		if models[i].ID != expectedID {
+			t.Fatalf("expected model %d to be %s, got %s", i, expectedID, models[i].ID)
+		}
+	}
+
+	if models[0].OwnedBy != "anthropic" {
+		t.Fatalf("expected duplicate model owner to be first sorted provider, got %s", models[0].OwnedBy)
+	}
+}
+
+func TestRegisteredModels_IgnoresWildcardAndBlankEntries(t *testing.T) {
+	r := NewRouter(StrategyLatency)
+	r.RegisterProvider("openai", &mockProvider{name: "openai", models: []string{"*", "", "gpt-4o"}, healthy: true})
+
+	models := r.RegisteredModels()
+	if len(models) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(models))
+	}
+	if models[0].ID != "gpt-4o" {
+		t.Fatalf("expected gpt-4o, got %s", models[0].ID)
+	}
+}

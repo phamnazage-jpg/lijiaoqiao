@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 	"math/rand"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,6 +35,12 @@ type ProviderHealth struct {
 	FailureRate   float64
 	Weight        float64
 	LastCheckTime time.Time
+}
+
+// RegisteredModel 描述当前路由器已注册的可见模型。
+type RegisteredModel struct {
+	ID      string
+	OwnedBy string
 }
 
 // Router 路由器
@@ -209,6 +217,51 @@ func (r *Router) GetFallbackProviders(ctx context.Context, model string) ([]adap
 	}
 
 	return fallbacks, nil
+}
+
+// RegisteredModels 返回当前已注册 provider 聚合后的模型列表。
+func (r *Router) RegisteredModels() []RegisteredModel {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	providerNames := make([]string, 0, len(r.providers))
+	for name := range r.providers {
+		providerNames = append(providerNames, name)
+	}
+	sort.Strings(providerNames)
+
+	ownerByModel := make(map[string]string)
+	for _, providerName := range providerNames {
+		provider := r.providers[providerName]
+		if provider == nil {
+			continue
+		}
+		for _, model := range provider.SupportedModels() {
+			model = strings.TrimSpace(model)
+			if model == "" || model == "*" {
+				continue
+			}
+			if _, exists := ownerByModel[model]; !exists {
+				ownerByModel[model] = providerName
+			}
+		}
+	}
+
+	modelIDs := make([]string, 0, len(ownerByModel))
+	for modelID := range ownerByModel {
+		modelIDs = append(modelIDs, modelID)
+	}
+	sort.Strings(modelIDs)
+
+	models := make([]RegisteredModel, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, RegisteredModel{
+			ID:      modelID,
+			OwnedBy: ownerByModel[modelID],
+		})
+	}
+
+	return models
 }
 
 // RecordResult 记录调用结果

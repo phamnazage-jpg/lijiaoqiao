@@ -278,11 +278,15 @@ func (h *Handler) ModelsHandle(w http.ResponseWriter, r *http.Request) {
 		requestID = generateRequestID()
 	}
 
-	models := []map[string]interface{}{
-		{"id": "gpt-4", "object": "model", "created": 1687882411, "owned_by": "openai"},
-		{"id": "gpt-3.5-turbo", "object": "model", "created": 1677610602, "owned_by": "openai"},
-		{"id": "claude-3-opus", "object": "model", "created": 1709598254, "owned_by": "anthropic"},
-		{"id": "claude-3-sonnet", "object": "model", "created": 1709598255, "owned_by": "anthropic"},
+	registeredModels := h.router.RegisteredModels()
+	models := make([]map[string]interface{}, 0, len(registeredModels))
+	for _, registeredModel := range registeredModels {
+		models = append(models, map[string]interface{}{
+			"id":       registeredModel.ID,
+			"object":   "model",
+			"created":  0,
+			"owned_by": registeredModel.OwnedBy,
+		})
 	}
 
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{
