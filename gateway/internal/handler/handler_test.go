@@ -408,7 +408,7 @@ func TestWriteError(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	if resp.Error.Message != "test error" {
+	if resp.Error.Message != "invalid request" {
 		t.Errorf("unexpected error message: %s", resp.Error.Message)
 	}
 	if resp.Error.Type != "gateway_error" {
@@ -416,6 +416,16 @@ func TestWriteError(t *testing.T) {
 	}
 	if resp.Error.Code != "COMMON_001" {
 		t.Errorf("unexpected error code: %s", resp.Error.Code)
+	}
+	if got := w.Header().Get("X-Request-ID"); got != "req-123" {
+		t.Errorf("expected X-Request-ID req-123, got %s", got)
+	}
+}
+
+func TestSanitizeRequestID(t *testing.T) {
+	got := sanitizeRequestID("req-123\nbad\tid!@#")
+	if got != "req-123badid" {
+		t.Fatalf("unexpected sanitized request id: got=%q want=%q", got, "req-123badid")
 	}
 }
 

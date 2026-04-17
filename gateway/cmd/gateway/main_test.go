@@ -85,8 +85,9 @@ func TestCreateMux_ProtectsCompletionRoutes(t *testing.T) {
 		ExcludedPrefixes: []string{"/health", "/healthz", "/readyz"},
 		Now:              func() time.Time { return now },
 	}
+	corsConfig := middleware.DefaultCORSConfig()
 
-	mux := app.BuildMux(h, limiter, authConfig)
+	mux := app.BuildMux(h, limiter, authConfig, corsConfig)
 
 	for _, path := range []string{
 		"/v1/chat/completions",
@@ -118,8 +119,9 @@ func TestCreateMux_HealthRoutesRemainOpen(t *testing.T) {
 		ExcludedPrefixes:  []string{"/health", "/healthz", "/readyz"},
 		Now:               func() time.Time { return now },
 	}
+	corsConfig := middleware.DefaultCORSConfig()
 
-	mux := app.BuildMux(h, limiter, authConfig)
+	mux := app.BuildMux(h, limiter, authConfig, corsConfig)
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
@@ -153,8 +155,9 @@ func TestCreateMux_CompletionsRouteUsesCompletionsHandler(t *testing.T) {
 		ExcludedPrefixes: []string{"/health", "/healthz", "/readyz"},
 		Now:              func() time.Time { return now },
 	}
+	corsConfig := middleware.DefaultCORSConfig()
 
-	mux := app.BuildMux(h, limiter, authConfig)
+	mux := app.BuildMux(h, limiter, authConfig, corsConfig)
 	reqBody := `{"model":"gpt-4","prompt":"hello","max_tokens":16}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/completions", bytes.NewBufferString(reqBody))
 	req.Header.Set("Authorization", "Bearer "+token)
