@@ -172,7 +172,7 @@ func withDefaultBackgroundFactory(factory backgroundFactory, tuning runtimeTunin
 }
 
 var compensationNewDefaultExecutor = func() domain.OperationExecutor {
-	return compensation.NewDefaultCompensationExecutor()
+	return compensation.NewDefaultCompensationExecutor(compensation.ExecutorDependencies{})
 }
 
 func startRevocationSubscriber(ctx context.Context, view runtimeBackgroundView) {

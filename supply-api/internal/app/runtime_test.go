@@ -920,6 +920,18 @@ func TestRuntime_StartBackgroundWorkers_UsesDefaultCompensationInterval(t *testi
 	}
 }
 
+func TestCompensationNewDefaultExecutor_FailsClosedWithoutRollbackDependencies(t *testing.T) {
+	executor := compensationNewDefaultExecutor()
+
+	err := executor.Execute(context.Background(), "account.create", json.RawMessage(`{"account_id":101,"supplier_id":201}`))
+	if err == nil {
+		t.Fatal("expected default background compensation executor to fail closed")
+	}
+	if !strings.Contains(err.Error(), "not implemented for production rollback") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestStartCompensationWorker_UsesConfiguredInterval(t *testing.T) {
 	var gotInterval time.Duration
 
