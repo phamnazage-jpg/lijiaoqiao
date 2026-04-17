@@ -16,6 +16,9 @@ import (
 	"lijiaoqiao/supply-api/internal/config"
 	"lijiaoqiao/supply-api/internal/domain"
 	"lijiaoqiao/supply-api/internal/httpapi"
+	iamhandler "lijiaoqiao/supply-api/internal/iam/handler"
+	iamrepo "lijiaoqiao/supply-api/internal/iam/repository"
+	iamservice "lijiaoqiao/supply-api/internal/iam/service"
 	"lijiaoqiao/supply-api/internal/middleware"
 	"lijiaoqiao/supply-api/internal/pkg/logging"
 	"lijiaoqiao/supply-api/internal/repository"
@@ -60,6 +63,7 @@ type runtimeHTTPStartupView struct {
 	serverConfig    config.ServerConfig
 	supplyAPI       *httpapi.SupplyAPI
 	alertAPI        *httpapi.AlertAPI
+	iamHandler      routeRegistrar
 	authMiddleware  *middleware.AuthMiddleware
 	rateLimitConfig *middleware.RateLimitConfig
 }
@@ -111,6 +115,7 @@ type runtimeSecurityBundle struct {
 type runtimeAPIBundle struct {
 	supplyAPI       *httpapi.SupplyAPI
 	alertAPI        *httpapi.AlertAPI
+	iamHandler      routeRegistrar
 	rateLimitConfig *middleware.RateLimitConfig
 }
 
@@ -125,6 +130,7 @@ type runtimeHTTPView struct {
 	serverConfig    config.ServerConfig
 	supplyAPI       *httpapi.SupplyAPI
 	alertAPI        *httpapi.AlertAPI
+	iamHandler      routeRegistrar
 	authMiddleware  *middleware.AuthMiddleware
 	rateLimitConfig *middleware.RateLimitConfig
 	healthChecks    runtimeHealthChecks
@@ -151,7 +157,7 @@ func buildRuntimeWithFactory(opts RuntimeOptions, factory runtimeFactory) (*Runt
 
 	storeBundle := buildStoreBundle(resources.db, inputs.logger)
 	securityBundle := buildSecurityBundle(inputs.env, inputs.cfg, inputs.logger, storeBundle.auditStore, resources.redisCache, storeBundle.tokenStatusRepo)
-	apiBundle, err := buildAPIBundle(inputs.env, inputs.cfg, inputs.now, inputs.tuning, inputs.logger, inputs.isProd, storeBundle)
+	apiBundle, err := buildAPIBundle(inputs.env, inputs.cfg, inputs.now, inputs.tuning, inputs.logger, inputs.isProd, resources.db, storeBundle)
 	if err != nil {
 		return nil, err
 	}
@@ -257,6 +263,7 @@ func buildRuntimeStartupViews(
 			serverConfig:    normalizeServerConfig(serverConfig),
 			supplyAPI:       apiBundle.supplyAPI,
 			alertAPI:        apiBundle.alertAPI,
+			iamHandler:      apiBundle.iamHandler,
 			authMiddleware:  securityBundle.authMiddleware,
 			rateLimitConfig: apiBundle.rateLimitConfig,
 		},
@@ -359,6 +366,7 @@ func buildAPIBundle(
 	tuning runtimeTuning,
 	logger logging.Logger,
 	isProd bool,
+	db *repository.DB,
 	storeBundle runtimeStoreBundle,
 ) (runtimeAPIBundle, error) {
 	_ = domain.NewInvariantChecker(storeBundle.accountStore, storeBundle.packageStore, storeBundle.settlementStore)
@@ -367,6 +375,7 @@ func buildAPIBundle(
 	packageService := domain.NewPackageService(storeBundle.packageStore, storeBundle.accountStore, storeBundle.auditStore)
 	settlementService := domain.NewSettlementService(storeBundle.settlementStore, storeBundle.earningStore, storeBundle.auditStore)
 	earningService := domain.NewEarningService(storeBundle.earningStore)
+	var iamAPI routeRegistrar
 
 	var idempotencyMiddleware *middleware.IdempotencyMiddleware
 	if storeBundle.idempotencyRepo != nil {
@@ -385,6 +394,20 @@ func buildAPIBundle(
 	rateLimitConfig := middleware.DefaultRateLimitConfig()
 	rateLimitConfig.Enabled = env != "dev"
 	logger.Info("限流中间件已初始化", nil)
+
+	if cfg.Server.IAMEnabled {
+		if db == nil {
+			return runtimeAPIBundle{}, errors.New("iam requires database-backed runtime")
+		}
+		iamAPI = iamhandler.NewIAMHandler(
+			iamservice.NewDatabaseIAMService(
+				iamrepo.NewPostgresIAMRepository(db.Pool),
+			),
+		)
+		logger.Info("IAM 路由已启用（DB-backed）", nil)
+	} else {
+		logger.Info("IAM 路由未启用（server.iam_enabled=false）", nil)
+	}
 
 	supplyAPI, err := httpapi.NewSupplyAPI(
 		accountService,
@@ -411,6 +434,7 @@ func buildAPIBundle(
 	return runtimeAPIBundle{
 		supplyAPI:       supplyAPI,
 		alertAPI:        alertAPI,
+		iamHandler:      iamAPI,
 		rateLimitConfig: rateLimitConfig,
 	}, nil
 }
@@ -464,6 +488,7 @@ func buildRuntimeHTTPView(runtime *Runtime) (runtimeHTTPView, error) {
 		serverConfig:    runtime.startupViews.http.serverConfig,
 		supplyAPI:       runtime.startupViews.http.supplyAPI,
 		alertAPI:        runtime.startupViews.http.alertAPI,
+		iamHandler:      runtime.startupViews.http.iamHandler,
 		authMiddleware:  runtime.startupViews.http.authMiddleware,
 		rateLimitConfig: runtime.startupViews.http.rateLimitConfig,
 		healthChecks:    resolveRuntimeHealthChecks(runtime),
@@ -477,6 +502,7 @@ func adaptRuntimeHTTPViewToBuildServerOptions(view runtimeHTTPView) BuildServerO
 		Logger:           view.logger,
 		SupplyAPI:        view.supplyAPI,
 		AlertAPI:         view.alertAPI,
+		IAMHandler:       view.iamHandler,
 		AuthMiddleware:   view.authMiddleware,
 		RateLimitConfig:  view.rateLimitConfig,
 		DBHealthCheck:    view.healthChecks.DBHealthCheck,

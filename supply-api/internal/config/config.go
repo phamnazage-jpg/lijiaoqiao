@@ -29,6 +29,7 @@ type ServerConfig struct {
 	ShutdownTimeout   time.Duration
 	DefaultSupplierID int64  // 默认供应商ID（仅用于开发/单供应商模式）
 	StatementBaseURL  string // 账单PDF下载基础URL
+	IAMEnabled        bool   // 是否显式启用 IAM HTTP 能力
 }
 
 // DatabaseConfig PostgreSQL配置
@@ -162,6 +163,7 @@ func load(env, configPath string) (*Config, error) {
 	cfg.Server.ShutdownTimeout = v.GetDuration("server.shutdown_timeout")
 	cfg.Server.DefaultSupplierID = v.GetInt64("server.default_supplier_id")
 	cfg.Server.StatementBaseURL = v.GetString("server.statement_base_url")
+	cfg.Server.IAMEnabled = v.GetBool("server.iam_enabled")
 
 	// Database配置
 	cfg.Database.Host = v.GetString("database.host")
@@ -215,6 +217,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.shutdown_timeout", 5*time.Second)
 	v.SetDefault("server.default_supplier_id", 1)
 	v.SetDefault("server.statement_base_url", "https://example.com/statements")
+	v.SetDefault("server.iam_enabled", false)
 
 	// Database defaults
 	v.SetDefault("database.host", "localhost")
@@ -255,6 +258,7 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("server.addr", "SUPPLY_API_ADDR")
 	_ = v.BindEnv("server.read_timeout", "SUPPLY_API_READ_TIMEOUT")
 	_ = v.BindEnv("server.write_timeout", "SUPPLY_API_WRITE_TIMEOUT")
+	_ = v.BindEnv("server.iam_enabled", "SUPPLY_API_IAM_ENABLED")
 
 	_ = v.BindEnv("database.host", "SUPPLY_DB_HOST")
 	_ = v.BindEnv("database.port", "SUPPLY_DB_PORT")

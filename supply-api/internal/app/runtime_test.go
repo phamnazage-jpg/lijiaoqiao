@@ -347,6 +347,65 @@ func TestBuildRuntime_DevFallsBackToInMemoryDependencies(t *testing.T) {
 	if runtime.startupViews.http.rateLimitConfig == nil {
 		t.Fatal("expected rate limit config to be initialized")
 	}
+	if runtime.startupViews.http.iamHandler != nil {
+		t.Fatal("expected IAM routes to stay disabled by default")
+	}
+}
+
+func TestBuildRuntime_EnableIAMRequiresDatabaseBackedRuntime(t *testing.T) {
+	cfg := testRuntimeConfig()
+	cfg.Server.IAMEnabled = true
+
+	_, err := buildRuntimeWithFactory(RuntimeOptions{
+		Env:         "dev",
+		Config:      cfg,
+		Logger:      testLogger{},
+		InitContext: context.Background(),
+		Now: func() time.Time {
+			return time.Unix(1712800000, 0).UTC()
+		},
+	}, runtimeFactory{
+		newDB: func(context.Context, config.DatabaseConfig) (*repository.DB, error) {
+			return nil, errors.New("db down")
+		},
+		newRedisCache: func(config.RedisConfig) (*cache.RedisCache, error) {
+			return nil, nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected IAM-enabled runtime build to reject missing database")
+	}
+	if !strings.Contains(err.Error(), "iam requires database-backed runtime") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildRuntime_EnablesIAMRoutesWhenConfigured(t *testing.T) {
+	cfg := testRuntimeConfig()
+	cfg.Server.IAMEnabled = true
+
+	runtime, err := buildRuntimeWithFactory(RuntimeOptions{
+		Env:         "dev",
+		Config:      cfg,
+		Logger:      testLogger{},
+		InitContext: context.Background(),
+		Now: func() time.Time {
+			return time.Unix(1712800000, 0).UTC()
+		},
+	}, runtimeFactory{
+		newDB: func(context.Context, config.DatabaseConfig) (*repository.DB, error) {
+			return &repository.DB{}, nil
+		},
+		newRedisCache: func(config.RedisConfig) (*cache.RedisCache, error) {
+			return nil, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected IAM-enabled runtime build to succeed, got %v", err)
+	}
+	if runtime.startupViews.http.iamHandler == nil {
+		t.Fatal("expected IAM handler to be wired when enabled")
+	}
 }
 
 func TestBuildRuntime_NormalizesServerConfigDefaults(t *testing.T) {

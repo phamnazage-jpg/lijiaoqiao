@@ -13,6 +13,10 @@ import (
 	"lijiaoqiao/supply-api/internal/pkg/logging"
 )
 
+type routeRegistrar interface {
+	RegisterRoutes(mux *http.ServeMux)
+}
+
 // BuildServerOptions 定义 HTTP 服务装配所需的最小输入。
 type BuildServerOptions struct {
 	Env              string
@@ -20,6 +24,7 @@ type BuildServerOptions struct {
 	Logger           logging.Logger
 	SupplyAPI        *httpapi.SupplyAPI
 	AlertAPI         *httpapi.AlertAPI
+	IAMHandler       routeRegistrar
 	AuthMiddleware   *middleware.AuthMiddleware
 	RateLimitConfig  *middleware.RateLimitConfig
 	DBHealthCheck    func(context.Context) error
@@ -29,6 +34,7 @@ type BuildServerOptions struct {
 type buildRouteMuxOptions struct {
 	SupplyAPI        *httpapi.SupplyAPI
 	AlertAPI         *httpapi.AlertAPI
+	IAMHandler       routeRegistrar
 	DBHealthCheck    func(context.Context) error
 	RedisHealthCheck func(context.Context) error
 }
@@ -46,6 +52,7 @@ type resolvedBuildServerOptions struct {
 	Logger           logging.Logger
 	SupplyAPI        *httpapi.SupplyAPI
 	AlertAPI         *httpapi.AlertAPI
+	IAMHandler       routeRegistrar
 	AuthMiddleware   *middleware.AuthMiddleware
 	RateLimitConfig  *middleware.RateLimitConfig
 	DBHealthCheck    func(context.Context) error
@@ -62,6 +69,7 @@ func BuildServer(opts BuildServerOptions) (*http.Server, error) {
 	mux := buildRouteMux(buildRouteMuxOptions{
 		SupplyAPI:        resolved.SupplyAPI,
 		AlertAPI:         resolved.AlertAPI,
+		IAMHandler:       resolved.IAMHandler,
 		DBHealthCheck:    resolved.DBHealthCheck,
 		RedisHealthCheck: resolved.RedisHealthCheck,
 	})
@@ -107,6 +115,7 @@ func resolveBuildServerOptions(opts BuildServerOptions) (resolvedBuildServerOpti
 		Logger:           opts.Logger,
 		SupplyAPI:        opts.SupplyAPI,
 		AlertAPI:         opts.AlertAPI,
+		IAMHandler:       opts.IAMHandler,
 		AuthMiddleware:   opts.AuthMiddleware,
 		RateLimitConfig:  resolveRateLimitConfig(env, opts.RateLimitConfig),
 		DBHealthCheck:    opts.DBHealthCheck,
@@ -149,6 +158,9 @@ func buildRouteMux(opts buildRouteMuxOptions) *http.ServeMux {
 	healthHandler.RegisterRoutes(mux)
 	opts.SupplyAPI.Register(mux)
 	opts.AlertAPI.Register(mux)
+	if opts.IAMHandler != nil {
+		opts.IAMHandler.RegisterRoutes(mux)
+	}
 	return mux
 }
 

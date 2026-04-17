@@ -13,6 +13,8 @@ import (
 	"lijiaoqiao/supply-api/internal/config"
 	"lijiaoqiao/supply-api/internal/domain"
 	"lijiaoqiao/supply-api/internal/httpapi"
+	iamhandler "lijiaoqiao/supply-api/internal/iam/handler"
+	iamservice "lijiaoqiao/supply-api/internal/iam/service"
 	"lijiaoqiao/supply-api/internal/middleware"
 )
 
@@ -201,6 +203,42 @@ func TestBuildRouteMux_RegistersHealthAndSupplyRoutes(t *testing.T) {
 	mux.ServeHTTP(supplyRec, supplyReq)
 	if supplyRec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("unexpected supply status: got=%d want=%d", supplyRec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestBuildRouteMux_KeepsIAMRoutesDisabledByDefault(t *testing.T) {
+	supplyAPI, alertAPI := mustBuildTestAPIs(t)
+
+	mux := buildRouteMux(buildRouteMuxOptions{
+		SupplyAPI: supplyAPI,
+		AlertAPI:  alertAPI,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/iam/roles", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected IAM route to stay unregistered, got=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBuildRouteMux_RegistersIAMRoutesWhenHandlerProvided(t *testing.T) {
+	supplyAPI, alertAPI := mustBuildTestAPIs(t)
+	iamAPI := iamhandler.NewIAMHandler(iamservice.NewDefaultIAMService())
+
+	mux := buildRouteMux(buildRouteMuxOptions{
+		SupplyAPI: supplyAPI,
+		AlertAPI:  alertAPI,
+		IAMHandler: iamAPI,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/iam/roles", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected IAM route to be registered, got=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
