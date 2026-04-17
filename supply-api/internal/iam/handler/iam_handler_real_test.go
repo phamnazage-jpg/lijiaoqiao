@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"lijiaoqiao/supply-api/internal/pkg/pathutil"
 	"lijiaoqiao/supply-api/internal/iam/service"
 	"lijiaoqiao/supply-api/internal/middleware"
 
@@ -832,7 +833,7 @@ func TestExtractRoleCode(t *testing.T) {
 // func TestExtractRoleCodeFromUserPath(t *testing.T) { ... }
 
 func TestSplitPath(t *testing.T) {
-	result := splitPath("/api/v1/iam/roles/developer")
+	result := pathutil.SplitPath("/api/v1/iam/roles/developer")
 	assert.Equal(t, []string{"api", "v1", "iam", "roles", "developer"}, result)
 }
 
@@ -1267,4 +1268,3 @@ func TestToRoleResponse(t *testing.T) {
 	assert.Equal(t, 20, response.Level)
 	assert.True(t, response.IsActive)
 }
-

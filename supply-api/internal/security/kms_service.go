@@ -4,13 +4,14 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+
+	"golang.org/x/crypto/hkdf"
 )
 
 // ==================== P0-02 KMS加密方案 ====================
@@ -207,7 +208,9 @@ func deriveDEK(keyID string, version int) []byte {
 	ikm := append([]byte(keyID), byte(version&0xff))
 
 	hkdfReader := hkdf.New(sha256.New, ikm, nil, []byte("supply-api-dek-v1"))
-	hkdfReader.Read(masterKey)
+	if _, err := io.ReadFull(hkdfReader, masterKey); err != nil {
+		panic(fmt.Sprintf("failed to derive DEK: %v", err))
+	}
 	return masterKey
 }
 

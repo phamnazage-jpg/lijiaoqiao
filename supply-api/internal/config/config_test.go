@@ -135,7 +135,7 @@ token:
 	}
 }
 
-func TestLoadFromPath_ProdRejectsMissingHS256SecretKey(t *testing.T) {
+func TestLoadFromPath_ProdRejectsHS256Algorithm(t *testing.T) {
 	// 清除环境变量以确保测试隔离
 	origVal := os.Getenv("SUPPLY_TOKEN_SECRET_KEY")
 	os.Unsetenv("SUPPLY_TOKEN_SECRET_KEY")
@@ -166,10 +166,10 @@ token:
 
 	_, err := LoadFromPath("prod", configPath)
 	if err == nil {
-		t.Fatal("expected prod config without HS256 secret key to return error")
+		t.Fatal("expected prod config with HS256 algorithm to return error")
 	}
-	if !strings.Contains(err.Error(), "token.secret_key") {
-		t.Fatalf("expected error to mention token.secret_key, got %v", err)
+	if !strings.Contains(err.Error(), "token.algorithm") {
+		t.Fatalf("expected error to mention token.algorithm, got %v", err)
 	}
 }
 

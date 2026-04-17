@@ -1,8 +1,6 @@
 // Package pathutil provides path manipulation utilities.
 package pathutil
 
-import "strings"
-
 // SplitPath splits a URL or file path by '/' and returns non-empty segments.
 // Unlike strings.Split, this skips empty segments from leading/trailing/consecutive slashes.
 func SplitPath(path string) []string {

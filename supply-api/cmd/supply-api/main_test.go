@@ -2,6 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,7 +17,7 @@ import (
 
 func TestMain_ProdStartupFailsWhenDatabaseUnavailable(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.prod.yaml")
-	content := []byte(`
+	content := []byte(fmt.Sprintf(`
 server:
   addr: "127.0.0.1:0"
   shutdown_timeout: 1s
@@ -28,9 +33,10 @@ redis:
   port: 1
 token:
   issuer: "prod-issuer"
-  secret_key: "prod-secret"
-  algorithm: "HS256"
-`)
+  algorithm: "RS256"
+  public_key: |
+%s
+`, indentYAMLBlock(mustGenerateRSAPublicKeyPEM(t), "    ")))
 	if err := os.WriteFile(configPath, content, 0o600); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}
@@ -87,4 +93,26 @@ func TestMainHelperProcess(t *testing.T) {
 
 	main()
 	os.Exit(0)
+}
+
+func mustGenerateRSAPublicKeyPEM(t *testing.T) string {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate RSA key: %v", err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("failed to marshal RSA public key: %v", err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
+}
+
+func indentYAMLBlock(value, indent string) string {
+	lines := strings.Split(strings.TrimRight(value, "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = indent + line
+	}
+	return strings.Join(lines, "\n")
 }
