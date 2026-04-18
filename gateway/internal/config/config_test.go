@@ -199,11 +199,13 @@ func TestGetEnv_EmptyString(t *testing.T) {
 func TestLoadConfig(t *testing.T) {
 	// 设置测试环境变量
 	os.Setenv("GATEWAY_HOST", "127.0.0.1")
+	os.Setenv("GATEWAY_PORT", "18080")
 	os.Setenv("DINGTALK_ENABLED", "true")
 	os.Setenv("DINGTALK_WEBHOOK", "https://test.com/webhook")
 	os.Setenv("DINGTALK_SECRET", "test-secret")
 	defer func() {
 		os.Unsetenv("GATEWAY_HOST")
+		os.Unsetenv("GATEWAY_PORT")
 		os.Unsetenv("DINGTALK_ENABLED")
 		os.Unsetenv("DINGTALK_WEBHOOK")
 		os.Unsetenv("DINGTALK_SECRET")
@@ -219,8 +221,8 @@ func TestLoadConfig(t *testing.T) {
 	if cfg.Server.Host != "127.0.0.1" {
 		t.Errorf("expected host 127.0.0.1, got %s", cfg.Server.Host)
 	}
-	if cfg.Server.Port != 8080 {
-		t.Errorf("expected port 8080, got %d", cfg.Server.Port)
+	if cfg.Server.Port != 18080 {
+		t.Errorf("expected port 18080, got %d", cfg.Server.Port)
 	}
 	if cfg.Server.ReadTimeout != 30*time.Second {
 		t.Errorf("expected read timeout 30s, got %v", cfg.Server.ReadTimeout)
@@ -263,6 +265,7 @@ func TestLoadConfig(t *testing.T) {
 func TestLoadConfig_DefaultValues(t *testing.T) {
 	// 确保默认环境变量未设置
 	os.Unsetenv("GATEWAY_HOST")
+	os.Unsetenv("GATEWAY_PORT")
 	os.Unsetenv("DINGTALK_ENABLED")
 	os.Unsetenv("DINGTALK_WEBHOOK")
 	os.Unsetenv("DINGTALK_SECRET")

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -159,7 +160,7 @@ func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{
 		Server: ServerConfig{
 			Host:         getEnv("GATEWAY_HOST", "0.0.0.0"),
-			Port:         8080,
+			Port:         getEnvInt("GATEWAY_PORT", 8080),
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 30 * time.Second,
 			IdleTimeout:  120 * time.Second,
@@ -258,6 +259,19 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func getEnvInt(key string, defaultValue int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return defaultValue
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return defaultValue
+	}
+	return parsed
 }
 
 func currentEncryptionKey() []byte {

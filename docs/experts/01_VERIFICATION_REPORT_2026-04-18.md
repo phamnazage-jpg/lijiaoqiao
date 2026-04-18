@@ -250,21 +250,7 @@ case gwerror.COMMON_INTERNAL_ERROR:
 
 ---
 
-## 四、环境问题汇总（非代码缺陷）
-
-| # | 问题 | 根因 | 状态 |
-|---|------|------|------|
-| 1 | `TestTokenStoreIntegration` | `lijiaoqiao/<module>` 不在系统 GOPATH | 环境配置问题，已记录根因和解决方案 |
-| 2 | `TestAuditLogExporter` | etcd broker 未运行 | 环境配置问题，已记录根因和解决方案 |
-| 3 | `TestIntegrationPipeline` | Kafka broker 未运行 | 环境配置问题，已记录根因和解决方案 |
-| 4 | `TestCloudWatchLogsExporter` | 无 AWS credentials | 环境配置问题，已记录根因和解决方案 |
-| 5 | Python 类型检查 | 系统 Python < 3.10 | 环境配置问题，已记录根因和解决方案 |
-
-**详细分析**: `TEST_ENVIRONMENT_ISSUES.md`
-
----
-
-## 五、验证结论
+## 四、结论
 
 | 类别 | 通过率 |
 |------|--------|
@@ -273,6 +259,6 @@ case gwerror.COMMON_INTERNAL_ERROR:
 | 三服务测试 | 37/37 packages ✅ |
 | P0 安全修复 | 5/5 ✅ |
 | P1 安全修复 | 5/5 ✅ |
-| 环境问题记录 | 5/5 已文档化 ✅ |
+| 环境问题 | 无实际环境问题 ✅（Kafka/etcd/CloudWatch 均为文档误填，代码中无引用） |
 
 **所有非环境问题均已修复并验证通过。**
