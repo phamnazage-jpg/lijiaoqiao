@@ -68,7 +68,7 @@ flowchart LR
 
     C --> K[(Redis)]
     C --> L[(PostgreSQL)]
-    C --> M[(Message Queue)]
+    C --> M[(~~Message Queue~~ **PostgreSQL**)]
     C --> N[(Metrics/Logs/Traces)]
 
     H --> L
@@ -224,7 +224,7 @@ Redis 用途：
 1. 语言：Go（数据面）+ Go/Java（控制面可同构）。
 2. 框架：Gin/Fiber（数据面高性能）+ 标准化中间件。
 3. 数据库：PostgreSQL（主存储）+ Redis（状态缓存）。
-4. 队列：Kafka 或 NATS（账务与日志异步化）。
+4. 队列：~~Kafka 或 NATS~~ **未使用**（单体架构，PostgreSQL Outbox 替代）。
 5. 可观测：Prometheus + Loki + Tempo 或 ELK + Jaeger。
 
 部署建议：

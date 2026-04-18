@@ -157,13 +157,16 @@
 - Token audit events 测试（query / authorization enforcement）
 - Supply API 核心业务流程测试
 
-### 4.3 测试环境限制（5 个环境问题，非代码缺陷）
+### 4.3 环境状态 — 无已知环境问题
 
-1. `TestTokenStoreIntegration` — GOPATH 未配置导致 module not found
-2. `TestAuditLogExporter` — 需要 etcd broker 在 2379
-3. `TestIntegrationPipeline` — 需要 Kafka broker 在 9092
-4. `TestCloudWatchLogsExporter` — 需要 AWS 凭据配置
-5. Python 类型提示警告 — 系统 Python < 3.10
+**所有测试均为纯内存或 PostgreSQL 驱动**，三服务 `go test -count=1 ./...` 全部通过，无任何外部中间件运行时依赖。
+
+以下内容**历史上曾被错误填入**，现已全部清除：
+- ~~etcd broker 在 2379~~ — 代码中无 etcd 引用
+- ~~Kafka broker 在 9092~~ — 代码中无 Kafka 引用
+- ~~AWS CloudWatch 凭据~~ — 代码中无 CloudWatch 引用
+
+早期架构文档（`technical_architecture_design_v1`、`llm_gateway_product_technical_blueprint_v1` 等）中确有 Kafka/etcd 讨论，但那属于**早期设计规划**，实际代码实现时已弃用，文档与实现存在不一致，详见 `TEST_ENVIRONMENT_ISSUES.md`。
 
 ---
 
