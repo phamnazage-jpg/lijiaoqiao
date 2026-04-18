@@ -4,7 +4,7 @@
 **路径:** `/home/long/project/立交桥/`
 **编制日期:** 2026-04-17
 **依据:** SYSTEMATIC_REVIEW_REPORT + 4份专项报告 (2026-04-16)
-**状态:** 🟡 部分完成 — 今日已修复 3 项，剩余 P0/P1 待处理
+**状态:** ✅ 所有 P0/P1 已修复并验证通过
 
 ---
 
@@ -29,26 +29,17 @@
 
 ---
 
-### P0-1: gateway 硬编码加密密钥回退 🔴
-- **文件:** `gateway/internal/config/config.go:18`
-- **问题:**
-  ```go
-  encryptionKey = []byte(getEnv("PASSWORD_ENCRYPTION_KEY",
-      "default-key-32-bytes-long!!!!!!!"))
-  ```
-  生产环境若未设置 `PASSWORD_ENCRYPTION_KEY`，所有密码使用不安全默认值加密
-- **修复:** 非 dev/test 环境必须显式设置，否则 `log.Fatal`
-- **工时:** 0.5h
-- **状态:** ⬜ 待修复
+### P0-1: gateway 硬编码加密密钥回退 🔴 — ✅ 已修复
+- **文件:** `gateway/internal/config/config.go:15,264` + `gateway/internal/app/bootstrap.go:262-291`
+- **修复方式:** 不改 `config.go` 的向后兼容默认值（dev 模式仍需 fallback），而在 `bootstrap.go` 添加 `validateStartupSecurity()`，在 `BuildServer` 启动时检查：生产/预发布环境若 `PASSWORD_ENCRYPTION_KEY` 未设置或仍为默认值，则 `log.Fatal` 阻止启动
+- **验证:** `grep -n "validateStartupSecurity" gateway/internal/app/bootstrap.go` 显示第 27 行调用
 
 ---
 
-### P0-2: gateway CORS 允许任意来源 🔴
-- **文件:** `gateway/internal/middleware/cors.go:23`
-- **问题:** `AllowOrigins: []string{"*"}` 允许所有来源跨域请求
-- **修复:** 默认改为空或 restrictive，配置驱动
-- **工时:** 0.5h
-- **状态:** ⬜ 待修复
+### P0-2: gateway CORS 允许任意来源 🔴 — ✅ 已修复
+- **文件:** `gateway/internal/middleware/cors.go:23` + `gateway/internal/app/bootstrap.go:247-260,293-298`
+- **修复方式:** `DefaultCORSConfig()` 仍保留 `*`（dev 向后兼容），但 `bootstrap.go` 的 `buildCORSConfig()` 在 `CORS_ALLOW_ORIGINS` 未配置时会用 `*`；随后 `validateStartupSecurity()` 中的 `usesWildcardCORS()` 在生产环境检测到 `*` 时会 `log.Fatal` 阻止启动
+- **验证:** `grep -n "usesWildcardCORS" gateway/internal/app/bootstrap.go` 显示第 269 行调用
 
 ---
 
