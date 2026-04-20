@@ -148,7 +148,11 @@ func (s *DBAccountStore) GetByID(ctx context.Context, supplierID, id int64) (*do
 }
 
 func (s *DBAccountStore) Update(ctx context.Context, account *domain.Account) error {
-	return s.repo.Update(ctx, account, account.Version)
+	expectedVersion := 0
+	if account.Version > 0 {
+		expectedVersion = account.Version - 1
+	}
+	return s.repo.Update(ctx, account, expectedVersion)
 }
 
 func (s *DBAccountStore) List(ctx context.Context, supplierID int64) ([]*domain.Account, error) {
