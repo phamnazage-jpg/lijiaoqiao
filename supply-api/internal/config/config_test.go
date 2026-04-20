@@ -204,3 +204,58 @@ settlement:
 		t.Fatalf("expected error to mention withdraw_enabled, got %v", err)
 	}
 }
+
+// ─── P0-02: DSN/SafeDSN 格式化 BUG TDD 测试 ─────────────────────────────────
+
+// TestDSN_TCPConnection_ContainsRealPassword 红色测试：
+// 验证 DSN() 输出格式为 postgres://user:password@host:port/db，密码在正确位置
+func TestDSN_TCPConnection_ContainsRealPassword(t *testing.T) {
+	cfg := DatabaseConfig{
+		Host:     "db.internal",
+		Port:     5432,
+		User:     "app_user",
+		Password: "super_secret_123",
+		Database: "supply_api",
+	}
+
+	got := cfg.DSN()
+	t.Logf("DSN actual output: %s", got)
+
+	// DSN() 应包含真实密码
+	if !strings.Contains(got, "super_secret_123") {
+		t.Fatalf("DSN() should contain real password, got: %s", got)
+	}
+	// 正确格式: postgres://app_user:super_secret_123@db.internal:5432/supply_api?sslmode=disable
+	want := "postgres://app_user:super_secret_123@db.internal:5432/supply_api"
+	if !strings.HasPrefix(got, want) {
+		t.Fatalf("DSN() format incorrect.\n  want prefix: %s\n  got:         %s", want, got)
+	}
+}
+
+// TestSafeDSN_TCPConnection_MasksPassword 红色测试：
+// 验证 SafeDSN() 输出格式为 postgres://user:***@host:port/db，密码被正确脱敏
+func TestSafeDSN_TCPConnection_MasksPassword(t *testing.T) {
+	cfg := DatabaseConfig{
+		Host:     "db.internal",
+		Port:     5432,
+		User:     "app_user",
+		Password: "super_secret_123",
+		Database: "supply_api",
+	}
+
+	got := cfg.SafeDSN()
+
+	// SafeDSN() 不应包含真实密码
+	if strings.Contains(got, "super_secret_123") {
+		t.Fatalf("SafeDSN() should NOT contain real password, got: %s", got)
+	}
+	// 应包含脱敏密码 *** 字样
+	if !strings.Contains(got, ":***@") {
+		t.Fatalf("SafeDSN() should contain :***@ (masked password), got: %s", got)
+	}
+	// 正确格式: postgres://app_user:***@db.internal:5432/supply_api?sslmode=disable
+	want := "postgres://app_user:***@db.internal:5432/supply_api"
+	if !strings.HasPrefix(got, want) {
+		t.Fatalf("SafeDSN() format incorrect.\n  want prefix: %s\n  got:         %s", want, got)
+	}
+}

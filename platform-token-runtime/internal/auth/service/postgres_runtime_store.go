@@ -63,6 +63,17 @@ func (s *PostgresRuntimeStore) Save(ctx context.Context, record TokenRecord, ide
 	tokenFingerprint := ""
 	if strings.TrimSpace(record.AccessToken) != "" {
 		tokenFingerprint = accessTokenFingerprint(record.AccessToken)
+	} else {
+		existingFingerprint, ok, err := s.lookupTokenFingerprint(ctx, record.TokenID)
+		if err != nil {
+			return err
+		}
+		if ok {
+			tokenFingerprint = existingFingerprint
+		}
+	}
+	if tokenFingerprint == "" {
+		return errors.New("token fingerprint is required")
 	}
 
 	var revokedAt any
@@ -213,6 +224,26 @@ func (s *PostgresRuntimeStore) querySingleRecord(ctx context.Context, query stri
 	}
 	record.Status = TokenStatus(status)
 	return &record, true, nil
+}
+
+func (s *PostgresRuntimeStore) lookupTokenFingerprint(ctx context.Context, tokenID string) (string, bool, error) {
+	if s == nil || s.db == nil {
+		return "", false, errors.New("postgres runtime store is not configured")
+	}
+
+	var tokenFingerprint string
+	err := s.db.QueryRow(ctx, `
+SELECT token_fingerprint
+FROM auth_platform_tokens
+WHERE token_id = $1
+`, strings.TrimSpace(tokenID)).Scan(&tokenFingerprint)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return tokenFingerprint, true, nil
 }
 
 func accessTokenFingerprint(accessToken string) string {

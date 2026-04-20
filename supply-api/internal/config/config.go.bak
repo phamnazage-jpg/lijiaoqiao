@@ -122,9 +122,9 @@ func (d *DatabaseConfig) SafeDSN() string {
 		return fmt.Sprintf("host=%s user=%s dbname=%s sslmode=disable",
 			d.Host, d.User, d.Database)
 	}
-	// TCP 连接格式: postgres://user:***@host:port/db?sslmode=disable
-	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		d.User, "***", d.Host, d.Port, d.Database)
+	// TCP 连接格式: postgres://user:***@host:port/db?sslmode=disable (密码脱敏)
+	return fmt.Sprintf("postgres://%s:***@%s:%d/%s?sslmode=disable",
+		d.User, d.Host, d.Port, d.Database)
 }
 
 // Addr 返回Redis地址

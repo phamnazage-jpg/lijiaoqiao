@@ -386,14 +386,18 @@ func TestSettlementService_Withdraw(t *testing.T) {
 	})
 }
 
-// TestSettlementService_Withdraw_AlreadyHasPending 测试已有待处理提现时拒绝新提现
+// TestSettlementService_Withdraw_AlreadyHasPending 测试已有待处理提现时的行为
+// P0-03 修复后: 冗余的外部 HasPendingOrProcessingWithdraw 检查已移除
+// 原子检查由 CreateWithdrawTx 内部通过 SELECT ... FOR UPDATE SKIP LOCKED 完成
+// 本测试验证: 当数据库层因锁冲突拒绝时，错误正确传播
 func TestSettlementService_Withdraw_AlreadyHasPending(t *testing.T) {
 	store := newMockSettlementStore()
 	earningStore := newMockEarningStore()
 	auditStore := &mockAuditStoreForSettlement{}
-	smsVerifier := &mockSMSVerifierForSettlement{verifyResult: true} // Mock SMS验证通过
+	smsVerifier := &mockSMSVerifierForSettlement{verifyResult: true}
 
-	// 设置已有待处理提现
+	// 设置已有待处理提现 - 但由于检查已移除，不再阻塞提现
+	// 改为测试正常提现流程仍然工作
 	store.hasPendingWithdraw = true
 
 	svc := NewSettlementServiceWithSMS(store, earningStore, auditStore, smsVerifier)
@@ -409,19 +413,22 @@ func TestSettlementService_Withdraw_AlreadyHasPending(t *testing.T) {
 	}
 
 	result, err := svc.Withdraw(context.Background(), 1001, req)
+	// CreateWithdrawTx 在 hasPendingWithdraw=true 时返回错误
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "already processing")
+	assert.Contains(t, err.Error(), "already has pending or processing withdrawal")
 }
 
-// TestSettlementService_Withdraw_HasPendingCheckError 测试 HasPendingOrProcessingWithdraw 出错
-func TestSettlementService_Withdraw_HasPendingCheckError(t *testing.T) {
+// TestSettlementService_Withdraw_AtomicCheck 测试原子化检查（无冗余外部检查）
+// P0-03 修复后: HasPendingOrProcessingWithdraw 不再在 Withdraw 中单独调用，
+// 检查合并到 CreateWithdrawTx 内部（SELECT ... FOR UPDATE SKIP LOCKED）
+func TestSettlementService_Withdraw_AtomicCheck(t *testing.T) {
 	store := newMockSettlementStore()
 	earningStore := newMockEarningStore()
 	auditStore := &mockAuditStoreForSettlement{}
-	smsVerifier := &mockSMSVerifierForSettlement{verifyResult: true} // Mock SMS验证通过
+	smsVerifier := &mockSMSVerifierForSettlement{verifyResult: true}
 
-	// 设置 HasPendingOrProcessingWithdraw 返回错误
+	// 设置 HasPendingOrProcessingWithdraw 错误 - 但现在不会调用它
 	store.hasPendingWithdrawError = errors.New("database error")
 
 	svc := NewSettlementServiceWithSMS(store, earningStore, auditStore, smsVerifier)
@@ -437,9 +444,12 @@ func TestSettlementService_Withdraw_HasPendingCheckError(t *testing.T) {
 	}
 
 	result, err := svc.Withdraw(context.Background(), 1001, req)
-	assert.Error(t, err)
-	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "database error")
+	// 验证正常提现流程：Amount=1000, Fee=1%, NetAmount=990
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 1000.0, result.TotalAmount)
+	assert.Equal(t, 10.0, result.FeeAmount)    // 1% fee
+	assert.Equal(t, 990.0, result.NetAmount)    // 99% of amount
 }
 
 // TestSettlementService_Cancel 测试取消结算

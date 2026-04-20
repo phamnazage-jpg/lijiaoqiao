@@ -21,11 +21,19 @@ type OpenAIAdapter struct {
 
 // NewOpenAIAdapter 创建OpenAI适配器
 func NewOpenAIAdapter(baseURL, apiKey string, models []string) *OpenAIAdapter {
+	// P0-01: 配置带连接池的 HTTP Transport，避免生产环境连接耗尽
+	transport := &http.Transport{
+		MaxIdleConns:        100,              // 最大空闲连接数
+		MaxIdleConnsPerHost: 10,               // 每主机最大空闲连接数
+		IdleConnTimeout:     90 * time.Second, // 空闲连接超时
+		DisableKeepAlives:   false,            // 启用 keep-alive
+	}
 	return &OpenAIAdapter{
 		baseURL: baseURL,
 		apiKey:  apiKey,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Transport: transport,
+			Timeout:   60 * time.Second,
 		},
 		models: models,
 	}

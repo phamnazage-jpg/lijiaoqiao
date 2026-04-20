@@ -237,13 +237,10 @@ func (s *settlementService) Withdraw(ctx context.Context, supplierID int64, req 
 	}
 
 	// INV-SET-004: 检查是否已有待处理或处理中的提现
-	hasPending, err := s.store.HasPendingOrProcessingWithdraw(ctx, supplierID)
-	if err != nil {
-		return nil, err
-	}
-	if hasPending {
-		return nil, ErrWithdrawAlreadyProcessing
-	}
+	// 注意: CreateWithdrawTx 内部已使用 SELECT ... FOR UPDATE SKIP LOCKED 做原子化检查，
+	// 这里不再单独检查，避免检查和插入之间的竞态窗口
+	// 双重检查会导致：请求A检查通过 -> 请求B检查通过 -> 请求A插入 -> 请求B插入失败
+	// 正确做法：CreateWithdrawTx 内部原子检查并插入
 
 	// 验证金额：必须为正数
 	if req.Amount <= 0 {
