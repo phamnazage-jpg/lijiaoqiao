@@ -6,6 +6,9 @@ package repository
 import (
 	"context"
 	"testing"
+	"time"
+
+	"lijiaoqiao/supply-api/internal/domain"
 )
 
 func TestPackageRepositorySchemaContract(t *testing.T) {
@@ -41,7 +44,37 @@ func TestPackageRepository_Create_Integration(t *testing.T) {
 		return
 	}
 
-	requireTable(t, pool, "supply_packages")
+	repo := NewPackageRepository(pool)
+	pkg := &domain.Package{
+		SupplierID:       1001,
+		AccountID:        2001,
+		Platform:         "openai",
+		Model:            "gpt-4.1-mini",
+		TotalQuota:       10000,
+		AvailableQuota:   10000,
+		SoldQuota:        0,
+		ReservedQuota:    0,
+		PricePer1MInput:  0.25,
+		PricePer1MOutput: 0.75,
+		MinPurchase:      100,
+		StartAt:          time.Date(2026, 4, 20, 0, 0, 0, 0, time.UTC),
+		EndAt:            time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC),
+		ValidDays:        30,
+		Status:           domain.PackageStatusDraft,
+		MaxConcurrent:    5,
+		RateLimitRPM:     60,
+		TotalOrders:      0,
+		TotalRevenue:     0,
+		Rating:           0,
+		RatingCount:      0,
+	}
+
+	if err := repo.Create(context.Background(), pkg, "req-pkg-create-int", "trace-pkg-create-int"); err != nil {
+		t.Fatalf("create package failed: %v", err)
+	}
+	if pkg.ID == 0 {
+		t.Fatal("expected created package id")
+	}
 }
 
 func TestPackageRepository_GetByID_Integration(t *testing.T) {
