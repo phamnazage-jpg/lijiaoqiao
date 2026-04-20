@@ -281,3 +281,51 @@ func TestGetUserRolesWithCodeAcceptsNullableTenantAndGrantFields(t *testing.T) {
 		t.Fatalf("expected null request_id to map to empty string, got %q", roles[0].RequestID)
 	}
 }
+
+func TestUpdateRoleStoresEmptyUpdatedIPAsNil(t *testing.T) {
+	db := &stubIAMDB{
+		execTag: pgconn.NewCommandTag("UPDATE 1"),
+	}
+	repo := newPostgresIAMRepositoryWithDB(db)
+
+	err := repo.UpdateRole(context.Background(), &model.Role{
+		Code:        "viewer",
+		Name:        "Viewer",
+		Description: "readonly",
+		IsActive:    true,
+		UpdatedIP:   "",
+	})
+	if err != nil {
+		t.Fatalf("UpdateRole() error = %v", err)
+	}
+	if len(db.execArgs) != 5 {
+		t.Fatalf("unexpected exec args length: got=%d want=5", len(db.execArgs))
+	}
+	if db.execArgs[4] != nil {
+		t.Fatalf("expected empty updated_ip to be stored as nil, got %#v", db.execArgs[4])
+	}
+}
+
+func TestUpdateRolePreservesExplicitUpdatedIP(t *testing.T) {
+	db := &stubIAMDB{
+		execTag: pgconn.NewCommandTag("UPDATE 1"),
+	}
+	repo := newPostgresIAMRepositoryWithDB(db)
+
+	err := repo.UpdateRole(context.Background(), &model.Role{
+		Code:        "viewer",
+		Name:        "Viewer",
+		Description: "readonly",
+		IsActive:    true,
+		UpdatedIP:   "10.0.0.8",
+	})
+	if err != nil {
+		t.Fatalf("UpdateRole() error = %v", err)
+	}
+	if len(db.execArgs) != 5 {
+		t.Fatalf("unexpected exec args length: got=%d want=5", len(db.execArgs))
+	}
+	if db.execArgs[4] != "10.0.0.8" {
+		t.Fatalf("expected explicit updated_ip to be preserved, got %#v", db.execArgs[4])
+	}
+}

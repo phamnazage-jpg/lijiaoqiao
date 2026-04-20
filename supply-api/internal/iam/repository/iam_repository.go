@@ -83,6 +83,13 @@ func iamInt64OrZero(value *int64) int64 {
 	return *value
 }
 
+func iamNullableIP(value string) interface{} {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
 // Ensure interfaces
 var _ IAMRepository = (*PostgresIAMRepository)(nil)
 
@@ -101,14 +108,6 @@ func (r *PostgresIAMRepository) CreateRole(ctx context.Context, role *model.Role
 		parentID = role.ParentRoleID
 	}
 
-	var createdIP, updatedIP interface{}
-	if role.CreatedIP != "" {
-		createdIP = role.CreatedIP
-	}
-	if role.UpdatedIP != "" {
-		updatedIP = role.UpdatedIP
-	}
-
 	now := time.Now()
 	if role.CreatedAt == nil {
 		role.CreatedAt = &now
@@ -119,7 +118,7 @@ func (r *PostgresIAMRepository) CreateRole(ctx context.Context, role *model.Role
 
 	_, err := r.pool.Exec(ctx, query,
 		role.Code, role.Name, role.Type, parentID, role.Level, role.Description, role.IsActive,
-		role.RequestID, createdIP, updatedIP, role.Version, role.CreatedAt, role.UpdatedAt,
+		role.RequestID, iamNullableIP(role.CreatedIP), iamNullableIP(role.UpdatedIP), role.Version, role.CreatedAt, role.UpdatedAt,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
@@ -170,7 +169,7 @@ func (r *PostgresIAMRepository) UpdateRole(ctx context.Context, role *model.Role
 		WHERE code = $1 AND is_active = true
 	`
 
-	result, err := r.pool.Exec(ctx, query, role.Code, role.Name, role.Description, role.IsActive, role.UpdatedIP)
+	result, err := r.pool.Exec(ctx, query, role.Code, role.Name, role.Description, role.IsActive, iamNullableIP(role.UpdatedIP))
 	if err != nil {
 		return fmt.Errorf("failed to update role: %w", err)
 	}
