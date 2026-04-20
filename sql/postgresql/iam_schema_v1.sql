@@ -57,7 +57,10 @@ CREATE TABLE IF NOT EXISTS iam_scopes (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     -- 约束
-    CONSTRAINT chk_scope_code_format CHECK (code ~ '^[a-z][a-z0-9._]{0,63}$')
+    CONSTRAINT chk_scope_code_format CHECK (
+        code = '*'
+        OR code ~ '^[a-z][a-z0-9._]{0,63}$'
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_iam_scopes_code ON iam_scopes (code);
