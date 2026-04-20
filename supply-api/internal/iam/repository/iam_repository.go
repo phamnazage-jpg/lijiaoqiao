@@ -69,6 +69,20 @@ func newPostgresIAMRepositoryWithDB(db iamDB) *PostgresIAMRepository {
 	return &PostgresIAMRepository{pool: db}
 }
 
+func iamStringOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func iamInt64OrZero(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
 // Ensure interfaces
 var _ IAMRepository = (*PostgresIAMRepository)(nil)
 
@@ -126,11 +140,11 @@ func (r *PostgresIAMRepository) GetRoleByCode(ctx context.Context, code string) 
 
 	var role model.Role
 	var parentID *int64
-	var createdIP, updatedIP *string
+	var requestID, createdIP, updatedIP *string
 
 	err := r.pool.QueryRow(ctx, query, code).Scan(
 		&role.ID, &role.Code, &role.Name, &role.Type, &parentID, &role.Level,
-		&role.Description, &role.IsActive, &role.RequestID, &createdIP, &updatedIP,
+		&role.Description, &role.IsActive, &requestID, &createdIP, &updatedIP,
 		&role.Version, &role.CreatedAt, &role.UpdatedAt,
 	)
 	if err != nil {
@@ -141,12 +155,9 @@ func (r *PostgresIAMRepository) GetRoleByCode(ctx context.Context, code string) 
 	}
 
 	role.ParentRoleID = parentID
-	if createdIP != nil {
-		role.CreatedIP = *createdIP
-	}
-	if updatedIP != nil {
-		role.UpdatedIP = *updatedIP
-	}
+	role.RequestID = iamStringOrEmpty(requestID)
+	role.CreatedIP = iamStringOrEmpty(createdIP)
+	role.UpdatedIP = iamStringOrEmpty(updatedIP)
 
 	return &role, nil
 }
@@ -217,11 +228,11 @@ func (r *PostgresIAMRepository) ListRoles(ctx context.Context, roleType string) 
 	for rows.Next() {
 		var role model.Role
 		var parentID *int64
-		var createdIP, updatedIP *string
+		var requestID, createdIP, updatedIP *string
 
 		err := rows.Scan(
 			&role.ID, &role.Code, &role.Name, &role.Type, &parentID, &role.Level,
-			&role.Description, &role.IsActive, &role.RequestID, &createdIP, &updatedIP,
+			&role.Description, &role.IsActive, &requestID, &createdIP, &updatedIP,
 			&role.Version, &role.CreatedAt, &role.UpdatedAt,
 		)
 		if err != nil {
@@ -229,12 +240,9 @@ func (r *PostgresIAMRepository) ListRoles(ctx context.Context, roleType string) 
 		}
 
 		role.ParentRoleID = parentID
-		if createdIP != nil {
-			role.CreatedIP = *createdIP
-		}
-		if updatedIP != nil {
-			role.UpdatedIP = *updatedIP
-		}
+		role.RequestID = iamStringOrEmpty(requestID)
+		role.CreatedIP = iamStringOrEmpty(createdIP)
+		role.UpdatedIP = iamStringOrEmpty(updatedIP)
 
 		roles = append(roles, &role)
 	}
@@ -266,9 +274,10 @@ func (r *PostgresIAMRepository) GetScopeByCode(ctx context.Context, code string)
 	`
 
 	var scope model.Scope
+	var requestID *string
 	err := r.pool.QueryRow(ctx, query, code).Scan(
 		&scope.ID, &scope.Code, &scope.Name, &scope.Description, &scope.Type,
-		&scope.IsActive, &scope.RequestID, &scope.Version, &scope.CreatedAt, &scope.UpdatedAt,
+		&scope.IsActive, &requestID, &scope.Version, &scope.CreatedAt, &scope.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -277,6 +286,7 @@ func (r *PostgresIAMRepository) GetScopeByCode(ctx context.Context, code string)
 		return nil, fmt.Errorf("failed to get scope: %w", err)
 	}
 
+	scope.RequestID = iamStringOrEmpty(requestID)
 	return &scope, nil
 }
 
@@ -296,13 +306,15 @@ func (r *PostgresIAMRepository) ListScopes(ctx context.Context) ([]*model.Scope,
 	var scopes []*model.Scope
 	for rows.Next() {
 		var scope model.Scope
+		var requestID *string
 		err := rows.Scan(
 			&scope.ID, &scope.Code, &scope.Name, &scope.Description, &scope.Type,
-			&scope.IsActive, &scope.RequestID, &scope.Version, &scope.CreatedAt, &scope.UpdatedAt,
+			&scope.IsActive, &requestID, &scope.Version, &scope.CreatedAt, &scope.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan scope: %w", err)
 		}
+		scope.RequestID = iamStringOrEmpty(requestID)
 		scopes = append(scopes, &scope)
 	}
 
@@ -480,10 +492,15 @@ func (r *PostgresIAMRepository) GetUserRoles(ctx context.Context, userID int64) 
 	for rows.Next() {
 		var ur model.UserRoleMapping
 		var roleCode string
-		err := rows.Scan(&ur.ID, &ur.UserID, &roleCode, &ur.TenantID, &ur.IsActive, &ur.GrantedBy, &ur.ExpiresAt, &ur.RequestID, &ur.CreatedAt, &ur.UpdatedAt)
+		var tenantID, grantedBy *int64
+		var requestID *string
+		err := rows.Scan(&ur.ID, &ur.UserID, &roleCode, &tenantID, &ur.IsActive, &grantedBy, &ur.ExpiresAt, &requestID, &ur.CreatedAt, &ur.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan user role: %w", err)
 		}
+		ur.TenantID = iamInt64OrZero(tenantID)
+		ur.GrantedBy = iamInt64OrZero(grantedBy)
+		ur.RequestID = iamStringOrEmpty(requestID)
 		userRoles = append(userRoles, &ur)
 	}
 
@@ -510,10 +527,15 @@ func (r *PostgresIAMRepository) GetUserRolesWithCode(ctx context.Context, userID
 	for rows.Next() {
 		var ur model.UserRoleMapping
 		var roleCode string
-		err := rows.Scan(&ur.ID, &ur.UserID, &roleCode, &ur.TenantID, &ur.IsActive, &ur.GrantedBy, &ur.ExpiresAt, &ur.RequestID, &ur.CreatedAt, &ur.UpdatedAt)
+		var tenantID, grantedBy *int64
+		var requestID *string
+		err := rows.Scan(&ur.ID, &ur.UserID, &roleCode, &tenantID, &ur.IsActive, &grantedBy, &ur.ExpiresAt, &requestID, &ur.CreatedAt, &ur.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan user role: %w", err)
 		}
+		ur.TenantID = iamInt64OrZero(tenantID)
+		ur.GrantedBy = iamInt64OrZero(grantedBy)
+		ur.RequestID = iamStringOrEmpty(requestID)
 		userRoles = append(userRoles, &UserRoleWithCode{UserRoleMapping: &ur, RoleCode: roleCode})
 	}
 

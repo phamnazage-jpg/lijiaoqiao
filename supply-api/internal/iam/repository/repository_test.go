@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -91,12 +92,24 @@ func assignIAMScan(dest []any, values []any) error {
 	for i, value := range values {
 		switch d := dest[i].(type) {
 		case *int64:
+			if value == nil {
+				return fmt.Errorf("cannot scan NULL into *int64")
+			}
 			*d = value.(int64)
 		case *string:
+			if value == nil {
+				return fmt.Errorf("cannot scan NULL into *string")
+			}
 			*d = value.(string)
 		case *int:
+			if value == nil {
+				return fmt.Errorf("cannot scan NULL into *int")
+			}
 			*d = value.(int)
 		case *bool:
+			if value == nil {
+				return fmt.Errorf("cannot scan NULL into *bool")
+			}
 			*d = value.(bool)
 		case **int64:
 			if value == nil {
@@ -214,5 +227,57 @@ func TestRevokeRoleReturnsErrUserRoleNotFoundWhenNothingIsUpdated(t *testing.T) 
 	}
 	if len(db.execArgs) != 3 || db.execArgs[0] != int64(7) || db.execArgs[1] != int64(99) || db.execArgs[2] != int64(42) {
 		t.Fatalf("unexpected revoke args: %#v", db.execArgs)
+	}
+}
+
+func TestListRolesAcceptsNullRequestID(t *testing.T) {
+	now := time.Unix(1710000000, 0).UTC()
+	db := &stubIAMDB{
+		queryRows: &stubIAMRows{
+			rows: [][]any{
+				{int64(1), "viewer", "Viewer", model.RoleTypePlatform, nil, 10, "readonly", true, nil, nil, nil, 1, now, now},
+			},
+		},
+	}
+	repo := newPostgresIAMRepositoryWithDB(db)
+
+	roles, err := repo.ListRoles(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListRoles() error = %v", err)
+	}
+	if len(roles) != 1 {
+		t.Fatalf("role count = %d, want 1", len(roles))
+	}
+	if roles[0].RequestID != "" {
+		t.Fatalf("expected null request_id to map to empty string, got %q", roles[0].RequestID)
+	}
+}
+
+func TestGetUserRolesWithCodeAcceptsNullableTenantAndGrantFields(t *testing.T) {
+	now := time.Unix(1710000000, 0).UTC()
+	db := &stubIAMDB{
+		queryRows: &stubIAMRows{
+			rows: [][]any{
+				{int64(11), int64(7), "viewer", nil, true, nil, nil, nil, now, now},
+			},
+		},
+	}
+	repo := newPostgresIAMRepositoryWithDB(db)
+
+	roles, err := repo.GetUserRolesWithCode(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("GetUserRolesWithCode() error = %v", err)
+	}
+	if len(roles) != 1 {
+		t.Fatalf("role count = %d, want 1", len(roles))
+	}
+	if roles[0].TenantID != 0 {
+		t.Fatalf("expected null tenant_id to map to 0, got %d", roles[0].TenantID)
+	}
+	if roles[0].GrantedBy != 0 {
+		t.Fatalf("expected null granted_by to map to 0, got %d", roles[0].GrantedBy)
+	}
+	if roles[0].RequestID != "" {
+		t.Fatalf("expected null request_id to map to empty string, got %q", roles[0].RequestID)
 	}
 }
