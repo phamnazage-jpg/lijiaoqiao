@@ -75,6 +75,17 @@ func TestPackageRepository_Create_Integration(t *testing.T) {
 	if pkg.ID == 0 {
 		t.Fatal("expected created package id")
 	}
+
+	fetched, err := repo.GetByID(context.Background(), pkg.SupplierID, pkg.ID)
+	if err != nil {
+		t.Fatalf("get package after create failed: %v", err)
+	}
+	if fetched.SupplierID != pkg.SupplierID {
+		t.Fatalf("expected supplier id %d, got %d", pkg.SupplierID, fetched.SupplierID)
+	}
+	if fetched.AccountID != pkg.AccountID {
+		t.Fatalf("expected account id %d, got %d", pkg.AccountID, fetched.AccountID)
+	}
 }
 
 func TestPackageRepository_GetByID_Integration(t *testing.T) {
@@ -116,22 +127,46 @@ func TestPackageRepository_List_Integration(t *testing.T) {
 		return
 	}
 
-	rows, err := pool.Query(context.Background(), `
-		SELECT id, user_id, available_quota
-		FROM supply_packages
-		LIMIT 10
-	`)
-	if err != nil {
-		t.Fatalf("列出套餐失败: %v", err)
+	repo := NewPackageRepository(pool)
+	pkg := &domain.Package{
+		SupplierID:       3001,
+		AccountID:        4001,
+		Platform:         "anthropic",
+		Model:            "claude-3-7-sonnet",
+		TotalQuota:       5000,
+		AvailableQuota:   5000,
+		PricePer1MInput:  0.4,
+		PricePer1MOutput: 1.2,
+		Status:           domain.PackageStatusDraft,
+		ValidDays:        15,
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var id, userID int64
-		var availableQuota float64
-		if scanErr := rows.Scan(&id, &userID, &availableQuota); scanErr != nil {
-			t.Fatalf("扫描套餐失败: %v", scanErr)
+	if err := repo.Create(context.Background(), pkg, "req-pkg-list-int", "trace-pkg-list-int"); err != nil {
+		t.Fatalf("create package for list failed: %v", err)
+	}
+
+	packages, err := repo.List(context.Background(), pkg.SupplierID)
+	if err != nil {
+		t.Fatalf("repo.List failed: %v", err)
+	}
+	if len(packages) == 0 {
+		t.Fatal("expected packages for supplier")
+	}
+
+	found := false
+	for _, listed := range packages {
+		if listed.ID == pkg.ID {
+			found = true
+			if listed.SupplierID != pkg.SupplierID {
+				t.Fatalf("expected listed supplier id %d, got %d", pkg.SupplierID, listed.SupplierID)
+			}
+			if listed.AccountID != pkg.AccountID {
+				t.Fatalf("expected listed account id %d, got %d", pkg.AccountID, listed.AccountID)
+			}
 		}
+	}
+	if !found {
+		t.Fatalf("expected package %d in supplier list", pkg.ID)
 	}
 }
 

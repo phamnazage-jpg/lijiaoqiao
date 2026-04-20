@@ -703,6 +703,41 @@ func TestSupplyAPI_CreatePackageDraft_Success(t *testing.T) {
 	}
 }
 
+func TestSupplyAPI_CreatePackageDraft_ResponseUsesAccountID(t *testing.T) {
+	api, _, packageSvc, _, _, _ := newTestAPI()
+	packageSvc.pkg.AccountID = 200
+
+	req := httptest.NewRequest("POST", "/api/v1/supply/packages/draft", strings.NewReader(`{
+		"supply_account_id": 200,
+		"model": "gpt-4",
+		"total_quota": 10000,
+		"price_per_1m_input": 0.5,
+		"price_per_1m_output": 1.5,
+		"valid_days": 30,
+		"max_concurrent": 10,
+		"rate_limit_rpm": 100
+	}`))
+	w := httptest.NewRecorder()
+
+	api.handleCreatePackageDraft(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			SupplyAccountID int64 `json:"supply_account_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Data.SupplyAccountID != packageSvc.pkg.AccountID {
+		t.Fatalf("expected supply_account_id %d, got %d", packageSvc.pkg.AccountID, resp.Data.SupplyAccountID)
+	}
+}
+
 func TestSupplyAPI_CreatePackageDraft_MethodNotAllowed(t *testing.T) {
 	api, _, _, _, _, _ := newTestAPI()
 
@@ -873,6 +908,32 @@ func TestSupplyAPI_ClonePackage_Success(t *testing.T) {
 
 	if w.Code != http.StatusCreated {
 		t.Errorf("expected status 201, got %d", w.Code)
+	}
+}
+
+func TestSupplyAPI_ClonePackage_ResponseUsesAccountID(t *testing.T) {
+	api, _, packageSvc, _, _, _ := newTestAPI()
+	packageSvc.pkg.AccountID = 200
+
+	req := httptest.NewRequest("POST", "/api/v1/supply/packages/1/clone", nil)
+	w := httptest.NewRecorder()
+
+	api.handlePackageActions(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			SupplyAccountID int64 `json:"supply_account_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Data.SupplyAccountID != packageSvc.pkg.AccountID {
+		t.Fatalf("expected supply_account_id %d, got %d", packageSvc.pkg.AccountID, resp.Data.SupplyAccountID)
 	}
 }
 

@@ -178,7 +178,11 @@ func (s *DBPackageStore) GetByID(ctx context.Context, supplierID, id int64) (*do
 }
 
 func (s *DBPackageStore) Update(ctx context.Context, pkg *domain.Package) error {
-	return s.repo.Update(ctx, pkg, pkg.Version)
+	expectedVersion := 0
+	if pkg.Version > 0 {
+		expectedVersion = pkg.Version - 1
+	}
+	return s.repo.Update(ctx, pkg, expectedVersion)
 }
 
 func (s *DBPackageStore) List(ctx context.Context, supplierID int64) ([]*domain.Package, error) {

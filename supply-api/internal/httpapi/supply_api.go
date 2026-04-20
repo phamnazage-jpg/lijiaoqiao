@@ -503,7 +503,7 @@ func (a *SupplyAPI) handleCreatePackageDraft(w http.ResponseWriter, r *http.Requ
 		"request_id": getRequestID(r),
 		"data": map[string]any{
 			"package_id":        pkg.ID,
-			"supply_account_id": pkg.SupplierID,
+			"supply_account_id": pkg.AccountID,
 			"model":             pkg.Model,
 			"status":            pkg.Status,
 			"total_quota":       pkg.TotalQuota,
@@ -665,7 +665,7 @@ func (a *SupplyAPI) handleClonePackage(w http.ResponseWriter, r *http.Request, p
 		"request_id": getRequestID(r),
 		"data": map[string]any{
 			"package_id":        pkg.ID,
-			"supply_account_id": pkg.SupplierID,
+			"supply_account_id": pkg.AccountID,
 			"model":             pkg.Model,
 			"status":            pkg.Status,
 			"created_at":        pkg.CreatedAt,
