@@ -66,9 +66,9 @@
 - 当前未复现 `supply-api` 幂等锁、套餐创建、账号/套餐状态流转、审计契约、IAM DDL 与 DB-backed IAM 缺陷。
 - `supply-api/internal/domain` 连续 `20` 轮无缓存复跑通过，之前一次性波动信号本轮未复现。
 
-任务单外仍需单独治理但**不属于本文 13 项关闭范围**的事项：
+任务单外的后续治理补充：
 
-- 结构化日志尚未在三套服务入口完全统一。`supply-api` 已使用结构化 JSON 日志入口，见 [main.go](/home/long/project/立交桥/supply-api/cmd/supply-api/main.go)；但 [main.go](/home/long/project/立交桥/gateway/cmd/gateway/main.go) 与 [main.go](/home/long/project/立交桥/platform-token-runtime/cmd/platform-token-runtime/main.go) 仍使用标准库 `log`。这属于新的治理项，不应误记成“本任务单 13 项仍未关闭”。
+- 结构化日志统一已在三套服务入口收口：`supply-api`、[gateway main.go](/home/long/project/立交桥/gateway/cmd/gateway/main.go) 与 [platform-token-runtime main.go](/home/long/project/立交桥/platform-token-runtime/cmd/platform-token-runtime/main.go) 现在都输出统一 JSON 结构化日志。该事项不属于本文 `13` 个缺陷，但已作为项目统一性治理一并完成。
 
 ## 范围结论
 

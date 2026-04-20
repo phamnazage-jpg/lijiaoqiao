@@ -75,19 +75,19 @@ cd "/home/long/project/立交桥/supply-api" && \
 
 1. 提现能力仍受 SMS readiness 门禁控制。门禁关闭属于设计行为，不是未修复缺陷。
 2. 两份 `review` 报告是整改前基线快照。它们用于说明问题来源，不等于当前系统状态。
-3. 结构化日志统一尚未在三套服务入口完全收口。这是**任务单外治理项**，不属于本次 13 项缺陷。
+3. 结构化日志统一已在三套服务入口收口，但它是**任务单外后续治理项**，不是本次 13 项缺陷的组成部分。
 
 结构化日志现状：
 
 - [main.go](/home/long/project/立交桥/supply-api/cmd/supply-api/main.go) 已使用结构化 JSON logger。
-- [main.go](/home/long/project/立交桥/gateway/cmd/gateway/main.go) 仍使用标准库 `log`。
-- [main.go](/home/long/project/立交桥/platform-token-runtime/cmd/platform-token-runtime/main.go) 仍使用标准库 `log`。
+- [main.go](/home/long/project/立交桥/gateway/cmd/gateway/main.go) 已切换为结构化 JSON logger。
+- [main.go](/home/long/project/立交桥/platform-token-runtime/cmd/platform-token-runtime/main.go) 已切换为结构化 JSON logger。
 
 因此，若单独追踪“结构化日志统一”这一治理目标，当前结论应是：
 
 - `supply-api`：已完成
-- `gateway`：未完成
-- `platform-token-runtime`：未完成
+- `gateway`：已完成
+- `platform-token-runtime`：已完成
 
 但这不应被回写成“2026-04-20 真实验证缺陷仍未关闭”。
 
@@ -97,4 +97,4 @@ cd "/home/long/project/立交桥/supply-api" && \
 
 - 真实验证报告与接口矩阵报告中拆出的 `13` 个已证实问题，已全部真实解决。
 - 当前分支未发现这些问题的残留复现。
-- 若后续需要继续推进，可把“结构化日志统一”作为新的治理任务立项，而不是复开本次整改单。
+- 若后续需要继续推进，应把重心放在日志字段注入、trace/request_id 贯穿和日志采样等深化治理，而不是复开本次整改单。

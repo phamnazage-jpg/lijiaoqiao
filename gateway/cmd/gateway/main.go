@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,42 +10,52 @@ import (
 
 	"lijiaoqiao/gateway/internal/app"
 	"lijiaoqiao/gateway/internal/config"
+	"lijiaoqiao/gateway/internal/pkg/logging"
 )
 
 func main() {
+	logger := logging.NewLogger("gateway", logging.LogLevelInfo)
+
 	// 加载配置
 	cfg, err := config.LoadConfig("")
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		logger.Fatalf("failed to load config: %v", err)
 	}
 
 	server, err := app.BuildServer(cfg)
 	if err != nil {
-		log.Fatalf("Failed to build server: %v", err)
+		logger.Fatalf("failed to build server: %v", err)
 	}
+
+	serverErrCh := make(chan error, 1)
 
 	// 启动Server
 	go func() {
-		log.Printf("Starting gateway server on %s", server.Addr)
+		logger.Infof("starting gateway server on %s", server.Addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+			serverErrCh <- err
 		}
 	}()
 
 	// 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	select {
+	case sig := <-quit:
+		logger.Infof("received signal %s", sig)
+	case err := <-serverErrCh:
+		logger.Fatalf("server failed: %v", err)
+	}
 
-	log.Println("Shutting down server...")
+	logger.Info("shutting down server...")
 
 	// 优雅关闭
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		logger.Fatalf("server forced to shutdown: %v", err)
 	}
 
-	log.Println("Server exited")
+	logger.Info("server exited")
 }
