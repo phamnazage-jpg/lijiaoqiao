@@ -87,6 +87,11 @@ func (r *PostgresAuditRepository) Emit(ctx context.Context, event *model.AuditEv
 		return fmt.Errorf("failed to marshal security flags: %w", err)
 	}
 
+	complianceTags := event.ComplianceTags
+	if complianceTags == nil {
+		complianceTags = []string{}
+	}
+
 	// 序列化状态变更
 	var beforeStateJSON, afterStateJSON []byte
 	if event.BeforeState != nil {
@@ -144,7 +149,7 @@ func (r *PostgresAuditRepository) Emit(ctx context.Context, event *model.AuditEv
 		event.ResultCode, event.ResultMessage, event.Success,
 		beforeStateJSON, afterStateJSON,
 		securityFlagsJSON, event.RiskScore,
-		event.ComplianceTags, event.InvariantRule,
+		complianceTags, event.InvariantRule,
 		extensionsJSON,
 		1, time.Now(),
 	)

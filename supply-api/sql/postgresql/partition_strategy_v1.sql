@@ -5,22 +5,48 @@
 
 -- 创建父表
 CREATE TABLE IF NOT EXISTS audit_events (
-    id                  BIGSERIAL,
-    event_id            VARCHAR(100) NOT NULL,
-    event_name          VARCHAR(100) NOT NULL,
-    event_category      VARCHAR(50),
-    event_sub_category  VARCHAR(50),
-    timestamp           TIMESTAMPTZ NOT NULL,
-    timestamp_ms        BIGINT NOT NULL,
-    request_id          VARCHAR(100),
-    idempotency_key     VARCHAR(128),
-    tenant_id           BIGINT,
-    object_type         VARCHAR(100),
-    object_id           VARCHAR(100),
-    action              VARCHAR(100) NOT NULL,
-    result_code         VARCHAR(50),
-    source_ip           VARCHAR(50),
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id                      BIGSERIAL,
+    event_id                VARCHAR(100) NOT NULL,
+    event_name              VARCHAR(100) NOT NULL,
+    event_category          VARCHAR(50) NOT NULL DEFAULT '',
+    event_sub_category      VARCHAR(50) NOT NULL DEFAULT '',
+    timestamp               TIMESTAMPTZ NOT NULL,
+    timestamp_ms            BIGINT NOT NULL DEFAULT 0,
+    request_id              VARCHAR(100) NOT NULL DEFAULT '',
+    trace_id                VARCHAR(64) NOT NULL DEFAULT '',
+    span_id                 VARCHAR(64) NOT NULL DEFAULT '',
+    idempotency_key         VARCHAR(128) NOT NULL DEFAULT '',
+    operator_id             BIGINT NOT NULL DEFAULT 0,
+    operator_type           VARCHAR(32) NOT NULL DEFAULT '',
+    operator_role           VARCHAR(64) NOT NULL DEFAULT '',
+    tenant_id               BIGINT NOT NULL DEFAULT 0,
+    tenant_type             VARCHAR(32) NOT NULL DEFAULT '',
+    object_type             VARCHAR(100) NOT NULL DEFAULT '',
+    object_id               BIGINT NOT NULL DEFAULT 0,
+    action                  VARCHAR(100) NOT NULL,
+    action_detail           TEXT NOT NULL DEFAULT '',
+    credential_type         VARCHAR(64) NOT NULL DEFAULT '',
+    credential_id           VARCHAR(255) NOT NULL DEFAULT '',
+    credential_fingerprint  VARCHAR(255) NOT NULL DEFAULT '',
+    source_type             VARCHAR(32) NOT NULL DEFAULT '',
+    source_ip               VARCHAR(50) NOT NULL DEFAULT '',
+    source_region           VARCHAR(100) NOT NULL DEFAULT '',
+    user_agent              TEXT NOT NULL DEFAULT '',
+    target_type             VARCHAR(32) NOT NULL DEFAULT '',
+    target_endpoint         TEXT NOT NULL DEFAULT '',
+    target_direct           BOOLEAN NOT NULL DEFAULT FALSE,
+    result_code             VARCHAR(50) NOT NULL DEFAULT '',
+    result_message          TEXT NOT NULL DEFAULT '',
+    success                 BOOLEAN NOT NULL DEFAULT FALSE,
+    before_state            JSONB,
+    after_state             JSONB,
+    security_flags          JSONB NOT NULL DEFAULT '{}'::jsonb,
+    risk_score              INTEGER NOT NULL DEFAULT 0,
+    compliance_tags         TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    invariant_rule          VARCHAR(255) NOT NULL DEFAULT '',
+    extensions              JSONB,
+    version                 INTEGER NOT NULL DEFAULT 1,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id, timestamp)
 ) PARTITION BY RANGE (timestamp);
 
@@ -211,7 +237,11 @@ END $$;
 
 -- 在父表上创建索引（会自动继承到分区）
 CREATE INDEX IF NOT EXISTS idx_audit_events_tenant_id ON audit_events(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_audit_events_event_id ON audit_events(event_id);
+CREATE INDEX IF NOT EXISTS idx_audit_events_event_name ON audit_events(event_name);
 CREATE INDEX IF NOT EXISTS idx_audit_events_request_id ON audit_events(request_id);
+CREATE INDEX IF NOT EXISTS idx_audit_events_trace_id ON audit_events(trace_id);
+CREATE INDEX IF NOT EXISTS idx_audit_events_idempotency_key ON audit_events(idempotency_key);
 CREATE INDEX IF NOT EXISTS idx_audit_events_created_at ON audit_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_events_object ON audit_events(object_type, object_id);
 

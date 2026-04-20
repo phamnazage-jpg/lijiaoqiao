@@ -24,14 +24,19 @@ var _ AuditStore = (*PostgresAuditStore)(nil)
 
 // Emit 发送审计事件
 func (s *PostgresAuditStore) Emit(ctx context.Context, event Event) error {
+	timestamp := event.CreatedAt
+	if timestamp.IsZero() {
+		timestamp = time.Now()
+	}
+
 	// 转换 audit.Event -> model.AuditEvent
 	modelEvent := &model.AuditEvent{
 		EventID:        event.EventID,
 		EventName:      event.Action,
 		EventCategory:  "",
 		EventSubCategory: "",
-		Timestamp:      event.CreatedAt,
-		TimestampMs:    event.CreatedAt.UnixMilli(),
+		Timestamp:      timestamp,
+		TimestampMs:    timestamp.UnixMilli(),
 		RequestID:      event.RequestID,
 		IdempotencyKey: "",
 		TenantID:       event.TenantID,
@@ -39,7 +44,14 @@ func (s *PostgresAuditStore) Emit(ctx context.Context, event Event) error {
 		ObjectID:       event.ObjectID,
 		Action:         event.Action,
 		ResultCode:     event.ResultCode,
+		Success:        event.ResultCode == "OK",
+		BeforeState:    event.BeforeState,
+		AfterState:     event.AfterState,
 		SourceIP:       event.SourceIP,
+		SecurityFlags:  *model.NewSecurityFlags(),
+		ComplianceTags: []string{},
+		Version:        1,
+		CreatedAt:      timestamp,
 	}
 	return s.repo.Emit(ctx, modelEvent)
 }
