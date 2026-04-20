@@ -213,7 +213,7 @@ func (s *accountService) Activate(ctx context.Context, supplierID, accountID int
 	}
 
 	if account.Status != AccountStatusPending && account.Status != AccountStatusSuspended {
-		return nil, errors.New("SUP_ACC_4091: can only activate pending or suspended accounts")
+		return nil, ErrAccountCannotActivateState
 	}
 
 	account.Status = AccountStatusActive
@@ -242,7 +242,7 @@ func (s *accountService) Suspend(ctx context.Context, supplierID, accountID int6
 	}
 
 	if account.Status != AccountStatusActive {
-		return nil, errors.New("SUP_ACC_4091: can only suspend active accounts")
+		return nil, ErrAccountCannotSuspendState
 	}
 
 	account.Status = AccountStatusSuspended
@@ -271,7 +271,7 @@ func (s *accountService) Delete(ctx context.Context, supplierID, accountID int64
 	}
 
 	if account.Status == AccountStatusActive {
-		return errors.New("SUP_ACC_4092: cannot delete active accounts")
+		return ErrAccountCannotDeleteActive
 	}
 
 	s.emitAudit(ctx, audit.Event{

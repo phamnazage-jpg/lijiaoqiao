@@ -2,7 +2,6 @@ package domain
 
 import (
 	"context"
-	"errors"
 	"net/netip"
 	"time"
 
@@ -186,7 +185,7 @@ func (s *packageService) Publish(ctx context.Context, supplierID, packageID int6
 	}
 
 	if pkg.Status != PackageStatusDraft && pkg.Status != PackageStatusPaused {
-		return nil, errors.New("SUP_PKG_4092: can only publish draft or paused packages")
+		return nil, ErrPackageCannotPublishState
 	}
 
 	pkg.Status = PackageStatusActive
@@ -215,7 +214,7 @@ func (s *packageService) Pause(ctx context.Context, supplierID, packageID int64)
 	}
 
 	if pkg.Status != PackageStatusActive {
-		return nil, errors.New("SUP_PKG_4092: can only pause active packages")
+		return nil, ErrPackageCannotPauseState
 	}
 
 	pkg.Status = PackageStatusPaused

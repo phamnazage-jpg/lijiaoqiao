@@ -294,7 +294,7 @@ func (s *settlementService) Cancel(ctx context.Context, supplierID, settlementID
 	}
 
 	if settlement.Status == SettlementStatusProcessing || settlement.Status == SettlementStatusCompleted {
-		return nil, errors.New("SUP_SET_4092: cannot cancel processing or completed settlements")
+		return nil, ErrSettlementCannotCancel
 	}
 
 	// 保存更新前的版本号用于乐观锁

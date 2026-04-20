@@ -13,6 +13,7 @@ import (
 	"lijiaoqiao/supply-api/internal/audit"
 	"lijiaoqiao/supply-api/internal/domain"
 	"lijiaoqiao/supply-api/internal/middleware"
+	"lijiaoqiao/supply-api/internal/repository"
 )
 
 // ==================== Mock Implementations ====================
@@ -532,7 +533,7 @@ func TestSupplyAPI_ActivateAccount_Success(t *testing.T) {
 
 func TestSupplyAPI_ActivateAccount_NotFound(t *testing.T) {
 	api, accountSvc, _, _, _, _ := newTestAPI()
-	accountSvc.activateErr = errors.New("account not found")
+	accountSvc.activateErr = repository.ErrNotFound
 
 	req := httptest.NewRequest("POST", "/api/v1/supply/accounts/1/activate", nil)
 	w := httptest.NewRecorder()
@@ -541,6 +542,20 @@ func TestSupplyAPI_ActivateAccount_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status 404, got %d", w.Code)
+	}
+}
+
+func TestSupplyAPI_ActivateAccount_ConcurrencyConflict(t *testing.T) {
+	api, accountSvc, _, _, _, _ := newTestAPI()
+	accountSvc.activateErr = repository.ErrConcurrencyConflict
+
+	req := httptest.NewRequest("POST", "/api/v1/supply/accounts/1/activate", nil)
+	w := httptest.NewRecorder()
+
+	api.handleAccountActions(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected status 409, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -559,7 +574,7 @@ func TestSupplyAPI_SuspendAccount_Success(t *testing.T) {
 
 func TestSupplyAPI_SuspendAccount_Conflict(t *testing.T) {
 	api, accountSvc, _, _, _, _ := newTestAPI()
-	accountSvc.suspendErr = errors.New("SUP_ACC_4091: account state conflict")
+	accountSvc.suspendErr = domain.ErrAccountCannotSuspendState
 
 	req := httptest.NewRequest("POST", "/api/v1/supply/accounts/1/suspend", nil)
 	w := httptest.NewRecorder()
@@ -599,7 +614,7 @@ func TestSupplyAPI_DeleteAccount_Success(t *testing.T) {
 
 func TestSupplyAPI_DeleteAccount_Conflict(t *testing.T) {
 	api, accountSvc, _, _, _, _ := newTestAPI()
-	accountSvc.deleteErr = errors.New("SUP_ACC_4092: cannot delete account with active packages")
+	accountSvc.deleteErr = domain.ErrAccountCannotDeleteActive
 
 	req := httptest.NewRequest("DELETE", "/api/v1/supply/accounts/1/delete", nil)
 	w := httptest.NewRecorder()
@@ -766,7 +781,7 @@ func TestSupplyAPI_PublishPackage_Success(t *testing.T) {
 
 func TestSupplyAPI_PublishPackage_NotFound(t *testing.T) {
 	api, _, packageSvc, _, _, _ := newTestAPI()
-	packageSvc.publishErr = errors.New("package not found")
+	packageSvc.publishErr = repository.ErrNotFound
 
 	req := httptest.NewRequest("POST", "/api/v1/supply/packages/1/publish", nil)
 	w := httptest.NewRecorder()
@@ -775,6 +790,20 @@ func TestSupplyAPI_PublishPackage_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status 404, got %d", w.Code)
+	}
+}
+
+func TestSupplyAPI_PublishPackage_ConcurrencyConflict(t *testing.T) {
+	api, _, packageSvc, _, _, _ := newTestAPI()
+	packageSvc.publishErr = repository.ErrConcurrencyConflict
+
+	req := httptest.NewRequest("POST", "/api/v1/supply/packages/1/publish", nil)
+	w := httptest.NewRecorder()
+
+	api.handlePackageActions(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected status 409, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -793,7 +822,7 @@ func TestSupplyAPI_PausePackage_Success(t *testing.T) {
 
 func TestSupplyAPI_PausePackage_Conflict(t *testing.T) {
 	api, _, packageSvc, _, _, _ := newTestAPI()
-	packageSvc.pauseErr = errors.New("SUP_PKG_4092: cannot pause active package")
+	packageSvc.pauseErr = domain.ErrPackageCannotPauseState
 
 	req := httptest.NewRequest("POST", "/api/v1/supply/packages/1/pause", nil)
 	w := httptest.NewRecorder()
@@ -833,7 +862,7 @@ func TestSupplyAPI_UnlistPackage_Success(t *testing.T) {
 
 func TestSupplyAPI_UnlistPackage_Conflict(t *testing.T) {
 	api, _, packageSvc, _, _, _ := newTestAPI()
-	packageSvc.unlistErr = errors.New("SUP_PKG_4093: cannot unlist package")
+	packageSvc.unlistErr = repository.ErrConcurrencyConflict
 
 	req := httptest.NewRequest("POST", "/api/v1/supply/packages/1/unlist", nil)
 	w := httptest.NewRecorder()
@@ -873,7 +902,7 @@ func TestSupplyAPI_ClonePackage_WrongMethod(t *testing.T) {
 
 func TestSupplyAPI_ClonePackage_NotFound(t *testing.T) {
 	api, _, packageSvc, _, _, _ := newTestAPI()
-	packageSvc.cloneErr = errors.New("package not found")
+	packageSvc.cloneErr = repository.ErrNotFound
 
 	req := httptest.NewRequest("POST", "/api/v1/supply/packages/1/clone", nil)
 	w := httptest.NewRecorder()
@@ -882,6 +911,20 @@ func TestSupplyAPI_ClonePackage_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status 404, got %d", w.Code)
+	}
+}
+
+func TestSupplyAPI_ClonePackage_UnexpectedCreateFailureReturnsInternalServerError(t *testing.T) {
+	api, _, packageSvc, _, _, _ := newTestAPI()
+	packageSvc.cloneErr = errors.New("insert failed")
+
+	req := httptest.NewRequest("POST", "/api/v1/supply/packages/1/clone", nil)
+	w := httptest.NewRecorder()
+
+	api.handlePackageActions(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -1134,7 +1177,7 @@ func TestSupplyAPI_CancelSettlement_Success(t *testing.T) {
 
 func TestSupplyAPI_CancelSettlement_NotFound(t *testing.T) {
 	api, _, _, settlementSvc, _, _ := newTestAPI()
-	settlementSvc.cancelErr = errors.New("settlement not found")
+	settlementSvc.cancelErr = repository.ErrNotFound
 
 	req := httptest.NewRequest("POST", "/api/v1/supply/settlements/1/cancel", nil)
 	w := httptest.NewRecorder()
@@ -1143,6 +1186,20 @@ func TestSupplyAPI_CancelSettlement_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status 404, got %d", w.Code)
+	}
+}
+
+func TestSupplyAPI_CancelSettlement_ConcurrencyConflict(t *testing.T) {
+	api, _, _, settlementSvc, _, _ := newTestAPI()
+	settlementSvc.cancelErr = repository.ErrConcurrencyConflict
+
+	req := httptest.NewRequest("POST", "/api/v1/supply/settlements/1/cancel", nil)
+	w := httptest.NewRecorder()
+
+	api.handleSettlementActions(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected status 409, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 

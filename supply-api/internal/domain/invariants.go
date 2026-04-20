@@ -9,6 +9,12 @@ import (
 // 领域不变量错误
 
 var (
+	// INV-ACC-000: 仅 pending/suspended 可激活
+	ErrAccountCannotActivateState = errors.New("SUP_ACC_4091: can only activate pending or suspended accounts")
+
+	// INV-ACC-000B: 仅 active 可暂停
+	ErrAccountCannotSuspendState = errors.New("SUP_ACC_4091: can only suspend active accounts")
+
 	// INV-ACC-001: active账号不可删除
 	ErrAccountCannotDeleteActive = errors.New("SUP_ACC_4092: cannot delete active accounts")
 
@@ -17,6 +23,12 @@ var (
 
 	// INV-PKG-001: sold_out只能系统迁移
 	ErrPackageSoldOutSystemOnly = errors.New("SUP_PKG_4092: sold_out status can only be changed by system")
+
+	// INV-PKG-001B: 仅 draft/paused 可发布
+	ErrPackageCannotPublishState = errors.New("SUP_PKG_4092: can only publish draft or paused packages")
+
+	// INV-PKG-001C: 仅 active 可暂停
+	ErrPackageCannotPauseState = errors.New("SUP_PKG_4092: can only pause active packages")
 
 	// INV-PKG-002: expired套餐不可直接恢复
 	ErrPackageExpiredCannotRestore = errors.New("SUP_PKG_4093: expired package cannot be directly restored")

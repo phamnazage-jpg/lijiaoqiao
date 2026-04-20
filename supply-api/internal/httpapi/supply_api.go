@@ -135,6 +135,31 @@ func (a *SupplyAPI) requireIdempotencyMiddleware(w http.ResponseWriter) bool {
 	return true
 }
 
+func isSupplyActionConflict(err error) bool {
+	return errors.Is(err, repository.ErrConcurrencyConflict) ||
+		errors.Is(err, domain.ErrAccountCannotActivateState) ||
+		errors.Is(err, domain.ErrAccountCannotSuspendState) ||
+		errors.Is(err, domain.ErrAccountCannotDeleteActive) ||
+		errors.Is(err, domain.ErrPackageCannotPublishState) ||
+		errors.Is(err, domain.ErrPackageCannotPauseState) ||
+		errors.Is(err, domain.ErrSettlementCannotCancel)
+}
+
+func isSupplyActionNotFound(err error) bool {
+	return errors.Is(err, repository.ErrNotFound)
+}
+
+func writeSupplyActionError(w http.ResponseWriter, err error, unexpectedCode string) {
+	switch {
+	case isSupplyActionConflict(err):
+		writeError(w, http.StatusConflict, CodeConflict, err.Error())
+	case isSupplyActionNotFound(err):
+		writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, unexpectedCode, err.Error())
+	}
+}
+
 // ==================== Account Handlers ====================
 
 type VerifyAccountRequest struct {
@@ -318,11 +343,7 @@ func (a *SupplyAPI) handleActivateAccount(w http.ResponseWriter, r *http.Request
 
 	account, err := a.accountService.Activate(r.Context(), supplierID, accountID)
 	if err != nil {
-		if strings.Contains(err.Error(), "SUP_ACC") {
-			writeError(w, http.StatusConflict, CodeConflict, err.Error())
-		} else {
-			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
-		}
+		writeSupplyActionError(w, err, CodeQueryFailed)
 		return
 	}
 
@@ -344,11 +365,7 @@ func (a *SupplyAPI) handleSuspendAccount(w http.ResponseWriter, r *http.Request,
 
 	account, err := a.accountService.Suspend(r.Context(), supplierID, accountID)
 	if err != nil {
-		if strings.Contains(err.Error(), "SUP_ACC") {
-			writeError(w, http.StatusConflict, CodeConflict, err.Error())
-		} else {
-			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
-		}
+		writeSupplyActionError(w, err, CodeQueryFailed)
 		return
 	}
 
@@ -370,11 +387,7 @@ func (a *SupplyAPI) handleDeleteAccount(w http.ResponseWriter, r *http.Request, 
 
 	err := a.accountService.Delete(r.Context(), supplierID, accountID)
 	if err != nil {
-		if strings.Contains(err.Error(), "SUP_ACC") {
-			writeError(w, http.StatusConflict, CodeConflict, err.Error())
-		} else {
-			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
-		}
+		writeSupplyActionError(w, err, CodeQueryFailed)
 		return
 	}
 
@@ -579,11 +592,7 @@ func (a *SupplyAPI) handlePublishPackage(w http.ResponseWriter, r *http.Request,
 
 	pkg, err := a.packageService.Publish(r.Context(), supplierID, packageID)
 	if err != nil {
-		if strings.Contains(err.Error(), "SUP_PKG") {
-			writeError(w, http.StatusConflict, CodeConflict, err.Error())
-		} else {
-			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
-		}
+		writeSupplyActionError(w, err, CodeQueryFailed)
 		return
 	}
 
@@ -605,11 +614,7 @@ func (a *SupplyAPI) handlePausePackage(w http.ResponseWriter, r *http.Request, p
 
 	pkg, err := a.packageService.Pause(r.Context(), supplierID, packageID)
 	if err != nil {
-		if strings.Contains(err.Error(), "SUP_PKG") {
-			writeError(w, http.StatusConflict, CodeConflict, err.Error())
-		} else {
-			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
-		}
+		writeSupplyActionError(w, err, CodeQueryFailed)
 		return
 	}
 
@@ -631,11 +636,7 @@ func (a *SupplyAPI) handleUnlistPackage(w http.ResponseWriter, r *http.Request, 
 
 	pkg, err := a.packageService.Unlist(r.Context(), supplierID, packageID)
 	if err != nil {
-		if strings.Contains(err.Error(), "SUP_PKG") {
-			writeError(w, http.StatusConflict, CodeConflict, err.Error())
-		} else {
-			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
-		}
+		writeSupplyActionError(w, err, CodeQueryFailed)
 		return
 	}
 
@@ -657,7 +658,7 @@ func (a *SupplyAPI) handleClonePackage(w http.ResponseWriter, r *http.Request, p
 
 	pkg, err := a.packageService.Clone(r.Context(), supplierID, packageID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
+		writeSupplyActionError(w, err, CodeCreateFailed)
 		return
 	}
 
@@ -877,11 +878,7 @@ func (a *SupplyAPI) handleCancelSettlement(w http.ResponseWriter, r *http.Reques
 
 	settlement, err := a.settlementService.Cancel(r.Context(), supplierID, settlementID)
 	if err != nil {
-		if strings.Contains(err.Error(), "SUP_SET") {
-			writeError(w, http.StatusConflict, CodeConflict, err.Error())
-		} else {
-			writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
-		}
+		writeSupplyActionError(w, err, CodeQueryFailed)
 		return
 	}
 
