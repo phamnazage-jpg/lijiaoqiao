@@ -105,7 +105,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- ==================== 3. supply_idempotency_records 分区 (按月分区，保留7天) ====================
+-- ==================== 3. supply_idempotency_records 幂等表 (非分区，保留7天) ====================
 
 CREATE TABLE IF NOT EXISTS supply_idempotency_records (
     id                  BIGSERIAL,
@@ -121,29 +121,16 @@ CREATE TABLE IF NOT EXISTS supply_idempotency_records (
     expires_at          TIMESTAMPTZ NOT NULL,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id, expires_at)
-) PARTITION BY RANGE (expires_at);
+    PRIMARY KEY (id),
+    CONSTRAINT uq_supply_idempotency_records_key
+        UNIQUE (tenant_id, operator_id, api_path, idempotency_key)
+);
 
+-- 向后兼容保留函数名；幂等表不再分区。
 CREATE OR REPLACE FUNCTION create_idempotency_partition(partition_date DATE)
 RETURNS VOID AS $$
-DECLARE
-    partition_name TEXT;
-    start_date DATE;
-    end_date DATE;
 BEGIN
-    start_date := date_trunc('month', partition_date)::DATE;
-    end_date := (start_date + INTERVAL '1 month')::DATE;
-    partition_name := 'supply_idempotency_records_' || to_char(start_date, 'YYYY_MM');
-
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_class WHERE relname = partition_name
-    ) THEN
-        EXECUTE format(
-            'CREATE TABLE %I PARTITION OF supply_idempotency_records FOR VALUES FROM (%L) TO (%L)',
-            partition_name, start_date, end_date
-        );
-        RAISE NOTICE 'Created partition: %', partition_name;
-    END IF;
+    RAISE NOTICE 'supply_idempotency_records is no longer partitioned; skip partition setup for %', partition_date;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -231,13 +218,15 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_object ON audit_events(object_type, 
 CREATE INDEX IF NOT EXISTS idx_usage_records_order_id ON supply_usage_records(order_id);
 CREATE INDEX IF NOT EXISTS idx_usage_records_started_at ON supply_usage_records(started_at);
 
+CREATE INDEX IF NOT EXISTS idx_idempotency_request_id ON supply_idempotency_records(request_id);
 CREATE INDEX IF NOT EXISTS idx_idempotency_expires_at ON supply_idempotency_records(expires_at);
+CREATE INDEX IF NOT EXISTS idx_idempotency_status_expires ON supply_idempotency_records(status, expires_at);
 
 -- ==================== 8. 注释 ====================
 
 COMMENT ON TABLE audit_events IS '审计事件表 - 按月分区，保留12个月';
 COMMENT ON TABLE supply_usage_records IS '使用记录表 - 按月分区，保留3个月';
-COMMENT ON TABLE supply_idempotency_records IS '幂等记录表 - 按月分区，保留7天以上';
+COMMENT ON TABLE supply_idempotency_records IS '幂等记录表 - 非分区唯一表，保留7天以上';
 
 -- 创建pg_cron作业定期维护分区（需要扩展 pg_cron）
 -- SELECT cron.schedule('partition-maintenance', '0 0 * * *', 'SELECT ensure_future_partitions()');

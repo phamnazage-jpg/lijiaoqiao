@@ -10,11 +10,11 @@ import (
 
 // PartitionConfig 分区配置
 type PartitionConfig struct {
-	TableName        string
-	PartitionType    string // RANGE, LIST
-	PartitionKey     string
-	RetentionMonths  int    // 0 = 永久保留
-	PreCreateMonths  int
+	TableName       string
+	PartitionType   string // RANGE, LIST
+	PartitionKey    string
+	RetentionMonths int // 0 = 永久保留
+	PreCreateMonths int
 }
 
 // PartitionManager 分区管理器
@@ -29,25 +29,18 @@ func NewPartitionManager(pool *pgxpool.Pool) *PartitionManager {
 		pool: pool,
 		config: map[string]*PartitionConfig{
 			"audit_events": {
-				TableName:        "audit_events",
-				PartitionType:    "RANGE",
-				PartitionKey:     "timestamp",
-				RetentionMonths:  12,
-				PreCreateMonths:  3,
+				TableName:       "audit_events",
+				PartitionType:   "RANGE",
+				PartitionKey:    "timestamp",
+				RetentionMonths: 12,
+				PreCreateMonths: 3,
 			},
 			"supply_usage_records": {
-				TableName:        "supply_usage_records",
-				PartitionType:    "RANGE",
-				PartitionKey:     "started_at",
-				RetentionMonths:  3,
-				PreCreateMonths:  3,
-			},
-			"supply_idempotency_records": {
-				TableName:        "supply_idempotency_records",
-				PartitionType:    "RANGE",
-				PartitionKey:     "expires_at",
-				RetentionMonths:  1, // 保留1个月
-				PreCreateMonths:  1,
+				TableName:       "supply_usage_records",
+				PartitionType:   "RANGE",
+				PartitionKey:    "started_at",
+				RetentionMonths: 3,
+				PreCreateMonths: 3,
 			},
 		},
 	}

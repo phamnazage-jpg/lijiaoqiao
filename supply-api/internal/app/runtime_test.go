@@ -662,6 +662,16 @@ func TestBuildRuntimeStartupViews_GroupsHTTPAndBackgroundDependencies(t *testing
 	}
 }
 
+func TestDefaultRuntimeTuning_ExcludesIdempotencyFromPartitionedTables(t *testing.T) {
+	tuning := defaultRuntimeTuning()
+
+	for _, tableName := range tuning.partitionedTables {
+		if tableName == "supply_idempotency_records" {
+			t.Fatal("expected idempotency table to be excluded from partition maintenance")
+		}
+	}
+}
+
 func TestBuildRuntime_GroupsResourcesAndStartupViews(t *testing.T) {
 	runtime, err := buildRuntimeWithFactory(RuntimeOptions{
 		Env:         "dev",
@@ -1182,13 +1192,13 @@ func testRuntimeConfig() *config.Config {
 			ConnMaxLifetime: time.Minute,
 			ConnMaxIdleTime: time.Minute,
 		},
-	Redis: config.RedisConfig{
-		Host:     "127.0.0.1",
-		Port:     6379,
-		Password: "",
-		DB:       0,
-		PoolSize: 2,
-	},
+		Redis: config.RedisConfig{
+			Host:     "127.0.0.1",
+			Port:     6379,
+			Password: "",
+			DB:       0,
+			PoolSize: 2,
+		},
 		Token: config.TokenConfig{
 			SecretKey:          "runtime-test-secret",
 			Algorithm:          "HS256",

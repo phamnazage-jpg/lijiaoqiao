@@ -22,14 +22,21 @@ type IdempotencyConfig struct {
 	Enabled       bool          // 是否启用幂等
 }
 
+type idempotencyRepository interface {
+	GetByKey(ctx context.Context, tenantID, operatorID int64, apiPath, idempotencyKey string) (*repository.IdempotencyRecord, error)
+	UpdateSuccess(ctx context.Context, id int64, responseCode int, responseBody json.RawMessage) error
+	UpdateFailed(ctx context.Context, id int64, responseCode int, responseBody json.RawMessage) error
+	AcquireLock(ctx context.Context, tenantID, operatorID int64, apiPath, idempotencyKey, requestID, payloadHash string, ttl time.Duration) (*repository.IdempotencyRecord, error)
+}
+
 // IdempotencyMiddleware 幂等中间件
 type IdempotencyMiddleware struct {
-	idempotencyRepo *repository.IdempotencyRepository
+	idempotencyRepo idempotencyRepository
 	config          IdempotencyConfig
 }
 
 // NewIdempotencyMiddleware 创建幂等中间件
-func NewIdempotencyMiddleware(repo *repository.IdempotencyRepository, config IdempotencyConfig) *IdempotencyMiddleware {
+func NewIdempotencyMiddleware(repo idempotencyRepository, config IdempotencyConfig) *IdempotencyMiddleware {
 	if config.TTL == 0 {
 		config.TTL = 24 * time.Hour
 	}
@@ -167,16 +174,19 @@ func (m *IdempotencyMiddleware) Wrap(handler IdempotentHandler) http.HandlerFunc
 
 		// 使用AcquireLock获取锁
 		requestID := r.Header.Get("X-Request-Id")
-		lockedRecord, err := m.idempotencyRepo.AcquireLock(ctx, idempKey.TenantID, idempKey.OperatorID, idempKey.APIPath, idempKey.Key, m.config.TTL)
+		lockedRecord, err := m.idempotencyRepo.AcquireLock(
+			ctx,
+			idempKey.TenantID,
+			idempKey.OperatorID,
+			idempKey.APIPath,
+			idempKey.Key,
+			requestID,
+			payloadHash,
+			m.config.TTL,
+		)
 		if err != nil {
 			writeIdempotencyError(w, http.StatusInternalServerError, "IDEMPOTENCY_LOCK_FAILED", err.Error())
 			return
-		}
-
-		// 更新记录中的request_id和payload_hash
-		if lockedRecord.ID != 0 && (lockedRecord.RequestID == "" || lockedRecord.PayloadHash == "") {
-			lockedRecord.RequestID = requestID
-			lockedRecord.PayloadHash = payloadHash
 		}
 
 		// 创建包装器以捕获实际的状态码和响应体

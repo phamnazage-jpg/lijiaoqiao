@@ -51,7 +51,7 @@ func NewIdempotencyRepository(pool *pgxpool.Pool) *IdempotencyRepository {
 func (r *IdempotencyRepository) GetByKey(ctx context.Context, tenantID, operatorID int64, apiPath, idempotencyKey string) (*IdempotencyRecord, error) {
 	query := `
 		SELECT id, tenant_id, operator_id, api_path, idempotency_key,
-			request_id, payload_hash, response_code, response_body,
+			request_id, payload_hash, COALESCE(response_code, 0), COALESCE(response_body, 'null'::jsonb),
 			status, expires_at, created_at, updated_at
 		FROM supply_idempotency_records
 		WHERE tenant_id = $1 AND operator_id = $2 AND api_path = $3 AND idempotency_key = $4
@@ -151,7 +151,7 @@ func (r *IdempotencyRepository) DeleteExpired(ctx context.Context) (int64, error
 func (r *IdempotencyRepository) GetByRequestID(ctx context.Context, requestID string) (*IdempotencyRecord, error) {
 	query := `
 		SELECT id, tenant_id, operator_id, api_path, idempotency_key,
-			request_id, payload_hash, response_code, response_body,
+			request_id, payload_hash, COALESCE(response_code, 0), COALESCE(response_body, 'null'::jsonb),
 			status, expires_at, created_at, updated_at
 		FROM supply_idempotency_records
 		WHERE request_id = $1
@@ -194,17 +194,19 @@ func (r *IdempotencyRepository) CheckExists(ctx context.Context, tenantID, opera
 }
 
 // AcquireLock 尝试获取幂等锁（用于创建记录）
-func (r *IdempotencyRepository) AcquireLock(ctx context.Context, tenantID, operatorID int64, apiPath, idempotencyKey string, ttl time.Duration) (*IdempotencyRecord, error) {
+func (r *IdempotencyRepository) AcquireLock(ctx context.Context, tenantID, operatorID int64, apiPath, idempotencyKey, requestID, payloadHash string, ttl time.Duration) (*IdempotencyRecord, error) {
+	now := time.Now().UTC()
+
 	// 先尝试插入
 	record := &IdempotencyRecord{
 		TenantID:       tenantID,
 		OperatorID:     operatorID,
 		APIPath:        apiPath,
 		IdempotencyKey: idempotencyKey,
-		RequestID:      "", // 稍后填充
-		PayloadHash:    "", // 稍后填充
+		RequestID:      requestID,
+		PayloadHash:    payloadHash,
 		Status:         IdempotencyStatusProcessing,
-		ExpiresAt:      time.Now().Add(ttl),
+		ExpiresAt:      now.Add(ttl),
 	}
 
 	query := `
@@ -219,16 +221,19 @@ func (r *IdempotencyRepository) AcquireLock(ctx context.Context, tenantID, opera
 			request_id = EXCLUDED.request_id,
 			payload_hash = EXCLUDED.payload_hash,
 			status = EXCLUDED.status,
+			response_code = NULL,
+			response_body = NULL,
 			expires_at = EXCLUDED.expires_at,
-			updated_at = now()
-		WHERE supply_idempotency_records.expires_at <= $8
-		RETURNING id, created_at, updated_at, status
+			updated_at = $9
+		WHERE supply_idempotency_records.expires_at <= $9
+		RETURNING id, request_id, payload_hash, expires_at, created_at, updated_at, status
 	`
 
 	err := r.pool.QueryRow(ctx, query,
 		record.TenantID, record.OperatorID, record.APIPath, record.IdempotencyKey,
 		record.RequestID, record.PayloadHash, record.Status, record.ExpiresAt,
-	).Scan(&record.ID, &record.CreatedAt, &record.UpdatedAt, &record.Status)
+		now,
+	).Scan(&record.ID, &record.RequestID, &record.PayloadHash, &record.ExpiresAt, &record.CreatedAt, &record.UpdatedAt, &record.Status)
 
 	if err != nil {
 		// 可能是重复插入

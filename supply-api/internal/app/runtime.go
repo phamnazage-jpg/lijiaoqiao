@@ -81,8 +81,8 @@ type runtimeStartupViews struct {
 }
 
 type runtimeFactory struct {
-	newDB         func(ctx context.Context, cfg config.DatabaseConfig) (*repository.DB, error)
-	newRedisCache func(cfg config.RedisConfig) (*cache.RedisCache, error)
+	newDB          func(ctx context.Context, cfg config.DatabaseConfig) (*repository.DB, error)
+	newRedisCache  func(cfg config.RedisConfig) (*cache.RedisCache, error)
 	newSMSVerifier func(cfg config.SMSConfig) (domain.SMSVerifier, error)
 }
 
@@ -359,7 +359,7 @@ func buildSecurityBundle(
 			Issuer:                    cfg.Token.Issuer,
 			CacheTTL:                  cfg.Token.RevocationCacheTTL,
 			Enabled:                   env != "dev",
-			BruteForceMaxAttempts:     5,             // MED-12: 暴力破解保护，默认5次失败后锁定
+			BruteForceMaxAttempts:     5,                // MED-12: 暴力破解保护，默认5次失败后锁定
 			BruteForceLockoutDuration: 15 * time.Minute, // MED-12: 默认锁定15分钟
 		}, tokenCache, tokenBackend, adapter.NewAuditEmitterAdapter(auditStore)),
 		revocationSubscriber: revocationSubscriber,
@@ -478,7 +478,6 @@ func defaultRuntimeTuning() runtimeTuning {
 		partitionedTables: []string{
 			"audit_events",
 			"supply_usage_records",
-			"supply_idempotency_records",
 		},
 	}
 }
