@@ -17,6 +17,17 @@
 4. 边界审计：签发/校验失败/吊销/越权事件全量入审计。
 5. 指标可观测：可计算 M-013~M-016 与 M-021。
 
+## 2.1 唯一 Authority 约束
+
+`platform-token-runtime` 是唯一 token authority。
+
+约束：
+
+1. `gateway` 只负责接入、校验、转发和入口审计，不再在非 `dev` 环境承载本地 token authority。
+2. `supply-api` 只消费 canonical principal，不再拥有独立的 token authority 语义。
+3. token 生命周期、状态解释、吊销语义和 introspection 字段都以 `platform-token-runtime` 为单一真源。
+4. 任意 README、OpenAPI 草案、DDL 和运行时代码都不得声明第二个 authority。
+
 ## 3. 角色与权限
 
 | 角色 | 能力 | 约束 |
@@ -31,6 +42,7 @@
 |---|---|---|
 | token_id | string | 平台内部唯一标识 |
 | subject_id | string | 用户/服务主体ID |
+| tenant_id | string | 租户唯一标识 |
 | role | string | owner/viewer/admin |
 | issued_at | datetime | 签发时间 |
 | expires_at | datetime | 过期时间 |
@@ -38,6 +50,25 @@
 | scope | string[] | 授权范围 |
 | request_id | string | 请求追踪ID |
 | revoked_reason | string | 吊销原因（可空） |
+
+### 4.1 Canonical Principal 字段清单
+
+canonical principal 至少包含以下字段：
+
+1. `token_id`
+2. `subject_id`
+3. `tenant_id`
+4. `role`
+5. `scope`
+6. `issued_at`
+7. `expires_at`
+8. `status`
+
+说明：
+
+1. `gateway` 和 `supply-api` 只消费 canonical principal，不自行扩展 authority 语义。
+2. 如果后续补充 `project_id`、`operator_id`、`metadata`，必须同时更新 DDL、OpenAPI、存储模型和审计字段。
+
 
 ## 5. 生命周期状态机
 
