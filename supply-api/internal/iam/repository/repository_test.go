@@ -329,3 +329,53 @@ func TestUpdateRolePreservesExplicitUpdatedIP(t *testing.T) {
 		t.Fatalf("expected explicit updated_ip to be preserved, got %#v", db.execArgs[4])
 	}
 }
+
+func TestAssignRoleStoresZeroGrantedByAsNil(t *testing.T) {
+	db := &stubIAMDB{
+		queryRow: stubIAMRow{err: pgx.ErrNoRows},
+		execTag:  pgconn.NewCommandTag("INSERT 0 1"),
+	}
+	repo := newPostgresIAMRepositoryWithDB(db)
+
+	err := repo.AssignRole(context.Background(), &model.UserRoleMapping{
+		UserID:    7,
+		RoleID:    9,
+		TenantID:  42,
+		GrantedBy: 0,
+		RequestID: "req-assign-1",
+	})
+	if err != nil {
+		t.Fatalf("AssignRole() error = %v", err)
+	}
+	if len(db.execArgs) != 7 {
+		t.Fatalf("unexpected exec args length: got=%d want=7", len(db.execArgs))
+	}
+	if db.execArgs[4] != nil {
+		t.Fatalf("expected zero granted_by to be stored as nil, got %#v", db.execArgs[4])
+	}
+}
+
+func TestAssignRolePreservesExplicitGrantedBy(t *testing.T) {
+	db := &stubIAMDB{
+		queryRow: stubIAMRow{err: pgx.ErrNoRows},
+		execTag:  pgconn.NewCommandTag("INSERT 0 1"),
+	}
+	repo := newPostgresIAMRepositoryWithDB(db)
+
+	err := repo.AssignRole(context.Background(), &model.UserRoleMapping{
+		UserID:    7,
+		RoleID:    9,
+		TenantID:  42,
+		GrantedBy: 1001,
+		RequestID: "req-assign-2",
+	})
+	if err != nil {
+		t.Fatalf("AssignRole() error = %v", err)
+	}
+	if len(db.execArgs) != 7 {
+		t.Fatalf("unexpected exec args length: got=%d want=7", len(db.execArgs))
+	}
+	if db.execArgs[4] != int64(1001) {
+		t.Fatalf("expected explicit granted_by to be preserved, got %#v", db.execArgs[4])
+	}
+}

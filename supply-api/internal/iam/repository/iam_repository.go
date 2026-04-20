@@ -90,6 +90,13 @@ func iamNullableIP(value string) interface{} {
 	return value
 }
 
+func iamNullableInt64Param(value int64) interface{} {
+	if value == 0 {
+		return nil
+	}
+	return value
+}
+
 // Ensure interfaces
 var _ IAMRepository = (*PostgresIAMRepository)(nil)
 
@@ -427,7 +434,7 @@ func (r *PostgresIAMRepository) AssignRole(ctx context.Context, userRole *model.
 	_, err = r.pool.Exec(ctx, `
 		INSERT INTO iam_user_roles (user_id, role_id, tenant_id, is_active, granted_by, expires_at, request_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, userRole.UserID, userRole.RoleID, userRole.TenantID, true, userRole.GrantedBy, userRole.ExpiresAt, userRole.RequestID)
+	`, userRole.UserID, userRole.RoleID, userRole.TenantID, true, iamNullableInt64Param(userRole.GrantedBy), userRole.ExpiresAt, userRole.RequestID)
 
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
