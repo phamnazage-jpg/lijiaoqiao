@@ -22,11 +22,52 @@ var globalRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 type LoadBalancerStrategy string
 
 const (
-	StrategyLatency     LoadBalancerStrategy = "latency"
-	StrategyRoundRobin  LoadBalancerStrategy = "round_robin"
-	StrategyWeighted    LoadBalancerStrategy = "weighted"
+	StrategyLatency      LoadBalancerStrategy = "latency"
+	StrategyRoundRobin   LoadBalancerStrategy = "round_robin"
+	StrategyWeighted     LoadBalancerStrategy = "weighted"
 	StrategyAvailability LoadBalancerStrategy = "availability"
 )
+
+// CircuitState 熔断器状态
+type CircuitState int
+
+const (
+	CircuitClosed   CircuitState = iota // 熔断器关闭，正常流量
+	CircuitOpen                         // 熔断器打开，流量被拒绝
+	CircuitHalfOpen                     // 熔断器半开，允许试探流量
+)
+
+// String 实现 fmt.Stringer
+func (s CircuitState) String() string {
+	switch s {
+	case CircuitClosed:
+		return "CircuitClosed"
+	case CircuitOpen:
+		return "CircuitOpen"
+	case CircuitHalfOpen:
+		return "CircuitHalfOpen"
+	default:
+		return "Unknown"
+	}
+}
+
+// CircuitBreakerConfig 熔断器配置
+type CircuitBreakerConfig struct {
+	FailureRateThreshold     float64       // 失败率阈值（默认0.5）
+	ConsecutiveFailureLimit  int64         // 连续失败次数阈值（默认5）
+	HalfOpenSuccessThreshold int64         // 半开状态需要连续成功的次数（默认3）
+	OpenTimeout              time.Duration // 熔断打开后的等待时间（默认30s）
+}
+
+// DefaultCircuitBreakerConfig 返回默认配置
+func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
+	return CircuitBreakerConfig{
+		FailureRateThreshold:     0.5,
+		ConsecutiveFailureLimit:  5,
+		HalfOpenSuccessThreshold: 3,
+		OpenTimeout:              30 * time.Second,
+	}
+}
 
 // ProviderHealth Provider健康状态
 type ProviderHealth struct {
@@ -36,6 +77,13 @@ type ProviderHealth struct {
 	FailureRate   float64
 	Weight        float64
 	LastCheckTime time.Time
+
+	// P3-B: 熔断器字段
+	CircuitState         CircuitState // 当前熔断器状态
+	ConsecutiveFailures  int64        // 连续失败次数（成功时重置）
+	ConsecutiveSuccesses int64        // 连续成功次数（失败时重置）
+	LastStateChange      time.Time    // 上次状态变更时间
+	OpenReason           string       // 熔断打开的原因（用于调试/告警）
 }
 
 // RegisteredModel 描述当前路由器已注册的可见模型。
@@ -51,14 +99,19 @@ type Router struct {
 	strategy          LoadBalancerStrategy
 	mu                sync.RWMutex
 	roundRobinCounter uint64 // RoundRobin策略的原子计数器
+
+	// P3-B: 熔断器
+	circuitConfig CircuitBreakerConfig
+	healthChecker *HealthChecker // 后台健康检查器
 }
 
 // NewRouter 创建路由器
 func NewRouter(strategy LoadBalancerStrategy) *Router {
 	return &Router{
-		providers: make(map[string]adapter.ProviderAdapter),
-		health:    make(map[string]*ProviderHealth),
-		strategy:  strategy,
+		providers:     make(map[string]adapter.ProviderAdapter),
+		health:        make(map[string]*ProviderHealth),
+		strategy:      strategy,
+		circuitConfig: DefaultCircuitBreakerConfig(),
 	}
 }
 
@@ -115,7 +168,8 @@ func (r *Router) isProviderAvailable(name, model string) bool {
 		return false
 	}
 
-	if !health.Available {
+	// P3-B: 熔断器打开时不允许流量
+	if health.CircuitState == CircuitOpen {
 		return false
 	}
 
@@ -125,13 +179,28 @@ func (r *Router) isProviderAvailable(name, model string) bool {
 		return false
 	}
 
+	supportsModel := false
 	for _, m := range provider.SupportedModels() {
 		if m == model || m == "*" {
-			return true
+			supportsModel = true
+			break
 		}
 	}
+	if !supportsModel {
+		return false
+	}
 
-	return false
+	// P3-B: 半开状态允许试探请求通过（不管 Available 是否为 false）
+	if health.CircuitState == CircuitHalfOpen {
+		return true
+	}
+
+	// Closed 状态：走原有的 Available 检查
+	if !health.Available {
+		return false
+	}
+
+	return true
 }
 
 func (r *Router) selectByRoundRobin(candidates []string) (adapter.ProviderAdapter, error) {
@@ -303,12 +372,63 @@ func (r *Router) RecordResult(ctx context.Context, providerName string, success 
 		}
 	}
 
-	// 检查是否应该标记为不可用
-	if health.FailureRate > 0.5 {
-		health.Available = false
+	health.LastCheckTime = time.Now()
+
+	// P3-B: 熔断器状态机接管可用性判断，不再直接基于 FailureRate 设置 Available
+	// 状态转换在 transitionCircuit 中处理
+	_ = r.transitionCircuitLocked(health, success)
+}
+
+// transitionCircuitLocked 在已持有锁的情况下执行熔断器状态转换
+func (r *Router) transitionCircuitLocked(health *ProviderHealth, success bool) bool {
+	cfg := r.circuitConfig
+	now := time.Now()
+	prevState := health.CircuitState
+
+	switch health.CircuitState {
+	case CircuitClosed:
+		if !success {
+			health.ConsecutiveFailures++
+			health.ConsecutiveSuccesses = 0
+
+			if health.FailureRate > cfg.FailureRateThreshold ||
+				health.ConsecutiveFailures >= cfg.ConsecutiveFailureLimit {
+				health.CircuitState = CircuitOpen
+				health.OpenReason = "failure_rate_or_consecutive_failures"
+				health.LastStateChange = now
+				health.Available = false
+				metrics.RecordCircuitStateChange(health.Name, "closed", "open")
+			}
+		} else {
+			health.ConsecutiveSuccesses++
+			health.ConsecutiveFailures = 0
+		}
+
+	case CircuitOpen:
+		// Open 状态：等待超时后由健康检查循环处理，不在这里转换
+
+	case CircuitHalfOpen:
+		if success {
+			health.ConsecutiveSuccesses++
+			if health.ConsecutiveSuccesses >= cfg.HalfOpenSuccessThreshold {
+				health.CircuitState = CircuitClosed
+				health.LastStateChange = now
+				health.Available = true
+				health.ConsecutiveFailures = 0
+				health.FailureRate = 0
+				metrics.RecordCircuitStateChange(health.Name, "half_open", "closed")
+			}
+		} else {
+			health.ConsecutiveFailures++
+			health.ConsecutiveSuccesses = 0
+			health.CircuitState = CircuitOpen
+			health.LastStateChange = now
+			health.OpenReason = "half_open_probe_failed"
+			metrics.RecordCircuitStateChange(health.Name, "half_open", "open")
+		}
 	}
 
-	health.LastCheckTime = time.Now()
+	return prevState != health.CircuitState
 }
 
 // UpdateHealth 更新健康状态
@@ -336,7 +456,31 @@ func (r *Router) GetHealthStatus() map[string]*ProviderHealth {
 			FailureRate:   health.FailureRate,
 			Weight:        health.Weight,
 			LastCheckTime: health.LastCheckTime,
+			CircuitState:  health.CircuitState,
 		}
 	}
 	return result
+}
+
+// StartHealthChecker 启动后台健康检查（由bootstrap调用）
+func (r *Router) StartHealthChecker(interval time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.healthChecker != nil {
+		return // 已经启动
+	}
+	r.healthChecker = NewHealthChecker(r, interval, r.circuitConfig)
+	r.healthChecker.Start()
+}
+
+// StopHealthChecker 停止后台健康检查（由shutdown调用）
+func (r *Router) StopHealthChecker() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.healthChecker != nil {
+		r.healthChecker.Stop()
+		r.healthChecker = nil
+	}
 }

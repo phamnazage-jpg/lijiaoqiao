@@ -22,7 +22,7 @@ func main() {
 		logger.Fatalf("failed to load config: %v", err)
 	}
 
-	server, err := app.BuildServer(cfg)
+	bundle, err := app.BuildServer(cfg)
 	if err != nil {
 		logger.Fatalf("failed to build server: %v", err)
 	}
@@ -31,8 +31,8 @@ func main() {
 
 	// 启动Server
 	go func() {
-		logger.Infof("starting gateway server on %s", server.Addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Infof("starting gateway server on %s", bundle.Server.Addr)
+		if err := bundle.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErrCh <- err
 		}
 	}()
@@ -49,11 +49,14 @@ func main() {
 
 	logger.Info("shutting down server...")
 
+	// P3-B-06: 停止后台健康检查器
+	bundle.ShutdownFunc()
+
 	// 优雅关闭
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := server.Shutdown(ctx); err != nil {
+	if err := bundle.Server.Shutdown(ctx); err != nil {
 		logger.Fatalf("server forced to shutdown: %v", err)
 	}
 

@@ -106,6 +106,19 @@ func GetCacheHitRate() float64 {
 	return float64(hits) / float64(total)
 }
 
+// P3-B-08: 熔断器状态变更指标
+var circuitStateChanges atomic.Int64
+
+// RecordCircuitStateChange 记录熔断器状态变更
+func RecordCircuitStateChange(providerName, fromState, toState string) {
+	circuitStateChanges.Add(1)
+}
+
+// GetCircuitStateChanges 返回熔断器状态变更总数
+func GetCircuitStateChanges() int64 {
+	return circuitStateChanges.Load()
+}
+
 func getProviderMetrics(name string) *providerMetrics {
 	gwGlobal.providerMu.RLock()
 	m, ok := gwGlobal.providerRequests[name]
@@ -144,6 +157,23 @@ func Export() string {
 		"# HELP gateway_token_runtime_latency_ms_avg Average token-runtime introspection latency in ms",
 		"# TYPE gateway_token_runtime_latency_ms_avg gauge",
 		formatFloat("gateway_token_runtime_latency_ms_avg", avgLatencyNs/1e6),
+		// P3-A-05: 缓存命中率指标
+		"# HELP gateway_cache_hits_total Token-runtime cache hits",
+		"# TYPE gateway_cache_hits_total counter",
+		formatInt("gateway_cache_hits_total", cacheHits.Load()),
+		"# HELP gateway_cache_misses_total Token-runtime cache misses",
+		"# TYPE gateway_cache_misses_total counter",
+		formatInt("gateway_cache_misses_total", cacheMisses.Load()),
+		"# HELP gateway_cache_evictions_total Token-runtime cache evictions",
+		"# TYPE gateway_cache_evictions_total counter",
+		formatInt("gateway_cache_evictions_total", cacheEvictions.Load()),
+		"# HELP gateway_cache_hit_rate Cache hit rate (0.0~1.0)",
+		"# TYPE gateway_cache_hit_rate gauge",
+		formatFloat("gateway_cache_hit_rate", GetCacheHitRate()),
+		// P3-B-08: 熔断器状态变更指标
+		"# HELP gateway_circuit_state_changes_total Circuit breaker state changes",
+		"# TYPE gateway_circuit_state_changes_total counter",
+		formatInt("gateway_circuit_state_changes_total", circuitStateChanges.Load()),
 	}
 
 	m.providerMu.RLock()

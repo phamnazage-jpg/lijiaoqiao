@@ -17,7 +17,16 @@ import (
 	"lijiaoqiao/gateway/internal/router"
 )
 
-func BuildServer(cfg *config.Config) (*http.Server, error) {
+// ServerBundle 服务器启动Bundle
+// P3-B-06: 包含 router 引用以便管理健康检查器生命周期
+type ServerBundle struct {
+	Server       *http.Server
+	Router       *router.Router
+	ShutdownFunc func()
+}
+
+// BuildServer 创建服务器Bundle
+func BuildServer(cfg *config.Config) (*ServerBundle, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is required")
 	}
@@ -75,7 +84,16 @@ func BuildServer(cfg *config.Config) (*http.Server, error) {
 		IdleTimeout:  normalized.Server.IdleTimeout,
 	}
 
-	return server, nil
+	// P3-B-06: 启动后台健康检查循环
+	r.StartHealthChecker(normalized.Router.HealthCheckInterval)
+
+	bundle := &ServerBundle{
+		Server:       server,
+		Router:       r,
+		ShutdownFunc: func() { r.StopHealthChecker() },
+	}
+
+	return bundle, nil
 }
 
 func BuildMux(h *handler.Handler, limiter *ratelimit.Middleware, authConfig middleware.AuthMiddlewareConfig, corsConfig middleware.CORSConfig) http.Handler {
@@ -186,12 +204,12 @@ func buildTimeoutClient(cfg config.HTTPTimeoutConfig) *http.Client {
 	}
 
 	transport := &http.Transport{
-		TLSClientConfig:      &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
 		DialContext:         dialer.DialContext,
-		IdleConnTimeout:      cfg.IdleConnTimeout,
+		IdleConnTimeout:     cfg.IdleConnTimeout,
 		MaxIdleConnsPerHost: cfg.MaxIdleConnsPerHost,
-		MaxIdleConns:         cfg.MaxIdleConnsPerHost * 2,
-		ForceAttemptHTTP2:    true,
+		MaxIdleConns:        cfg.MaxIdleConnsPerHost * 2,
+		ForceAttemptHTTP2:   true,
 	}
 
 	return &http.Client{

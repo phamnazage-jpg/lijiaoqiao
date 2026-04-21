@@ -20,15 +20,15 @@ func TestBuildServer_FromConfigProviders(t *testing.T) {
 		}},
 	}
 
-	server, err := BuildServer(cfg)
+	bundle, err := BuildServer(cfg)
 	if err != nil {
 		t.Fatalf("BuildServer returned error: %v", err)
 	}
-	if server == nil {
-		t.Fatal("expected server")
+	if bundle == nil {
+		t.Fatal("expected server bundle")
 	}
-	if server.Addr != "0.0.0.0:8080" {
-		t.Fatalf("unexpected addr: %s", server.Addr)
+	if bundle.Server.Addr != "0.0.0.0:8080" {
+		t.Fatalf("unexpected addr: %s", bundle.Server.Addr)
 	}
 }
 
@@ -50,7 +50,7 @@ func TestBuildMux_HealthRouteRemainsOpen(t *testing.T) {
 		}},
 	}
 
-	server, err := BuildServer(cfg)
+	bundle, err := BuildServer(cfg)
 	if err != nil {
 		t.Fatalf("BuildServer returned error: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestBuildMux_HealthRouteRemainsOpen(t *testing.T) {
 		t.Fatalf("new request: %v", err)
 	}
 	rr := newTestResponseRecorder()
-	server.Handler.ServeHTTP(rr, req)
+	bundle.Server.Handler.ServeHTTP(rr, req)
 	if rr.code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.code)
 	}
@@ -110,12 +110,12 @@ func TestBuildServer_DevelopmentAllowsDefaultSecurityFallbacks(t *testing.T) {
 		}},
 	}
 
-	server, err := buildServerWithoutPanic(t, cfg)
+	bundle, err := buildServerWithoutPanic(t, cfg)
 	if err != nil {
 		t.Fatalf("expected dev config to succeed, got %v", err)
 	}
-	if server == nil {
-		t.Fatal("expected server")
+	if bundle == nil {
+		t.Fatal("expected server bundle")
 	}
 }
 
@@ -128,7 +128,7 @@ func TestResolveStrategy_ExperimentalStrategiesFallbackToLatency(t *testing.T) {
 	}
 }
 
-func buildServerWithoutPanic(t *testing.T, cfg *config.Config) (_ *http.Server, err error) {
+func buildServerWithoutPanic(t *testing.T, cfg *config.Config) (_ *ServerBundle, err error) {
 	t.Helper()
 
 	defer func() {
