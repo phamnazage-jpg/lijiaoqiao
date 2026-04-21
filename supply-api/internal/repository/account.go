@@ -105,7 +105,7 @@ func (r *AccountRepository) GetByID(ctx context.Context, supplierID, id int64) (
 		&account.TosCompliant, &account.TosCheckResult,
 		&account.TotalRequests, &account.TotalTokens, &account.TotalCost, &account.SuccessRate,
 		&account.RiskScore, &account.RiskReason, &account.IsFrozen, &account.FrozenReason,
-		&account.CredentialCipherAlgo, &account.CredentialKMSKeyAlias, &account.CredentialKeyVersion,
+		&account.CredentialCipherAlgo, &account.CredentialKeyAlias, &account.CredentialKeyVersion,
 		&account.QuotaUnit, &account.CurrencyCode, &account.Version,
 		&createdIP, &updatedIP, &account.AuditTraceID,
 		&account.CreatedAt, &account.UpdatedAt,

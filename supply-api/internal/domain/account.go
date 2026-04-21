@@ -71,7 +71,7 @@ type Account struct {
 
 	// 加密元数据字段 (XR-001)
 	CredentialCipherAlgo  string     `json:"credential_cipher_algo,omitempty"`
-	CredentialKMSKeyAlias string     `json:"credential_kms_key_alias,omitempty"`
+	CredentialKeyAlias    string     `json:"credential_key_alias,omitempty"` // 本地加密密钥别名（非KMS）
 	CredentialKeyVersion  int        `json:"credential_key_version,omitempty"`
 	CredentialFingerprint string     `json:"credential_fingerprint,omitempty"`
 	LastRotationAt        *time.Time `json:"last_rotation_at,omitempty"`

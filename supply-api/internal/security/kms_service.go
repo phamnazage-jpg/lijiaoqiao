@@ -14,7 +14,15 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-// ==================== P0-02 KMS加密方案 ====================
+// ==================== P0-02 本地加密服务 ====================
+// 注意：KMSService 是本地信封加密实现，非真实 KMS（如 AWS KMS / HashiCorp Vault）。
+// 当前实现在 dev/local 模式下使用 HKDF-SHA256 派生 DEK。
+// 生产部署时应通过 ProviderType 配置集成真实 KMS。
+//
+// 用语说明（KMS表述清理 P4-D）：
+//   - "KMS" (Key Management Service) — 真实外部密钥管理服务（AWS KMS / HashiCorp Vault）
+//   - 本模块使用 "local" ProviderType，是本地加密实现，非真实 KMS
+//   - CredentialKeyAlias 字段记录本地加密密钥别名，与外部 KMS 无关
 
 // AES-256-GCM算法参数
 const (
