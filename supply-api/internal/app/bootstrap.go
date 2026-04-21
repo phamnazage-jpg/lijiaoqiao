@@ -9,6 +9,7 @@ import (
 
 	"lijiaoqiao/supply-api/internal/config"
 	"lijiaoqiao/supply-api/internal/httpapi"
+	"lijiaoqiao/supply-api/internal/metrics"
 	"lijiaoqiao/supply-api/internal/middleware"
 	"lijiaoqiao/supply-api/internal/pkg/logging"
 )
@@ -156,6 +157,14 @@ func buildRouteMux(opts buildRouteMuxOptions) *http.ServeMux {
 	mux := http.NewServeMux()
 	healthHandler := httpapi.NewHealthHandlerWithDefaults(opts.DBHealthCheck, opts.RedisHealthCheck)
 	healthHandler.RegisterRoutes(mux)
+	// P3-C: /metrics 端点（Prometheus-text 格式）
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte(metrics.Export()))
+	})
+	// P3-C-05: /health 别名（统一路径，对齐 gateway/platform-token-runtime）
+	mux.HandleFunc("/health", healthHandler.ServeHealth)
+	mux.HandleFunc("/healthz", healthHandler.ServeHealth)
 	opts.SupplyAPI.Register(mux)
 	opts.AlertAPI.Register(mux)
 	if opts.IAMHandler != nil {

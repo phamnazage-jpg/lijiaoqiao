@@ -239,7 +239,12 @@ func (r *RemoteTokenRuntime) Verify(ctx context.Context, rawToken string) (Verif
 		return VerifiedToken{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Request-Id", fmt.Sprintf("gateway-introspect-%d", r.now().UnixNano()))
+	// P3-C-08: 从请求上下文透传 trace ID，避免生成新的 ID 截断链路
+	if reqID, ok := RequestIDFromContext(ctx); ok && reqID != "" {
+		req.Header.Set("X-Request-Id", reqID)
+	} else {
+		req.Header.Set("X-Request-Id", fmt.Sprintf("gateway-introspect-%d", r.now().UnixNano()))
+	}
 
 	start := time.Now()
 	resp, err := r.httpClient.Do(req)
