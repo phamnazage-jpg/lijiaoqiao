@@ -1,203 +1,214 @@
 #!/usr/bin/env bash
+# scripts/ci/staging_release_pipeline.sh
+# Staging 发布流水线 — 生成 manifest.json 作为硬门禁载体
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-ENV_FILE_REL="${1:-scripts/supply-gate/.env}"
-if [[ "${ENV_FILE_REL}" == /* ]]; then
-  ENV_FILE="${ENV_FILE_REL}"
-else
-  ENV_FILE="${ROOT_DIR}/${ENV_FILE_REL}"
-fi
-TS="$(date +%F_%H%M%S)"
+SCRIPT_DIR="${ROOT_DIR}/scripts/ci"
 OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
 RELEASES_DIR="${ROOT_DIR}/reports/releases"
-mkdir -p "${OUT_DIR}"
+LIB_FILE="${SCRIPT_DIR}/lib/manifest_lib.sh"
+mkdir -p "${OUT_DIR}" "${RELEASES_DIR}"
 
-REPORT_FILE="${OUT_DIR}/staging_release_pipeline_${TS}.md"
-LOG_FILE="${OUT_DIR}/staging_release_pipeline_${TS}.log"
-ALLOW_LOCAL_MOCK_STAGING="${ALLOW_LOCAL_MOCK_STAGING:-0}"
+TS="$(date +%F_%H%M%S)"
+PIPELINE_LOG="${OUT_DIR}/staging_release_pipeline_${TS}.log"
+PIPELINE_REPORT="${OUT_DIR}/staging_release_pipeline_${TS}.md"
 
-# Manifest migration design:
-# - run_id format: YYYYMMDD_HHMMSS_<shortsha>_<env>[-rNN]
-# - release root: ${RELEASES_DIR}/<run_id>/
-# - manifest path: ${RELEASES_DIR}/<run_id>/manifest.json
-# - this script becomes the manifest seed writer and must pass the resolved manifest path
-#   to downstream scripts instead of relying on latest_file_or_empty().
+# shellcheck disable=SC1091
+source "${LIB_FILE}"
 
 log() {
-  echo "$1" | tee -a "${LOG_FILE}"
+  echo "$1" | tee -a "${PIPELINE_LOG}"
 }
 
-latest_file_or_empty() {
-  local pattern="$1"
-  local latest
-  latest="$(ls -1t ${pattern} 2>/dev/null | head -n 1 || true)"
-  echo "${latest}"
+# ──────────────────────────────────────────────────────────────
+# 步骤 0：生成 manifest（run_id + created_at + environment）
+# ──────────────────────────────────────────────────────────────
+STEP=0
+log "[STEP-00] 生成 manifest..."
+
+RUN_ID="staging_${TS}"
+MANIFEST_FILE="${RELEASES_DIR}/${RUN_ID}/manifest.json"
+MANIFEST_DIR="${RELEASES_DIR}"
+
+manifest_generate --run-id "${RUN_ID}" --staging
+manifest_validate "${MANIFEST_FILE}" || {
+  log "[FAIL] manifest 验证失败"
+  exit 1
 }
 
-read_env_api_base_url() {
-  local env_path="$1"
-  grep -E '^API_BASE_URL=' "${env_path}" | head -n 1 | cut -d'=' -f2- | tr -d '\"' || true
-}
+manifest_set "pipeline_log" "${PIPELINE_LOG}" "${MANIFEST_FILE}"
 
-is_mock_staging_env() {
-  local env_path="$1"
-  if echo "${env_path}" | grep -Eiq 'local-mock'; then
-    return 0
-  fi
-  if [[ ! -f "${env_path}" ]]; then
-    return 1
-  fi
-  local api_base
-  api_base="$(read_env_api_base_url "${env_path}")"
-  if echo "${api_base}" | grep -Eiq '127\.0\.0\.1|localhost|staging\.example\.com'; then
-    return 0
-  fi
-  return 1
-}
+log "[STEP-00] DONE: manifest=${MANIFEST_FILE} run_id=${RUN_ID}"
 
-if [[ ! -f "${ENV_FILE}" ]]; then
-  log "[FAIL] env file not found: ${ENV_FILE}"
+# ──────────────────────────────────────────────────────────────
+# 步骤 1：repo_integrity_check（含 contract gate）
+# 门禁：任何非零退出码 → 整个 pipeline 失败
+# ──────────────────────────────────────────────────────────────
+STEP=1
+log ""
+log "[STEP-01] repo_integrity_check（含 Phase 1 contract gate）..."
+
+R1_LOG="${OUT_DIR}/repo_integrity_${TS}.log"
+R1_REPORT="${OUT_DIR}/repo_integrity_${TS}.md"
+
+# repo_integrity_check.sh 执行顺序：
+#   STEP-01~04: 服务单元+集成测试
+#   STEP-R: contract gate（四个场景）
+if bash "${SCRIPT_DIR}/repo_integrity_check.sh" \
+  > >(tee "${R1_LOG}") 2>&1; then
+  manifest_set "decision_inputs.repo_integrity" "PASS" "${MANIFEST_FILE}"
+  manifest_set "artifact_paths.repo_integrity_log" "${R1_LOG}" "${MANIFEST_FILE}"
+  manifest_set "contract_results.repo_integrity" "PASS" "${MANIFEST_FILE}"
+  log "[STEP-01] PASS"
+else
+  manifest_set "decision_inputs.repo_integrity" "FAIL" "${MANIFEST_FILE}"
+  manifest_set "artifact_paths.repo_integrity_log" "${R1_LOG}" "${MANIFEST_FILE}"
+  manifest_set "contract_results.repo_integrity" "FAIL" "${MANIFEST_FILE}"
+  log "[STEP-01] FAIL — repo_integrity_check 非零退出"
+  log "[FAIL] staging pipeline aborted at STEP-01"
   exit 1
 fi
 
-MOCK_SERVER_PID=""
-ENV_CLASSIFICATION="REAL_STAGING"
-if is_mock_staging_env "${ENV_FILE}"; then
-  ENV_CLASSIFICATION="LOCAL_MOCK"
-  if [[ "${ALLOW_LOCAL_MOCK_STAGING}" != "1" ]]; then
-    log "[FAIL] local/mock env detected (${ENV_FILE_REL})."
-    log "[FAIL] for safety, set ALLOW_LOCAL_MOCK_STAGING=1 to run this rehearsal explicitly."
-    exit 1
-  fi
-  log "[WARN] local/mock env acknowledged by ALLOW_LOCAL_MOCK_STAGING=1; result cannot be used as real staging evidence."
-fi
-
-if [[ "${ENV_CLASSIFICATION}" == "LOCAL_MOCK" ]]; then
-  API_BASE_URL="$(read_env_api_base_url "${ENV_FILE}")"
-  if [[ -n "${API_BASE_URL}" ]] && echo "${API_BASE_URL}" | grep -Eiq '127\.0\.0\.1|localhost'; then
-    if ! curl -sS -m 2 -I "${API_BASE_URL}" >/dev/null 2>&1; then
-      log "[INFO] local/mock API unreachable, starting mock server for rehearsal."
-      nohup python3 "${ROOT_DIR}/scripts/mock/supply_gateway_mock_server.py" \
-        > "${OUT_DIR}/staging_mock_server_${TS}.log" 2>&1 &
-      MOCK_SERVER_PID=$!
-      for _ in {1..20}; do
-        if curl -sS -m 2 -I "${API_BASE_URL}" >/dev/null 2>&1; then
-          break
-        fi
-        sleep 0.2
-      done
-      if ! curl -sS -m 2 -I "${API_BASE_URL}" >/dev/null 2>&1; then
-        log "[FAIL] cannot start local/mock server for ${API_BASE_URL}"
-        exit 1
-      fi
-      log "[INFO] local/mock server started pid=${MOCK_SERVER_PID}"
-      trap 'kill "${MOCK_SERVER_PID}" >/dev/null 2>&1 || true' EXIT
-    else
-      log "[INFO] local/mock API already reachable: ${API_BASE_URL}"
-    fi
-  fi
-fi
-
-STEP_RESULTS=()
-
-run_step() {
-  local step_id="$1"
-  local title="$2"
-  local cmd="$3"
-  local out_file="${OUT_DIR}/${step_id,,}_${TS}.out.log"
-
-  log "[INFO] ${step_id} ${title} start"
-  set +e
-  bash -lc "${cmd}" > "${out_file}" 2>&1
-  local rc=$?
-  set -e
-
-  if [[ ${rc} -eq 0 ]]; then
-    STEP_RESULTS+=("${step_id}|PASS|${title}|${out_file}")
-    log "[PASS] ${step_id} rc=${rc}"
-  else
-    STEP_RESULTS+=("${step_id}|FAIL|${title}|${out_file}")
-    log "[FAIL] ${step_id} rc=${rc}"
-  fi
+# manifest 硬门禁：run_id 不能为空
+manifest_hard_gate_run_id "${MANIFEST_FILE}" || {
+  log "[FAIL] run_id hard gate failed"
+  exit 1
 }
 
-run_step \
-  "STEP-01" \
-  "Staging precheck and run_all" \
-  "cd \"${ROOT_DIR}\" && bash \"scripts/supply-gate/staging_precheck_and_run.sh\" \"${ENV_FILE}\""
+# ──────────────────────────────────────────────────────────────
+# 步骤 2：superpowers_stage_validate（硬门禁）
+# 门禁：NO_GO → 失败；CONDITIONAL_GO → 失败（不再放行）
+# ──────────────────────────────────────────────────────────────
+STEP=2
+log ""
+log "[STEP-02] superpowers_stage_validate（staging 硬门禁）..."
 
-run_step \
-  "STEP-02" \
-  "Superpowers release pipeline with staging env" \
-  "cd \"${ROOT_DIR}\" && STAGING_ENV_FILE=\"${ENV_FILE_REL}\" bash \"scripts/ci/superpowers_release_pipeline.sh\""
+SP_LOG="${OUT_DIR}/superpowers_stage_validation_${TS}.log"
+SP_REPORT="${OUT_DIR}/superpowers_stage_validation_${TS}.md"
 
-# Planned manifest inputs for staging_evidence_autofill.sh:
-# - decision_inputs.staging_run_log
-# - decision_inputs.stage_report
-# - decision_inputs.token_runtime_readiness_report
-# - decision_inputs.tok007_recheck_report
-# - artifact_paths.superpowers_release_pipeline_report
-LATEST_STAGING_RUN_LOG="$(latest_file_or_empty "${OUT_DIR}/staging_run_*.log")"
-LATEST_STAGE_REPORT="$(latest_file_or_empty "${OUT_DIR}/superpowers_stage_validation_*.md")"
-LATEST_TOKEN_READINESS="$(latest_file_or_empty "${OUT_DIR}/token_runtime_readiness_*.md")"
-LATEST_TOK007_REPORT="$(latest_file_or_empty "${ROOT_DIR}/review/outputs/tok007_release_recheck_*.md")"
-LATEST_PIPELINE_REPORT="$(latest_file_or_empty "${OUT_DIR}/superpowers_release_pipeline_*.md")"
-SEC_REPORT="${ROOT_DIR}/tests/supply/sec_sup_boundary_report_2026-03-30.md"
-
-run_step \
-  "STEP-03" \
-  "Staging evidence autofill" \
-  "cd \"${ROOT_DIR}\" && bash \"scripts/ci/staging_evidence_autofill.sh\" \
-    --staging-run-log \"${LATEST_STAGING_RUN_LOG}\" \
-    --stage-report \"${LATEST_STAGE_REPORT}\" \
-    --token-readiness \"${LATEST_TOKEN_READINESS}\" \
-    --tok007-report \"${LATEST_TOK007_REPORT}\" \
-    --pipeline-report \"${LATEST_PIPELINE_REPORT}\" \
-    --sec-report \"${SEC_REPORT}\""
-
-HAS_FAIL=0
-for row in "${STEP_RESULTS[@]}"; do
-  status="$(echo "${row}" | awk -F'|' '{print $2}')"
-  if [[ "${status}" == "FAIL" ]]; then
-    HAS_FAIL=1
+if bash "${SCRIPT_DIR}/superpowers_stage_validate.sh" \
+  > >(tee "${SP_LOG}") 2>&1; then
+  # stage_validate.sh 只在 NO_GO 时 exit 1，这里补充对 CONDITIONAL_GO 的处理
+  # 从 report 中读取实际决策
+  SP_DECISION="$(grep -E '^- (机判结论|决策)：\*\*' "${SP_REPORT}" 2>/dev/null | \
+    sed -E 's/.*\*\*([^*]+)\*\*/\1/' | tr -d ' ' || echo 'UNKNOWN')"
+  if [[ "${SP_DECISION}" == "CONDITIONAL_GO" ]]; then
+    manifest_set "decision_inputs.stage_validation" "CONDITIONAL_GO" "${MANIFEST_FILE}"
+    manifest_set "artifact_paths.stage_validation_report" "${SP_REPORT}" "${MANIFEST_FILE}"
+    log "[STEP-02] CONDITIONAL_GO detected — blocking pipeline"
+    log "[FAIL] staging pipeline aborted at STEP-02 (CONDITIONAL_GO not allowed)"
+    exit 1
   fi
-done
-
-RESULT="PASS"
-NOTE="all steps finished"
-if [[ "${HAS_FAIL}" -eq 1 ]]; then
-  RESULT="FAIL"
-  NOTE="at least one step failed"
+  manifest_set "decision_inputs.stage_validation" "PASS" "${MANIFEST_FILE}"
+  manifest_set "artifact_paths.stage_validation_report" "${SP_REPORT}" "${MANIFEST_FILE}"
+  log "[STEP-02] PASS"
+else
+  manifest_set "decision_inputs.stage_validation" "FAIL" "${MANIFEST_FILE}"
+  manifest_set "artifact_paths.stage_validation_report" "${SP_REPORT}" "${MANIFEST_FILE}"
+  log "[STEP-02] FAIL — superpowers_stage_validate 非零退出"
+  log "[FAIL] staging pipeline aborted at STEP-02"
+  exit 1
 fi
 
-{
-  echo "# Staging 发布流水报告"
-  echo
-  echo "- 时间戳：${TS}"
-  echo "- 执行脚本：\`scripts/ci/staging_release_pipeline.sh\`"
-  echo "- 环境文件：\`${ENV_FILE_REL}\`"
-  echo "- 环境分类：\`${ENV_CLASSIFICATION}\`"
-  echo "- local/mock 显式确认：\`${ALLOW_LOCAL_MOCK_STAGING}\`"
-  echo "- 结果：**${RESULT}**"
-  echo "- 说明：${NOTE}"
-  echo
-  echo "## 步骤结果"
-  echo
-  echo "| 步骤 | 结果 | 说明 | 证据 |"
-  echo "|---|---|---|---|"
-  for row in "${STEP_RESULTS[@]}"; do
-    step_id="$(echo "${row}" | awk -F'|' '{print $1}')"
-    status="$(echo "${row}" | awk -F'|' '{print $2}')"
-    title="$(echo "${row}" | awk -F'|' '{print $3}')"
-    evidence="$(echo "${row}" | awk -F'|' '{print $4}')"
-    echo "| ${step_id} | ${status} | ${title} | ${evidence} |"
-  done
-} > "${REPORT_FILE}"
+# ──────────────────────────────────────────────────────────────
+# 步骤 3：cross_service_smoke（纳入发布链）
+# ──────────────────────────────────────────────────────────────
+STEP=3
+log ""
+log "[STEP-03] cross_service_smoke..."
 
-log "[INFO] report=${REPORT_FILE}"
-log "[RESULT] ${RESULT}"
+SMOKE_LOG="${OUT_DIR}/cross_service_smoke_${TS}.log"
+SMOKE_REPORT="${OUT_DIR}/cross_service_smoke_${TS}.md"
 
-if [[ "${RESULT}" == "FAIL" ]]; then
+# 调用 cross_service_smoke.sh
+# 环境变量传入服务 URL
+TOK_RUNTIME_URL="${TOK_RUNTIME_URL:-http://127.0.0.1:18081}" \
+GATEWAY_URL="${GATEWAY_URL:-http://127.0.0.1:18080}" \
+SUPPLY_API_URL="${SUPPLY_API_URL:-http://127.0.0.1:18082}" \
+bash "${SCRIPT_DIR}/cross_service_smoke.sh" \
+  > >(tee "${SMOKE_LOG}") 2>&1
+SMOKE_RC=$?
+
+if [[ "${SMOKE_RC}" -eq 0 ]]; then
+  manifest_set "smoke_results.cross_service" "PASS" "${MANIFEST_FILE}"
+  manifest_set "artifact_paths.cross_service_smoke_log" "${SMOKE_LOG}" "${MANIFEST_FILE}"
+  log "[STEP-03] PASS"
+elif [[ "${SMOKE_RC}" -eq 2 ]]; then
+  # exit 2 = SKIP_LOCAL_PLACEHOLDER（本地 mock，不计入通过）
+  manifest_set "smoke_results.cross_service" "SKIP_LOCAL_PLACEHOLDER" "${MANIFEST_FILE}"
+  manifest_set "artifact_paths.cross_service_smoke_log" "${SMOKE_LOG}" "${MANIFEST_FILE}"
+  log "[STEP-03] SKIP_LOCAL_PLACEHOLDER — not counted as pass"
+  # 这种情况下 staging 不能算真正完成，但不一定 abort pipeline（取决于 DEFERRED 策略）
+else
+  manifest_set "smoke_results.cross_service" "FAIL" "${MANIFEST_FILE}"
+  manifest_set "artifact_paths.cross_service_smoke_log" "${SMOKE_LOG}" "${MANIFEST_FILE}"
+  log "[STEP-03] FAIL — cross_service_smoke 非零退出"
+  log "[FAIL] staging pipeline aborted at STEP-03"
+  exit 1
+fi
+
+# ──────────────────────────────────────────────────────────────
+# 步骤 4：生成最终 release manifest
+# ──────────────────────────────────────────────────────────────
+STEP=4
+log ""
+log "[STEP-04] 生成最终 release manifest..."
+
+# 收集所有结果
+REPO_INT="$(manifest_get "decision_inputs.repo_integrity" "${MANIFEST_FILE}")"
+STAGE_VAL="$(manifest_get "decision_inputs.stage_validation" "${MANIFEST_FILE}")"
+SMOKE_RES="$(manifest_get "smoke_results.cross_service" "${MANIFEST_FILE}")"
+
+# 最终决策
+OVERALL="PASS"
+if [[ "${REPO_INT}" == "FAIL" || "${STAGE_VAL}" == "FAIL" || "${SMOKE_RES}" == "FAIL" ]]; then
+  OVERALL="FAIL"
+elif [[ "${SMOKE_RES}" == "SKIP_LOCAL_PLACEHOLDER" ]]; then
+  # smoke 未真实运行，不算 staging 完成
+  if [[ "${STAGE_VAL}" == "PASS" ]]; then
+    OVERALL="CONDITIONAL_PASS"
+  fi
+fi
+
+manifest_set "decision_inputs.overall_decision" "${OVERALL}" "${MANIFEST_FILE}"
+
+log "[STEP-04] overall_decision=${OVERALL}"
+
+# 生成 pipeline 报告
+cat > "${PIPELINE_REPORT}" <<EOF
+# Staging Release Pipeline 报告
+
+- 时间戳：${TS}
+- run_id：${RUN_ID}
+- manifest：${MANIFEST_FILE}
+
+## 步骤结果
+
+| 步骤 | 门禁 | 结果 |
+|---|---|---|
+| STEP-01 repo_integrity | 必须 PASS | ${REPO_INT} |
+| STEP-02 stage_validate | NO_GO/CONDITIONAL_GO → FAIL | ${STAGE_VAL} |
+| STEP-03 cross_smoke | FAIL → FAIL；SKIP → 警告 | ${SMOKE_RES} |
+
+## 最终决策
+
+- 整体结论：**${OVERALL}**
+- manifest：\`${MANIFEST_FILE}\`
+
+## manifest 内容摘要
+
+EOF
+
+jq '.' "${MANIFEST_FILE}" >> "${PIPELINE_REPORT}" 2>/dev/null || true
+
+log ""
+log "=========================================="
+log "[RESULT] staging pipeline: ${OVERALL}"
+log "[INFO]  manifest: ${MANIFEST_FILE}"
+log "[INFO]  report:   ${PIPELINE_REPORT}"
+log "=========================================="
+
+if [[ "${OVERALL}" == "FAIL" ]]; then
   exit 1
 fi

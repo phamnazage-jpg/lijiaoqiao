@@ -129,9 +129,9 @@ if [[ "${TOK006_DECISION}" == "UNKNOWN" || "${SP_DECISION}" == "UNKNOWN" || "${T
   has_unknown=1
 fi
 
-DECISION="CONDITIONAL_GO"
-DECISION_REASON="all available checks are non-failing but at least one source is conditional/mock/deferred"
-if [[ "${TOK006_DECISION}" == "NO_GO" || "${SP_DECISION}" == "NO_GO" || "${TOK_RUNTIME_READINESS_RESULT}" == "FAIL" || "${SUP_DECISION}" == "NO_GO" ]]; then
+DECISION="DEFERRED"
+DECISION_REASON="staging gate is CONDITIONAL_GO — real staging not fully validated, release cannot proceed"
+if [[ "${TOK006_DECISION}" == "NO_GO" || "${TOK_RUNTIME_READINESS_RESULT}" == "FAIL" || "${SUP_DECISION}" == "NO_GO" ]]; then
   DECISION="NO_GO"
   DECISION_REASON="at least one upstream gate is NO_GO"
 elif [[ "${TOK006_DECISION}" == "GO" && "${SP_DECISION}" == "GO" && "${TOK_RUNTIME_READINESS_RESULT}" == "PASS" && "${SUP_DECISION}" == "GO" ]]; then
@@ -166,7 +166,7 @@ cat > "${OUT_FILE}" <<EOF
 ## 2. 复审结论
 
 - [ ] GO
-- [ ] CONDITIONAL GO
+- [ ] DEFERRED
 - [ ] NO-GO
 
 - 机判结论：**${DECISION}**
@@ -183,8 +183,8 @@ case "${DECISION}" in
   GO)
     sed -i 's/^- \[ \] GO/- [x] GO/' "${OUT_FILE}"
     ;;
-  CONDITIONAL_GO)
-    sed -i 's/^- \[ \] CONDITIONAL GO/- [x] CONDITIONAL GO/' "${OUT_FILE}"
+  DEFERRED)
+    sed -i 's/^- \[ \] DEFERRED/- [x] DEFERRED/' "${OUT_FILE}"
     ;;
   NO_GO)
     sed -i 's/^- \[ \] NO-GO/- [x] NO-GO/' "${OUT_FILE}"

@@ -282,6 +282,6 @@ fi
 log "[INFO] report generated: ${REPORT_FILE}"
 log "[RESULT] ${DECISION}"
 
-if [[ "${DECISION}" == "NO_GO" ]]; then
+if [[ "${DECISION}" == "NO_GO" || "${DECISION}" == "CONDITIONAL_GO" ]]; then
   exit 1
 fi

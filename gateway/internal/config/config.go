@@ -43,6 +43,15 @@ type AuthConfig struct {
 	TokenRuntimeURL  string
 	TrustedProxies   []string // 可信的代理IP列表，用于IP伪造防护
 	CORSAllowOrigins []string // 允许的CORS来源，为空则使用默认通配符
+	// P3-A design-only env var draft for remote runtime hardening:
+	// - GATEWAY_TOKEN_RUNTIME_HTTP_TIMEOUT
+	// - GATEWAY_TOKEN_RUNTIME_DIAL_TIMEOUT
+	// - GATEWAY_TOKEN_RUNTIME_IDLE_CONN_TIMEOUT
+	// - GATEWAY_TOKEN_RUNTIME_MAX_IDLE_CONNS_PER_HOST
+	// - GATEWAY_TOKEN_RUNTIME_CACHE_ACTIVE_TTL
+	// - GATEWAY_TOKEN_RUNTIME_CACHE_EXPIRED_TTL
+	// - GATEWAY_TOKEN_RUNTIME_CACHE_REVOKED_TTL
+	// - GATEWAY_TOKEN_RUNTIME_CACHE_MAX_ENTRIES
 }
 
 // DatabaseConfig 数据库配置

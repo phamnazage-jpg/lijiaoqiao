@@ -162,6 +162,10 @@ func buildTokenRuntime(cfg config.AuthConfig) (interface {
 	case "", "inmemory":
 		return middleware.NewInMemoryTokenRuntime(time.Now), nil
 	case "remote_introspection":
+		// P3-A current usage point:
+		// buildTokenRuntime -> NewRemoteTokenRuntime currently injects http.DefaultClient directly.
+		// Future hardening must route through a dedicated client builder so timeout/cache/metrics config
+		// stays centralized and does not drift from gateway/internal/config/config.go env naming.
 		return middleware.NewRemoteTokenRuntime(cfg.TokenRuntimeURL, http.DefaultClient, time.Now), nil
 	default:
 		return nil, fmt.Errorf("unsupported token runtime mode: %s", cfg.TokenRuntimeMode)

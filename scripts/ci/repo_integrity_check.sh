@@ -33,14 +33,19 @@ echo "[repo] supply-api repository integration"
 )
 run_go_suite "${ROOT_DIR}" "${GO_BIN}" "supply-api service-http" "supply-api" test -count=1 -tags=e2e ./e2e
 
-# Phase 1 contract gate entry (design slot):
-# - execute after service-local suites and repository integration
+# Phase 1 contract gate entry:
+# - execute after service-local suites and repository integration pass
 # - command entry: bash "${ROOT_DIR}/scripts/ci/backend-verify.sh" --phase1-contract-gate
 # - primary artifacts:
 #     reports/archive/gate_verification/contract_gate_<timestamp>.log
 #     reports/archive/gate_verification/contract_gate_<timestamp>.md
 # - failure semantics: if the contract gate exits non-zero or any required scenario is missing,
 #   repo_integrity_check must fail and Phase 1 cannot be marked complete.
+echo "[repo] Phase 1 contract gate (SCENARIO-1~4)"
+if ! bash "${ROOT_DIR}/scripts/ci/backend-verify.sh" --phase1-contract-gate >> "${ROOT_DIR}/reports/archive/gate_verification/repo_integrity_contract_gate_${TS}.log" 2>&1; then
+  echo "[repo] contract gate FAILED — see contract_gate_*.log in reports/archive/gate_verification/"
+  exit 1
+fi
 
 # Phase 2 boundary note:
 # - repo_integrity_check only proves code completeness, syntax, unit/integration and service-local HTTP coverage.

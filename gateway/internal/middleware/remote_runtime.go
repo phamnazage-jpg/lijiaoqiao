@@ -21,6 +21,17 @@ type RemoteTokenRuntime struct {
 	records map[string]remoteResolvedToken
 }
 
+// P3-A design notes:
+// - current implementation only caches token status by token_id and still falls back to http.DefaultClient.
+// - dedicated client hardening should move to a gateway-owned client with:
+//   total timeout=2s, dial timeout=300ms, idle conn timeout=90s, max idle conns per host=32.
+// - cache TTL draft:
+//   active=30s, expired=2m, revoked=10m.
+// - eviction draft:
+//   combine TTL expiry with max_entries=10000; evict expired records first, then oldest cache records.
+// - metrics draft:
+//   cache_hit, cache_miss, cache_evict, upstream_latency_ms histogram.
+
 type remoteResolvedToken struct {
 	status    TokenStatus
 	expiresAt time.Time
