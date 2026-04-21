@@ -3,11 +3,17 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
+RELEASES_DIR="${ROOT_DIR}/reports/releases"
 TS="$(date +%F_%H%M%S)"
 OUT_FILE="${OUT_DIR}/staging_token_go_evidence_autofill_${TS}.md"
 LOG_FILE="${OUT_DIR}/staging_token_go_evidence_autofill_${TS}.log"
 
 mkdir -p "${OUT_DIR}"
+
+# Manifest migration design:
+# - preferred entry: --manifest <reports/releases/<run_id>/manifest.json>
+# - this script should read only decision_inputs/artifact_paths from the supplied manifest
+# - no future release evidence should be discovered by latest_file_or_empty()
 
 usage() {
   cat <<'EOF'
@@ -211,6 +217,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Planned manifest keys:
+# - decision_inputs.staging_run_log
+# - decision_inputs.stage_report
+# - decision_inputs.token_runtime_readiness_report
+# - decision_inputs.tok007_recheck_report
+# - artifact_paths.superpowers_release_pipeline_report
 if [[ -z "${STAGING_RUN_LOG}" ]]; then
   STAGING_RUN_LOG="$(latest_file_or_empty "${OUT_DIR}/staging_run_*.log")"
 fi

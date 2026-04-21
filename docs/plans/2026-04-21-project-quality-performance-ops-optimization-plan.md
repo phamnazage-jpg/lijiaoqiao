@@ -303,21 +303,21 @@
 - Create: `reports/releases/.gitkeep`
 - Create: `docs/plans/2026-04-21-release-manifest-contract.md`
 
-- [ ] `P2-A-01` 盘点所有依赖 `latest_file_or_empty` 的脚本入口。
+- [x] `P2-A-01` 盘点所有依赖 `latest_file_or_empty` 的脚本入口。
   完成标准：清单覆盖全部脚本和调用行。
-- [ ] `P2-A-02` 设计 `run_id` 生成规则。
+- [x] `P2-A-02` 设计 `run_id` 生成规则。
   完成标准：规则包含日期、提交号或流水号。
-- [ ] `P2-A-03` 设计发布目录结构 `reports/releases/<run_id>/...`。
+- [x] `P2-A-03` 设计发布目录结构 `reports/releases/<run_id>/...`。
   完成标准：目录草图写入 manifest 合同文档。
-- [ ] `P2-A-04` 设计 `manifest.json` 必填字段。
+- [x] `P2-A-04` 设计 `manifest.json` 必填字段。
   完成标准：至少包含 `run_id`、`commit_sha`、`env`、`artifact_paths`、`decision_inputs`。
-- [ ] `P2-A-05` 把 `staging_release_pipeline.sh` 的输入改成 manifest 读取方案草稿。
+- [x] `P2-A-05` 把 `staging_release_pipeline.sh` 的输入改成 manifest 读取方案草稿。
   完成标准：不再依赖“最新文件”。
-- [ ] `P2-A-06` 把 `staging_evidence_autofill.sh` 的输入改成 manifest 读取方案草稿。
+- [x] `P2-A-06` 把 `staging_evidence_autofill.sh` 的输入改成 manifest 读取方案草稿。
   完成标准：只消费本次 run 的工件。
-- [ ] `P2-A-07` 把 `tok007_release_recheck.sh` 的输入改成 manifest 读取方案草稿。
+- [x] `P2-A-07` 把 `tok007_release_recheck.sh` 的输入改成 manifest 读取方案草稿。
   完成标准：复检脚本不再扫历史目录。
-- [ ] `P2-A-08` 把 `final_decision_consistency_check.sh` 的输入改成 manifest 读取方案草稿。
+- [x] `P2-A-08` 把 `final_decision_consistency_check.sh` 的输入改成 manifest 读取方案草稿。
   完成标准：最终一致性检查绑定单次 run。
 
 ### Task P2-B: 把真实 staging 设为唯一发布硬门禁

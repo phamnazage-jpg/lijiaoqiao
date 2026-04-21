@@ -10,11 +10,19 @@ else
 fi
 TS="$(date +%F_%H%M%S)"
 OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
+RELEASES_DIR="${ROOT_DIR}/reports/releases"
 mkdir -p "${OUT_DIR}"
 
 REPORT_FILE="${OUT_DIR}/staging_release_pipeline_${TS}.md"
 LOG_FILE="${OUT_DIR}/staging_release_pipeline_${TS}.log"
 ALLOW_LOCAL_MOCK_STAGING="${ALLOW_LOCAL_MOCK_STAGING:-0}"
+
+# Manifest migration design:
+# - run_id format: YYYYMMDD_HHMMSS_<shortsha>_<env>[-rNN]
+# - release root: ${RELEASES_DIR}/<run_id>/
+# - manifest path: ${RELEASES_DIR}/<run_id>/manifest.json
+# - this script becomes the manifest seed writer and must pass the resolved manifest path
+#   to downstream scripts instead of relying on latest_file_or_empty().
 
 log() {
   echo "$1" | tee -a "${LOG_FILE}"
@@ -124,6 +132,12 @@ run_step \
   "Superpowers release pipeline with staging env" \
   "cd \"${ROOT_DIR}\" && STAGING_ENV_FILE=\"${ENV_FILE_REL}\" bash \"scripts/ci/superpowers_release_pipeline.sh\""
 
+# Planned manifest inputs for staging_evidence_autofill.sh:
+# - decision_inputs.staging_run_log
+# - decision_inputs.stage_report
+# - decision_inputs.token_runtime_readiness_report
+# - decision_inputs.tok007_recheck_report
+# - artifact_paths.superpowers_release_pipeline_report
 LATEST_STAGING_RUN_LOG="$(latest_file_or_empty "${OUT_DIR}/staging_run_*.log")"
 LATEST_STAGE_REPORT="$(latest_file_or_empty "${OUT_DIR}/superpowers_stage_validation_*.md")"
 LATEST_TOKEN_READINESS="$(latest_file_or_empty "${OUT_DIR}/token_runtime_readiness_*.md")"

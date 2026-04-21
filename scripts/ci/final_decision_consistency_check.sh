@@ -4,10 +4,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 TS="$(date +%F_%H%M%S)"
 OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
+RELEASES_DIR="${ROOT_DIR}/reports/releases"
 mkdir -p "${OUT_DIR}"
 
 REPORT_FILE="${OUT_DIR}/final_decision_consistency_${TS}.md"
 LOG_FILE="${OUT_DIR}/final_decision_consistency_${TS}.log"
+
+# Manifest migration design:
+# - preferred entry: --manifest <reports/releases/<run_id>/manifest.json>
+# - this script should bind final_decision, tok007_recheck and stage validation inputs
+#   to one run_id and stop reading historical "latest" outputs
 
 latest_file_or_empty() {
   local pattern="$1"
@@ -74,6 +80,10 @@ parse_machine_decision() {
 }
 
 FINAL_DECISION_FILE="${ROOT_DIR}/review/final_decision_2026-03-31.md"
+# Planned manifest keys:
+# - decision_inputs.final_decision_report
+# - decision_inputs.tok007_recheck_report
+# - decision_inputs.superpowers_stage_validation_report
 TOK007_FILE="$(latest_file_or_empty "${ROOT_DIR}/review/outputs/tok007_release_recheck_*.md")"
 SP_FILE="$(latest_file_or_empty "${OUT_DIR}/superpowers_stage_validation_*.md")"
 

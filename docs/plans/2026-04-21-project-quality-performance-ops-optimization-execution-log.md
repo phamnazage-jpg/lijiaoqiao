@@ -86,3 +86,11 @@ rg -n "IntrospectTokenResponse|tenant_id|project_id|operator_id|metadata|IssueTo
 1. 已创建 `tests/contract/README.md` 与 `tests/contract/gateway_token_runtime_supply_chain.md`，明确当前 CI 覆盖缺口与四个最小 contract 场景。
 2. 已创建 `docs/plans/2026-04-21-phase1-contract-gate-checklist.md`，把 Phase 1 关闭条件绑定到 contract gate。
 3. 已在 `scripts/ci/backend-verify.sh` 和 `scripts/ci/repo_integrity_check.sh` 写明 contract gate 执行位、产物路径和失败语义。
+
+## P2-A release manifest 合同设计完成
+
+执行结果：
+
+1. 已创建 `docs/plans/2026-04-21-release-manifest-contract.md`，记录 `latest_file_or_empty` 依赖入口、`run_id` 规则、目录结构与 `manifest.json` 必填字段。
+2. 已创建 `reports/releases/.gitkeep`，为后续 `<run_id>` 工件目录预留稳定路径。
+3. 已在四个脚本中补入 manifest 迁移设计说明，明确后续必须从 `decision_inputs` / `artifact_paths` 读取本次 run 的证据。

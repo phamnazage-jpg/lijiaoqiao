@@ -6,11 +6,17 @@ TS="$(date +%F_%H%M%S)"
 OUT_DIR="${ROOT_DIR}/review/outputs"
 mkdir -p "${OUT_DIR}"
 GATE_OUT_DIR="${ROOT_DIR}/reports/archive/gate_verification"
+RELEASES_DIR="${ROOT_DIR}/reports/releases"
 mkdir -p "${GATE_OUT_DIR}"
 MARK_SCRIPT="${ROOT_DIR}/scripts/ci/mark_historical_snapshots.sh"
 CURRENT_POINTER_FILE="review/outputs/current_machine_review_sources.md"
 OUT_FILE="${OUT_DIR}/tok007_release_recheck_${TS}.md"
 LOG_FILE="${GATE_OUT_DIR}/tok007_release_recheck_${TS}.log"
+
+# Manifest migration design:
+# - preferred entry: --manifest <reports/releases/<run_id>/manifest.json>
+# - this script should read run-scoped TOK006 / stage validation / token readiness inputs
+#   from manifest.decision_inputs instead of scanning latest files across history
 
 log() {
   echo "$1" | tee -a "${LOG_FILE}"
@@ -100,6 +106,12 @@ extract_pass_fail_result() {
   echo "UNKNOWN"
 }
 
+# Planned manifest keys:
+# - decision_inputs.tok006_gate_bundle_report
+# - decision_inputs.superpowers_stage_validation_report
+# - decision_inputs.token_runtime_readiness_report
+# - decision_inputs.supply_gate_review_report
+# - decision_inputs.final_decision_report
 TOK006_REPORT="$(latest_file_or_empty "${GATE_OUT_DIR}/tok006_gate_bundle_*.md")"
 SP_REPORT="$(latest_file_or_empty "${GATE_OUT_DIR}/superpowers_stage_validation_*.md")"
 TOK_RUNTIME_READINESS_REPORT="$(latest_file_or_empty "${GATE_OUT_DIR}/token_runtime_readiness_*.md")"
