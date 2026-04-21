@@ -179,3 +179,41 @@
 
 1. 长期双轨会让 authority 再次分叉，和 Phase 1 目标冲突。
 2. 运维上会多一套签名密钥、状态后端和回归矩阵，违背“运维更简单”。
+
+## 8. P1-C-07 回滚条件
+
+回滚目标契约：`兼容窗口契约 v1`
+
+定义：
+
+1. `platform-token-runtime` 仍是唯一 token 生命周期写入方。
+2. gateway 仍固定使用 `remote_introspection`。
+3. supply-api 回退到“新 principal 优先、旧 JWT 兜底”的双读兼容版本，不回退到本地签发 / 刷新 / 吊销 token。
+
+触发回滚的条件：
+
+1. 合法 token contract 场景出现持续失败，且 15 分钟内无法通过配置修复。
+2. 吊销 token 在 gateway 或 supply-api 侧出现放行，形成安全回归。
+3. principal 字段缺失导致租户、operator、scope 任一关键上下文为空，影响写接口正确性。
+4. token runtime 不可用时，错误码或超时行为偏离 gate 约束，导致上游无法稳定降级。
+5. 发布后出现无法通过兼容窗口热修的 P0/P1 认证事故。
+
+回滚动作：
+
+1. 立即停止“只读 principal”后的切流，恢复到双读兼容版本。
+2. 保留 gateway `remote_introspection`，禁止把 `inmemory` 重新带回共享环境。
+3. 回滚到最近一个通过 Phase 1 contract gate 的兼容窗口版本，而不是回滚到旧的多 authority 设计。
+
+## 9. P1-C-08 README / ADR 兼容窗口说明草稿
+
+### 9.1 上线前
+
+在兼容窗口开始前，`platform-token-runtime` 已是唯一 token authority，gateway 非 `dev` 环境只允许 `remote_introspection`。supply-api 将进入“新 principal 优先、旧 JWT 兜底”的短期双读阶段，用于灰度验证 principal 通道，不再新增任何本地 token 生命周期逻辑。
+
+### 9.2 上线中
+
+兼容窗口期间，gateway 持续从 `platform-token-runtime` 拉取 canonical principal。supply-api 优先消费 principal 通道；若仅在 trusted internal 流量下发现旧 JWT 仍被依赖，可临时走兜底分支，但必须保持单写、禁止扩散双轨，并以 contract gate 结果作为是否继续切流的唯一依据。
+
+### 9.3 上线后
+
+当 contract tests、回归验证和运行观测都稳定后，移除 supply-api 的旧 JWT 兜底路径，只保留 principal consumer 实现。上线后文档、README 和 ADR 必须统一声明：共享环境不存在本地 token authority，token 生命周期、状态解释和 introspection 字段都以 `platform-token-runtime` 为单一真源。

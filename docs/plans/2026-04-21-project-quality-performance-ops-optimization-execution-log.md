@@ -77,3 +77,4 @@ rg -n "IntrospectTokenResponse|tenant_id|project_id|operator_id|metadata|IssueTo
 1. 已创建 `docs/plans/2026-04-21-auth-implementation-convergence-notes.md`，记录 gateway 与 supply-api 的身份入口、装配点和迁移清单。
 2. gateway 侧后续只保留 `remote_introspection` 作为非 `dev` 环境 authority 入口，本地 `inmemory` 仅允许 `dev`。
 3. supply-api 侧过渡策略固定为：`单写 + 双读短窗 + 一次性切断旧 JWT`。
+4. 回滚目标契约固定为“兼容窗口契约 v1”，不回滚到旧的多 authority 设计。
