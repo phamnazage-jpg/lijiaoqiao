@@ -35,5 +35,14 @@ rg -n "inmemory|remote_introspection|token runtime|JWT|Bearer" gateway supply-ap
 
 ## P1-A-04 OpenAPI 与 canonical principal 差异记录
 
-待执行。
+执行命令：
 
+```bash
+rg -n "IntrospectTokenResponse|tenant_id|project_id|operator_id|metadata|IssueTokenRequest" docs/platform_token_api_contract_openapi_draft_v1_2026-03-29.yaml
+```
+
+结论：
+
+1. `IssueTokenRequest` 已定义 `metadata`，但 `IntrospectTokenResponse.data` 尚未暴露 `tenant_id`。
+2. 现有 introspection 响应字段只有 `token_id`、`subject_id`、`role`、`status`、`scope`、`issued_at`、`expires_at`，与 canonical principal 最小字段清单相比缺少 `tenant_id`。
+3. `project_id`、`operator_id`、`metadata` 目前也未出现在 introspection 响应中，但它们尚未进入最小 canonical principal 强制字段，保留为 Phase 1 后续 schema / 审计收敛项。

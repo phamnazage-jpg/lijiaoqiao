@@ -200,11 +200,11 @@
   完成标准：文档里明确写出 authority 所属服务。
 - [x] `P1-A-03` 在同一文档新增 canonical principal 字段清单。
   完成标准：至少包含 `token_id`、`subject_id`、`tenant_id`、`scope`、`issued_at`、`expires_at`、`status`。
-- [ ] `P1-A-04` 打开 `docs/platform_token_api_contract_openapi_draft_v1_2026-03-29.yaml`，比对现有 introspection 响应字段。
+- [x] `P1-A-04` 打开 `docs/platform_token_api_contract_openapi_draft_v1_2026-03-29.yaml`，比对现有 introspection 响应字段。
   完成标准：差异项被记录到计划执行日志。
-- [ ] `P1-A-05` 在 OpenAPI 草案里补 canonical principal 字段定义。
+- [x] `P1-A-05` 在 OpenAPI 草案里补 canonical principal 字段定义。
   完成标准：OpenAPI 草案与最小规范字段一致。
-- [ ] `P1-A-06` 在 `gateway/README.md` 增加“非 dev 环境只允许远程 introspection”说明。
+- [x] `P1-A-06` 在 `gateway/README.md` 增加“非 dev 环境只允许远程 introspection”说明。
   完成标准：README 不再给 staging/prod 留下本地 authority 的解释空间。
 - [ ] `P1-A-07` 在 `supply-api/README.md` 增加“消费统一 principal，不自持独立 authority”说明。
   完成标准：README 用词与 Phase 1 目标一致。

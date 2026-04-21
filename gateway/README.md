@@ -10,6 +10,7 @@
 - 鉴权运行时支持两种模式：
   - `inmemory`
   - `remote_introspection`
+- `inmemory` 只允许用于 `dev` 本地联调；非 `dev` 环境必须使用 `remote_introspection`，不得在 `gateway` 本地承载 token authority。
 - provider 注册已经从配置装配；如果未显式配置 provider，启动时会基于环境变量生成默认 OpenAI provider。
 - 审计发射器支持 PostgreSQL 与内存实现；数据库未配置时会显式回退到内存实现。
 - 生产环境必须显式提供 `PASSWORD_ENCRYPTION_KEY` 与 `GATEWAY_CORS_ALLOW_ORIGINS`；缺省密钥和 `*` CORS 只允许在开发态使用。
@@ -38,6 +39,12 @@ go run ./cmd/gateway
 export GATEWAY_TOKEN_RUNTIME_MODE="remote_introspection"
 export GATEWAY_TOKEN_RUNTIME_URL="http://127.0.0.1:18081"
 ```
+
+非 `dev` 环境约束：
+
+1. `GATEWAY_ENV` 只要不是 `dev`，`GATEWAY_TOKEN_RUNTIME_MODE` 就必须设置为 `remote_introspection`。
+2. `staging`、`production` 和其他共享环境不得使用 `inmemory`。
+3. token 生命周期、状态解释和 introspection 字段以 `platform-token-runtime` 为单一真源。
 
 默认监听 `0.0.0.0:8080`。
 

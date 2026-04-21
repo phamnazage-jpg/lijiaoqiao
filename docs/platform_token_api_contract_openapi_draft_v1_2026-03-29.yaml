@@ -369,11 +369,13 @@ components:
           type: string
         data:
           type: object
-          required: [token_id, subject_id, role, status, scope, issued_at, expires_at]
+          required: [token_id, subject_id, tenant_id, role, status, scope, issued_at, expires_at]
           properties:
             token_id:
               type: string
             subject_id:
+              type: string
+            tenant_id:
               type: string
             role:
               type: string
