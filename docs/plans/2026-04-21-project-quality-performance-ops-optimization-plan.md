@@ -220,21 +220,21 @@
 - Modify: `platform-token-runtime/internal/auth/service/postgres_audit_store.go`
 - Create: `docs/plans/2026-04-21-token-runtime-schema-alignment-notes.md`
 
-- [ ] `P1-B-01` 打开 schema，圈出 `tenant_id`、`project_id`、`operator_id`、`metadata` 所在列。
+- [x] `P1-B-01` 打开 schema，圈出 `tenant_id`、`project_id`、`operator_id`、`metadata` 所在列。
   完成标准：对齐笔记里列出字段和表名。
-- [ ] `P1-B-02` 打开 `TokenRecord`，列出当前缺失字段。
+- [x] `P1-B-02` 打开 `TokenRecord`，列出当前缺失字段。
   完成标准：差异清单写入对齐笔记。
-- [ ] `P1-B-03` 决策“保留字段并贯穿”还是“删除字段并收缩契约”。
+- [x] `P1-B-03` 决策“保留字段并贯穿”还是“删除字段并收缩契约”。
   完成标准：对齐笔记里只保留一个决策，不允许双轨。
-- [ ] `P1-B-04` 如果选择保留，先写字段迁移顺序。
+- [x] `P1-B-04` 如果选择保留，先写字段迁移顺序。
   完成标准：顺序包含 model、store、API、audit、tests。
-- [ ] `P1-B-05` 如果选择删除，先写 shrink SQL 和历史数据影响说明。
+- [x] `P1-B-05` 如果选择删除，先写 shrink SQL 和历史数据影响说明。
   完成标准：说明中覆盖 fresh setup 和 existing DB 两种情况。
-- [ ] `P1-B-06` 检查 `postgres_runtime_store.go` 的 `INSERT`/`SELECT` 字段映射。
+- [x] `P1-B-06` 检查 `postgres_runtime_store.go` 的 `INSERT`/`SELECT` 字段映射。
   完成标准：每个字段映射都被记录。
-- [ ] `P1-B-07` 检查 `postgres_audit_store.go` 的写入字段映射。
+- [x] `P1-B-07` 检查 `postgres_audit_store.go` 的写入字段映射。
   完成标准：审计模型缺口被单独列出。
-- [ ] `P1-B-08` 为字段一致性写一个最小执行清单。
+- [x] `P1-B-08` 为字段一致性写一个最小执行清单。
   完成标准：包含“改 model、改 SQL、改 test、跑验证”四类动作。
 
 ### Task P1-C: 收敛 gateway 与 supply-api 的身份实现

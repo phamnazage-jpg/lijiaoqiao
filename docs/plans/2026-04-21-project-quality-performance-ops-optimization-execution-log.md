@@ -61,3 +61,11 @@ rg -n "IntrospectTokenResponse|tenant_id|project_id|operator_id|metadata|IssueTo
 1. 已在 `platform-token-runtime/README.md` 明确 `platform-token-runtime` 是唯一 token authority。
 2. 文档现在把 canonical principal 的最小字段边界写死为 `token_id`、`subject_id`、`tenant_id`、`role`、`scope`、`issued_at`、`expires_at`、`status`。
 3. 文档同时要求未来扩展字段必须同步更新 DDL、OpenAPI、存储模型和审计字段，避免边界漂移。
+
+## P1-B token runtime schema 对齐决策
+
+执行结果：
+
+1. 已创建 `docs/plans/2026-04-21-token-runtime-schema-alignment-notes.md`，记录 schema、model、runtime store、audit store 的字段差异。
+2. 单一决策为“保留字段并贯穿”，不采用删除字段 / shrink SQL 路线。
+3. 后续实现顺序固定为：`model -> store -> API -> audit -> tests`。
