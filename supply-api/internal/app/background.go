@@ -254,13 +254,15 @@ func runPartitionMaintenanceLoop(ctx context.Context, logger logging.Logger, man
 	for {
 		select {
 		case <-ctx.Done():
+			logger.Info("分区维护: 已停止 (context cancelled)", nil)
 			return
 		case <-ticker.C:
-			if err := manager.EnsureFuturePartitions(context.Background()); err != nil {
+			// P3-D-01: 使用 ctx 而非 context.Background() 以支持取消
+			if err := manager.EnsureFuturePartitions(ctx); err != nil {
 				warnf(logger, "分区维护: 预创建未来分区失败: %v", err)
 			}
 			for _, tableName := range tuning.partitionedTables {
-				if _, err := manager.DropOldPartitions(context.Background(), tableName); err != nil {
+				if _, err := manager.DropOldPartitions(ctx, tableName); err != nil {
 					warnf(logger, "分区维护: 清理过期分区失败 (%s): %v", tableName, err)
 				}
 			}

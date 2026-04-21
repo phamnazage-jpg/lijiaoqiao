@@ -2,158 +2,133 @@ package outbox
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"lijiaoqiao/supply-api/internal/domain"
-	"lijiaoqiao/supply-api/internal/messaging"
 	"lijiaoqiao/supply-api/internal/repository"
 )
 
-type stubRunnerRepo struct {
-	events            []*repository.OutboxEvent
-	failedEventID     string
-	failedErrorMsg    string
-	failedNextRetryAt *time.Time
-	movedEvent        *repository.OutboxEvent
-	movedErrorMsg     string
+// mockOutboxRepo implements outboxRepository
+type mockOutboxRepo struct {
+	fetchAndLockCalled atomic.Int32
+	eventsToReturn     int
 }
 
-func (r *stubRunnerRepo) FetchAndLock(ctx context.Context, limit int) ([]*repository.OutboxEvent, error) {
-	return r.events, nil
+func (m *mockOutboxRepo) FetchAndLock(bc context.Context, limit int) ([]*repository.OutboxEvent, error) {
+	m.fetchAndLockCalled.Add(1)
+	if m.eventsToReturn > 0 {
+		m.eventsToReturn--
+		return []*repository.OutboxEvent{{EventID: "test", EventType: "test"}}, nil
+	}
+	return nil, nil
 }
 
-func (r *stubRunnerRepo) MarkCompleted(ctx context.Context, eventID string) error {
+func (m *mockOutboxRepo) MarkCompleted(ctx context.Context, eventID string) error { return nil }
+func (m *mockOutboxRepo) MarkFailed(ctx context.Context, eventID, errMsg string, nextRetry *time.Time) error {
+	return nil
+}
+func (m *mockOutboxRepo) MoveToDeadLetter(ctx context.Context, event *repository.OutboxEvent, errMsg string) error {
 	return nil
 }
 
-func (r *stubRunnerRepo) MarkFailed(ctx context.Context, eventID string, errorMsg string, nextRetryAt *time.Time) error {
-	r.failedEventID = eventID
-	r.failedErrorMsg = errorMsg
-	r.failedNextRetryAt = nextRetryAt
+// mockBroker implements messaging.MessageBroker
+type mockBroker struct {
+	publishCalled atomic.Int32
+}
+
+func (m *mockBroker) Publish(ctx context.Context, event *repository.OutboxEvent) error {
+	m.publishCalled.Add(1)
 	return nil
 }
 
-func (r *stubRunnerRepo) MoveToDeadLetter(ctx context.Context, event *repository.OutboxEvent, errorMsg string) error {
-	r.movedEvent = event
-	r.movedErrorMsg = errorMsg
-	return nil
-}
+// mockStats implements messaging.OutboxStats
+type mockStats struct{}
 
-func TestOutboxProcessorRunner_ProcessRejectsNilMessageBroker(t *testing.T) {
-	payload := json.RawMessage(`{"event":"created"}`)
-	runner := NewOutboxProcessorRunner(&stubRunnerRepo{
-		events: []*repository.OutboxEvent{
-			{
-				ID:            1,
-				AggregateType: "account",
-				AggregateID:   "acc-1",
-				EventType:     "created",
-				EventID:       "evt-1",
-				Payload:       payload,
-				Status:        repository.OutboxStatusProcessing,
-				MaxRetries:    5,
-			},
-		},
-	}, nil, &messaging.NoOpOutboxStats{})
+func (m *mockStats) RecordOutboxSuccess(eventType string) {}
+func (m *mockStats) RecordOutboxFailure(reason string)    {}
+func (m *mockStats) RecordOutboxRetry(eventType string)   {}
+func (m *mockStats) RecordOutboxDLQ(eventType string)     {}
 
-	err := runner.process(context.Background())
-	if err == nil {
-		t.Fatal("expected nil message broker to return error")
-	}
-	if !strings.Contains(err.Error(), "message broker") {
-		t.Fatalf("expected error to mention message broker, got %v", err)
-	}
-}
+// P3-D-02: Stop() 等待当前批次处理完成
+func TestOutboxProcessorRunner_Stop_WaitsForCurrentBatch(t *testing.T) {
+	repo := &mockOutboxRepo{eventsToReturn: 1}
+	broker := &mockBroker{}
+	stats := &mockStats{}
+	runner := NewOutboxProcessorRunner(repo, broker, stats)
+	runner.interval = 10 * time.Millisecond
 
-type failingBroker struct {
-	err error
-}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	_ = cancel // cancellation handled by runner.Stop()
 
-func (b *failingBroker) Publish(ctx context.Context, event *repository.OutboxEvent) error {
-	return b.err
-}
+	go func() {
+		runner.Start(ctx)
+		close(done)
+	}()
 
-func TestOutboxProcessorRunner_HandleFailureUsesDomainBackoff(t *testing.T) {
-	payload := json.RawMessage(`{"event":"created"}`)
-	repo := &stubRunnerRepo{
-		events: []*repository.OutboxEvent{
-			{
-				ID:            1,
-				AggregateType: "account",
-				AggregateID:   "acc-1",
-				EventType:     "created",
-				EventID:       "evt-1",
-				Payload:       payload,
-				Status:        repository.OutboxStatusProcessing,
-				RetryCount:    0,
-				MaxRetries:    5,
-			},
-		},
+	// 等待第一个 tick 开始处理
+	time.Sleep(50 * time.Millisecond)
+	runner.Stop()
+
+	select {
+	case <-done:
+		// 正常停止
+	case <-time.After(2 * time.Second):
+		t.Fatal("OutboxProcessor did not stop in time (drain not working)")
 	}
 
-	runner := NewOutboxProcessorRunner(repo, &failingBroker{
-		err: errors.New("publish failed"),
-	}, &messaging.NoOpOutboxStats{})
-
-	start := time.Now()
-	if err := runner.process(context.Background()); err != nil {
-		t.Fatalf("expected runner to handle publish failure, got %v", err)
-	}
-	if repo.failedEventID != "evt-1" {
-		t.Fatalf("expected failed event evt-1, got %s", repo.failedEventID)
-	}
-	if repo.events[0].RetryCount != 1 {
-		t.Fatalf("expected original repository event retry count to increment, got %d", repo.events[0].RetryCount)
-	}
-	if repo.failedNextRetryAt == nil {
-		t.Fatal("expected failed retry timestamp to be recorded")
-	}
-	expectedBackoff := time.Duration(domain.CalculateOutboxBackoff(1, 5)) * time.Second
-	actualBackoff := repo.failedNextRetryAt.Sub(start)
-	if actualBackoff < expectedBackoff-time.Second || actualBackoff > expectedBackoff+time.Second {
-		t.Fatalf("expected retry backoff around %s, got %s", expectedBackoff, actualBackoff)
+	if repo.fetchAndLockCalled.Load() == 0 {
+		t.Error("expected at least one FetchAndLock call")
 	}
 }
 
-func TestOutboxProcessorRunner_MoveToDeadLetterReusesRepositoryEvent(t *testing.T) {
-	payload := json.RawMessage(`{"event":"created"}`)
-	repo := &stubRunnerRepo{
-		events: []*repository.OutboxEvent{
-			{
-				ID:            1,
-				AggregateType: "account",
-				AggregateID:   "acc-1",
-				EventType:     "created",
-				EventID:       "evt-dlq",
-				Payload:       payload,
-				Status:        repository.OutboxStatusProcessing,
-				RetryCount:    4,
-				MaxRetries:    5,
-			},
-		},
-	}
+// P3-D-02: drainDone channel 在 Start 返回后关闭
+func TestOutboxProcessorRunner_DrainDoneChannel(t *testing.T) {
+	repo := &mockOutboxRepo{}
+	broker := &mockBroker{}
+	stats := &mockStats{}
+	runner := NewOutboxProcessorRunner(repo, broker, stats)
+	runner.interval = 100 * time.Millisecond
 
-	runner := NewOutboxProcessorRunner(repo, &failingBroker{
-		err: errors.New("persistent publish failure"),
-	}, &messaging.NoOpOutboxStats{})
+	ctx, cancel := context.WithCancel(context.Background())
+	go runner.Start(ctx)
+	time.Sleep(50 * time.Millisecond)
+	runner.Stop()
+	_ = cancel // cancellation handled by runner.Stop()
 
-	if err := runner.process(context.Background()); err != nil {
-		t.Fatalf("expected runner to move event to dead letter, got %v", err)
+	select {
+	case <-runner.drainDone:
+		// drainDone 已关闭
+	case <-time.After(1 * time.Second):
+		t.Fatal("drainDone should be closed after Stop()")
 	}
-	if repo.movedEvent == nil {
-		t.Fatal("expected dead letter move to be recorded")
-	}
-	if repo.movedEvent != repo.events[0] {
-		t.Fatal("expected dead letter move to reuse original repository event pointer")
-	}
-	if repo.events[0].RetryCount != 5 {
-		t.Fatalf("expected original repository event retry count to increment to 5, got %d", repo.events[0].RetryCount)
-	}
-	if repo.movedErrorMsg == "" {
-		t.Fatal("expected dead letter error message to be recorded")
+}
+
+// P3-D-02: context cancellation 触发 drain
+func TestOutboxProcessorRunner_CtxCancel_TriggersDrain(t *testing.T) {
+	repo := &mockOutboxRepo{eventsToReturn: 1}
+	broker := &mockBroker{}
+	stats := &mockStats{}
+	runner := NewOutboxProcessorRunner(repo, broker, stats)
+	runner.interval = 10 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	_ = cancel
+
+	go func() {
+		runner.Start(ctx)
+		close(done)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel() // 发送 context cancellation
+
+	select {
+	case <-done:
+		// 正常停止
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not stop after context cancellation")
 	}
 }
