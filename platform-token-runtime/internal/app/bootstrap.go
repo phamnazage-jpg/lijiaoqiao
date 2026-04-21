@@ -11,6 +11,7 @@ import (
 
 	"lijiaoqiao/platform-token-runtime/internal/auth/service"
 	"lijiaoqiao/platform-token-runtime/internal/httpapi"
+	met "lijiaoqiao/platform-token-runtime/internal/metrics"
 )
 
 type Config struct {
@@ -97,6 +98,11 @@ func BuildServer(cfg Config) (*http.Server, error) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"UP"}`))
+	})
+	// P3-B: /metrics 端点（Prometheus-text 格式）
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte(met.Export()))
 	})
 	api.Register(mux)
 

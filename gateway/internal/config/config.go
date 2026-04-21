@@ -43,15 +43,26 @@ type AuthConfig struct {
 	TokenRuntimeURL  string
 	TrustedProxies   []string // 可信的代理IP列表，用于IP伪造防护
 	CORSAllowOrigins []string // 允许的CORS来源，为空则使用默认通配符
-	// P3-A design-only env var draft for remote runtime hardening:
-	// - GATEWAY_TOKEN_RUNTIME_HTTP_TIMEOUT
-	// - GATEWAY_TOKEN_RUNTIME_DIAL_TIMEOUT
-	// - GATEWAY_TOKEN_RUNTIME_IDLE_CONN_TIMEOUT
-	// - GATEWAY_TOKEN_RUNTIME_MAX_IDLE_CONNS_PER_HOST
-	// - GATEWAY_TOKEN_RUNTIME_CACHE_ACTIVE_TTL
-	// - GATEWAY_TOKEN_RUNTIME_CACHE_EXPIRED_TTL
-	// - GATEWAY_TOKEN_RUNTIME_CACHE_REVOKED_TTL
-	// - GATEWAY_TOKEN_RUNTIME_CACHE_MAX_ENTRIES
+	// P3-A: remote token runtime HTTP + cache 硬化配置
+	TokenRuntime HTTPTimeoutConfig `yaml:"token_runtime_http"`
+}
+
+// HTTPTimeoutConfig remote token runtime HTTP client 超时配置
+type HTTPTimeoutConfig struct {
+	TotalTimeout       time.Duration `yaml:"total_timeout"`        // 总超时，默认 2s
+	DialTimeout        time.Duration `yaml:"dial_timeout"`         // TCP 建连超时，默认 300ms
+	IdleConnTimeout    time.Duration `yaml:"idle_conn_timeout"`     // 空闲连接超时，默认 90s
+	MaxIdleConnsPerHost int         `yaml:"max_idle_conns_per_host"` // 每主机最大空闲连接，默认 16
+}
+
+// DefaultHTTPTimeoutConfig 返回安全默认值
+func DefaultHTTPTimeoutConfig() HTTPTimeoutConfig {
+	return HTTPTimeoutConfig{
+		TotalTimeout:        2 * time.Second,
+		DialTimeout:         300 * time.Millisecond,
+		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConnsPerHost: 16,
+	}
 }
 
 // DatabaseConfig 数据库配置
@@ -178,6 +189,7 @@ func LoadConfig(path string) (*Config, error) {
 			Env:              NormalizeEnv(getEnv("GATEWAY_ENV", "dev")),
 			TokenRuntimeMode: strings.ToLower(getEnv("GATEWAY_TOKEN_RUNTIME_MODE", "inmemory")),
 			TokenRuntimeURL:  strings.TrimSpace(getEnv("GATEWAY_TOKEN_RUNTIME_URL", "")),
+			TokenRuntime:     loadHTTPTimeoutConfig(),
 		},
 		Router: RouterConfig{
 			Strategy:            "latency",
@@ -296,6 +308,34 @@ func getEnvInt(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return parsed
+}
+
+// loadHTTPTimeoutConfig 从环境变量加载 P3-A HTTP 硬化配置，缺省使用安全默认值
+func loadHTTPTimeoutConfig() HTTPTimeoutConfig {
+	cfg := DefaultHTTPTimeoutConfig()
+
+	if v := os.Getenv("GATEWAY_TOKEN_RUNTIME_HTTP_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.TotalTimeout = d
+		}
+	}
+	if v := os.Getenv("GATEWAY_TOKEN_RUNTIME_DIAL_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.DialTimeout = d
+		}
+	}
+	if v := os.Getenv("GATEWAY_TOKEN_RUNTIME_IDLE_CONN_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.IdleConnTimeout = d
+		}
+	}
+	if v := os.Getenv("GATEWAY_TOKEN_RUNTIME_MAX_IDLE_CONNS_PER_HOST"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.MaxIdleConnsPerHost = n
+		}
+	}
+
+	return cfg
 }
 
 func currentEncryptionKey() []byte {

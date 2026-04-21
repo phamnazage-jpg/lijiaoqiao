@@ -1,7 +1,9 @@
 package app
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -9,6 +11,7 @@ import (
 
 	"lijiaoqiao/gateway/internal/config"
 	"lijiaoqiao/gateway/internal/handler"
+	gwmetrics "lijiaoqiao/gateway/internal/metrics"
 	"lijiaoqiao/gateway/internal/middleware"
 	"lijiaoqiao/gateway/internal/ratelimit"
 	"lijiaoqiao/gateway/internal/router"
@@ -101,6 +104,11 @@ func BuildMux(h *handler.Handler, limiter *ratelimit.Middleware, authConfig midd
 	mux.HandleFunc("/health", h.HealthHandle)
 	mux.HandleFunc("/healthz", h.HealthHandle)
 	mux.HandleFunc("/readyz", h.HealthHandle)
+	// P3-C: /metrics 端点（Prometheus-text 格式）
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte(gwmetrics.Export()))
+	})
 
 	return middleware.CORSMiddleware(corsConfig)(mux)
 }
@@ -162,13 +170,33 @@ func buildTokenRuntime(cfg config.AuthConfig) (interface {
 	case "", "inmemory":
 		return middleware.NewInMemoryTokenRuntime(time.Now), nil
 	case "remote_introspection":
-		// P3-A current usage point:
-		// buildTokenRuntime -> NewRemoteTokenRuntime currently injects http.DefaultClient directly.
-		// Future hardening must route through a dedicated client builder so timeout/cache/metrics config
-		// stays centralized and does not drift from gateway/internal/config/config.go env naming.
-		return middleware.NewRemoteTokenRuntime(cfg.TokenRuntimeURL, http.DefaultClient, time.Now), nil
+		// P3-A: 使用硬化 HTTP client 替代 http.DefaultClient
+		httpClient := buildTimeoutClient(cfg.TokenRuntime)
+		return middleware.NewRemoteTokenRuntime(cfg.TokenRuntimeURL, httpClient, time.Now), nil
 	default:
 		return nil, fmt.Errorf("unsupported token runtime mode: %s", cfg.TokenRuntimeMode)
+	}
+}
+
+// buildTimeoutClient 根据硬化配置构建专属 HTTP client
+// P3-A: 确保 remote introspection 调用有上限，避免 gateway 被 token-runtime 拖挂
+func buildTimeoutClient(cfg config.HTTPTimeoutConfig) *http.Client {
+	dialer := &net.Dialer{
+		Timeout: cfg.DialTimeout,
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig:      &tls.Config{MinVersion: tls.VersionTLS12},
+		DialContext:         dialer.DialContext,
+		IdleConnTimeout:      cfg.IdleConnTimeout,
+		MaxIdleConnsPerHost: cfg.MaxIdleConnsPerHost,
+		MaxIdleConns:         cfg.MaxIdleConnsPerHost * 2,
+		ForceAttemptHTTP2:    true,
+	}
+
+	return &http.Client{
+		Transport: transport,
+		Timeout:   cfg.TotalTimeout,
 	}
 }
 

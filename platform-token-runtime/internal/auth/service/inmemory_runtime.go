@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"lijiaoqiao/platform-token-runtime/internal/auth/model"
+	"lijiaoqiao/platform-token-runtime/internal/metrics"
 )
 
 type TokenRecord struct {
@@ -199,21 +200,27 @@ func (r *InMemoryTokenRuntime) Introspect(ctx context.Context, accessToken strin
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	start := time.Now()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	record, ok, err := r.store.GetByAccessToken(ctx, accessToken)
 	if err != nil {
+		metrics.IncError(metrics.ErrInternal)
 		return TokenRecord{}, err
 	}
 	if !ok {
+		metrics.IncError(metrics.ErrInvalidToken)
 		return TokenRecord{}, errors.New("token not found")
 	}
 	if r.applyExpiry(record) {
 		if err := r.store.Save(ctx, *record, "", ""); err != nil {
+			metrics.IncError(metrics.ErrInternal)
 			return TokenRecord{}, err
 		}
 	}
+	metrics.IncIntrospect()
+	metrics.IncLatency(time.Since(start).Nanoseconds())
 	return cloneRecord(*record), nil
 }
 
@@ -304,6 +311,7 @@ func (r *InMemoryTokenRuntime) IssueAndAudit(ctx context.Context, input IssueTok
 			Route:      "/api/v1/platform/tokens/issue",
 			ResultCode: "ISSUE_FAILED",
 		}, r.now)
+		metrics.IncError(metrics.ErrInternal)
 		return TokenRecord{}, err
 	}
 	emitAudit(auditor, AuditEvent{
@@ -314,6 +322,7 @@ func (r *InMemoryTokenRuntime) IssueAndAudit(ctx context.Context, input IssueTok
 		Route:      "/api/v1/platform/tokens/issue",
 		ResultCode: "OK",
 	}, r.now)
+	metrics.IncIssue()
 	return record, nil
 }
 
@@ -328,6 +337,7 @@ func (r *InMemoryTokenRuntime) RevokeAndAudit(ctx context.Context, tokenID, reas
 			Route:      "/api/v1/platform/tokens/revoke",
 			ResultCode: "REVOKE_FAILED",
 		}, r.now)
+		metrics.IncError(metrics.ErrInternal)
 		return TokenRecord{}, err
 	}
 	emitAudit(auditor, AuditEvent{
@@ -338,6 +348,7 @@ func (r *InMemoryTokenRuntime) RevokeAndAudit(ctx context.Context, tokenID, reas
 		Route:      "/api/v1/platform/tokens/revoke",
 		ResultCode: "OK",
 	}, r.now)
+	metrics.IncRevoke()
 	return record, nil
 }
 

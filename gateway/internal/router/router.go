@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"lijiaoqiao/gateway/internal/adapter"
+	"lijiaoqiao/gateway/internal/metrics"
 	gwerror "lijiaoqiao/gateway/pkg/error"
 )
 
@@ -266,6 +267,9 @@ func (r *Router) RegisteredModels() []RegisteredModel {
 
 // RecordResult 记录调用结果
 func (r *Router) RecordResult(ctx context.Context, providerName string, success bool, latencyMs int64) {
+	// P3-C: 同步记录到 gateway metrics（无锁，非阻塞）
+	metrics.RecordProviderResult(providerName, success, latencyMs)
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
