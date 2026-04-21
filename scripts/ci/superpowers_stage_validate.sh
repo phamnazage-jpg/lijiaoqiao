@@ -115,6 +115,12 @@ run_phase07() {
     "env_class=local-mock|placeholder token detected|placeholder API_BASE_URL|missing env var|API_BASE_URL unreachable"
 }
 
+# Real staging decision design:
+# - PASS_REAL: PHASE-07 runs against real staging and succeeds.
+# - PASS_REHEARSAL: all executable rehearsal phases pass, but PHASE-07 is local/mock/deferred.
+# - FAIL: any required phase fails, or PHASE-07 is not real-pass when release flow requests hard gate.
+# - DEFERRED must never be promoted to PASS_REAL.
+
 ensure_mock_server() {
   if curl -sS -m 2 "http://127.0.0.1:18080/actuator/health" >/dev/null 2>&1; then
     echo "already_running"
@@ -239,6 +245,11 @@ if is_mock_staging_env "${STAGING_ENV_FILE}" && [[ "${DECISION}" == "GO" ]]; the
   DECISION="CONDITIONAL_GO"
   DECISION_REASON="all phases passed but PHASE-07 used local/mock staging env"
 fi
+
+# Future release hard-gate mapping:
+# - GO maps to PASS_REAL only when PHASE-07 is real-staging PASS.
+# - CONDITIONAL_GO maps to PASS_REHEARSAL and must not satisfy release pass.
+# - NO_GO maps to FAIL.
 
 {
   echo "# Superpowers 阶段验证报告"

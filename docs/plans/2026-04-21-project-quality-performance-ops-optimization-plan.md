@@ -329,21 +329,21 @@
 - Modify: `scripts/ci/final_decision_consistency_check.sh`
 - Create: `docs/plans/2026-04-21-real-staging-gate-rules.md`
 
-- [ ] `P2-B-01` 找出 `mock`、`local`、`DEFERRED` 被计为通过的判定点。
+- [x] `P2-B-01` 找出 `mock`、`local`、`DEFERRED` 被计为通过的判定点。
   完成标准：每个判定点都有文件和行号。
-- [ ] `P2-B-02` 定义 rehearsal 与 real staging 的术语。
+- [x] `P2-B-02` 定义 rehearsal 与 real staging 的术语。
   完成标准：规则文档中两者语义不重叠。
-- [ ] `P2-B-03` 定义“只有 real staging 通过才允许 release pass”的总规则。
+- [x] `P2-B-03` 定义“只有 real staging 通过才允许 release pass”的总规则。
   完成标准：总规则写成一句可执行判定语句。
-- [ ] `P2-B-04` 设计 `superpowers_stage_validate.sh` 的状态枚举。
+- [x] `P2-B-04` 设计 `superpowers_stage_validate.sh` 的状态枚举。
   完成标准：至少区分 `PASS_REAL`、`PASS_REHEARSAL`、`FAIL`。
-- [ ] `P2-B-05` 设计 `staging_real_readiness_check.sh` 的阻断输出格式。
+- [x] `P2-B-05` 设计 `staging_real_readiness_check.sh` 的阻断输出格式。
   完成标准：输出里包含明确的 pass/fail 字段。
-- [ ] `P2-B-06` 设计 `superpowers_release_pipeline.sh` 的 fail-fast 位置。
+- [x] `P2-B-06` 设计 `superpowers_release_pipeline.sh` 的 fail-fast 位置。
   完成标准：release 在 real staging 未通过时立即退出。
-- [ ] `P2-B-07` 设计 override 机制。
+- [x] `P2-B-07` 设计 override 机制。
   完成标准：override 必须要求审批人、时间戳、run_id、理由。
-- [ ] `P2-B-08` 设计禁止 `DEFERRED` 计入完成率的规则。
+- [x] `P2-B-08` 设计禁止 `DEFERRED` 计入完成率的规则。
   完成标准：文档里写出精确计算口径。
 
 ### Task P2-C: 统一环境语义和配置模板

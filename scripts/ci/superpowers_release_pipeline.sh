@@ -13,6 +13,11 @@ ENABLE_MINIMAX_MONITORING="${ENABLE_MINIMAX_MONITORING:-0}"
 MINIMAX_ENV_FILE="${MINIMAX_ENV_FILE:-scripts/supply-gate/.env.minimax-dev}"
 MINIMAX_RUN_ACTIVE_SMOKE="${MINIMAX_RUN_ACTIVE_SMOKE:-0}"
 
+# Planned real-staging hard gate:
+# - fail fast immediately after STEP-01 if stage validation is not PASS_REAL
+# - STEP-02 onward must not run release-path decisions on PASS_REHEARSAL/DEFERRED
+# - override, if ever allowed, must require approver, timestamp, run_id, and reason
+
 log() {
   echo "$1" | tee -a "${LOG_FILE}"
 }
@@ -100,6 +105,10 @@ run_optional_step_non_blocking \
   "Optional Minimax upstream monitoring snapshot+trend" \
   "${ENABLE_MINIMAX_MONITORING}" \
   "cd \"${ROOT_DIR}\" && RUN_ACTIVE_SMOKE=\"${MINIMAX_RUN_ACTIVE_SMOKE}\" bash \"scripts/ci/minimax_upstream_daily_snapshot.sh\" \"${TODAY_TAG}\" \"${MINIMAX_ENV_FILE}\" && bash \"scripts/ci/minimax_upstream_trend_report.sh\" \"${TODAY_TAG}\""
+
+# Planned fail-fast insertion point:
+# - parse STEP-01 report here
+# - if real staging status != PASS_REAL and no valid override record exists, exit 1 before STEP-02
 
 has_fail=0
 for row in "${STEP_RESULTS[@]}"; do

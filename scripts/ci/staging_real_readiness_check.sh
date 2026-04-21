@@ -15,6 +15,12 @@ TS="$(date +%F_%H%M%S)"
 REPORT_FILE="${OUT_DIR}/staging_real_readiness_${TS}.md"
 LOG_FILE="${OUT_DIR}/staging_real_readiness_${TS}.log"
 
+# Planned blocking output contract:
+# - real_staging_pass=true|false
+# - classification=REAL|REHEARSAL
+# - reason_code=<stable_code>
+# - run_id=<required in release flow>
+
 CHECK_IDS=()
 CHECK_STATUS=()
 CHECK_DESC=()
@@ -163,6 +169,11 @@ if [[ "${has_fail}" == "1" ]]; then
   RESULT="BLOCKED"
   NOTE="at least one required check failed"
 fi
+
+# Future status mapping:
+# - READY => PASS_REAL only when ENV_CLASS=real-staging
+# - BLOCKED => FAIL
+# - local-mock / placeholder classifications must never be treated as PASS_REAL
 
 {
   echo "# 真实 STG 就绪度检查"

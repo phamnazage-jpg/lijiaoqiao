@@ -14,6 +14,10 @@ LOG_FILE="${OUT_DIR}/final_decision_consistency_${TS}.log"
 # - preferred entry: --manifest <reports/releases/<run_id>/manifest.json>
 # - this script should bind final_decision, tok007_recheck and stage validation inputs
 #   to one run_id and stop reading historical "latest" outputs
+# Real staging gate design:
+# - DEFERRED / PASS_REHEARSAL must not be counted as release completion
+# - override metadata, if present, must include approver, timestamp, run_id, and reason
+# - final consistency WARN must not upgrade a non-real staging run into release PASS
 
 latest_file_or_empty() {
   local pattern="$1"

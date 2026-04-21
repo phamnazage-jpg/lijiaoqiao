@@ -94,3 +94,22 @@ rg -n "IntrospectTokenResponse|tenant_id|project_id|operator_id|metadata|IssueTo
 1. 已创建 `docs/plans/2026-04-21-release-manifest-contract.md`，记录 `latest_file_or_empty` 依赖入口、`run_id` 规则、目录结构与 `manifest.json` 必填字段。
 2. 已创建 `reports/releases/.gitkeep`，为后续 `<run_id>` 工件目录预留稳定路径。
 3. 已在四个脚本中补入 manifest 迁移设计说明，明确后续必须从 `decision_inputs` / `artifact_paths` 读取本次 run 的证据。
+
+## P2-B 真实 staging 硬门禁规则设计完成
+
+执行命令：
+
+```bash
+rg -n 'P2-B-0[1-8]|PASS_REAL|PASS_REHEARSAL|FAIL|override|DEFERRED|real_staging_pass' docs/plans/2026-04-21-real-staging-gate-rules.md
+bash -n scripts/ci/superpowers_stage_validate.sh
+bash -n scripts/ci/staging_real_readiness_check.sh
+bash -n scripts/ci/superpowers_release_pipeline.sh
+bash -n scripts/ci/final_decision_consistency_check.sh
+git diff --check
+```
+
+执行结果：
+
+1. 已创建 `docs/plans/2026-04-21-real-staging-gate-rules.md`，逐项覆盖 `P2-B-01` 到 `P2-B-08`，写死 rehearsal / real staging 术语边界、`PASS_REAL|PASS_REHEARSAL|FAIL` 状态枚举、override 约束和完成率口径。
+2. 已在 `scripts/ci/superpowers_stage_validate.sh`、`scripts/ci/staging_real_readiness_check.sh`、`scripts/ci/superpowers_release_pipeline.sh`、`scripts/ci/final_decision_consistency_check.sh` 补入迁移设计注释，明确真实 staging 是唯一 release 硬门禁，且 `DEFERRED` / rehearsal 不得计入 release pass。
+3. 四个脚本 `bash -n` 通过，且 `git diff --check` 无格式错误；本批次仅落设计规则与迁移约束，没有伪装成已完成实现。
