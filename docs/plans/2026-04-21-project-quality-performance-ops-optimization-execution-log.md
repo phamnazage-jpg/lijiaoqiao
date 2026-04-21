@@ -132,3 +132,23 @@ git diff --check
 3. 已在 `supply-api/cmd/supply-api/main.go` 增加 `staging/prod + config.dev.yaml` 的 fail-fast 拒绝规则，并补充命令行测试覆盖；同时新增 `supply-api/config/config.staging.example.yaml` 与 `supply-api/config/config.prod.example.yaml` 模板骨架。
 4. 已在 `scripts/devtest/start_dev_stack.sh` 引入 `LIJIAOQIAO_DEVTEST_SUPPLY_CONFIG` 参数，默认改用 `./config/config.staging.example.yaml`，去除 staging 启动链路里的 `config.dev.yaml` 硬编码。
 5. `bash -n scripts/devtest/start_dev_stack.sh`、`go test ./internal/config ./internal/app`、`go test ./cmd/supply-api ./internal/app ./internal/config` 均通过，且 `git diff --check` 无格式错误。
+
+## P2-D 测试分类与跨服务 smoke 设计完成
+
+执行命令：
+
+```bash
+bash -n scripts/ci/backend-verify.sh
+bash -n scripts/ci/repo_integrity_check.sh
+bash -n scripts/ci/cross_service_smoke.sh
+go test -tags=e2e ./e2e
+git diff --check
+```
+
+执行结果：
+
+1. 已在 `supply-api/e2e/README.md` 与 `supply-api/e2e/e2e_test.go` 明确当前 build-tag 套件属于 `service-http`，边界是“单进程、单服务 HTTP surface”，不再冒充真实部署 E2E。
+2. 已新增 `tests/smoke/README.md`，把测试分类收敛为 `unit`、`integration`、`service-http`、`cross-service-smoke`，并定义最小链路 `gateway -> token-runtime -> supply-api`。
+3. 已新增 `scripts/ci/cross_service_smoke.sh` 设计骨架，写明 smoke 输入环境变量、输出工件路径以及 `PASS` / `SKIP_LOCAL_PLACEHOLDER` / `FAIL_REAL_SMOKE` 结果契约；当前脚本仍是 design stub，不可作为已完成发布证据。
+4. 已在 `scripts/ci/backend-verify.sh` 补入 cross-service smoke 入口设计说明，并把 `./e2e` 的对外命名改为 `service-http`；已在 `scripts/ci/repo_integrity_check.sh` 明确其职责仅限代码完整性 gate，不是 release gate。
+5. `bash -n scripts/ci/backend-verify.sh`、`bash -n scripts/ci/repo_integrity_check.sh`、`bash -n scripts/ci/cross_service_smoke.sh`、`go test -tags=e2e ./e2e` 均通过，且 `git diff --check` 无格式错误。

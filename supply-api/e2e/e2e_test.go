@@ -24,6 +24,9 @@ import (
 	"lijiaoqiao/supply-api/internal/pkg/logging"
 )
 
+// 当前 build-tag 套件运行在单进程内存依赖上，归类为 service-http。
+// 它验证 supply-api 的 HTTP surface，不代表 gateway -> token-runtime -> supply-api 的真实跨服务 smoke。
+
 type e2eOptions struct {
 	withdrawEnabled bool
 }

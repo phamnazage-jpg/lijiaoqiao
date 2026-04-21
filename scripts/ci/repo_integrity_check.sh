@@ -31,7 +31,7 @@ echo "[repo] supply-api repository integration"
   cd "${ROOT_DIR}/supply-api"
   bash scripts/run_integration_tests.sh ./internal/repository
 )
-run_go_suite "${ROOT_DIR}" "${GO_BIN}" "supply-api e2e" "supply-api" test -count=1 -tags=e2e ./e2e
+run_go_suite "${ROOT_DIR}" "${GO_BIN}" "supply-api service-http" "supply-api" test -count=1 -tags=e2e ./e2e
 
 # Phase 1 contract gate entry (design slot):
 # - execute after service-local suites and repository integration
@@ -41,3 +41,8 @@ run_go_suite "${ROOT_DIR}" "${GO_BIN}" "supply-api e2e" "supply-api" test -count
 #     reports/archive/gate_verification/contract_gate_<timestamp>.md
 # - failure semantics: if the contract gate exits non-zero or any required scenario is missing,
 #   repo_integrity_check must fail and Phase 1 cannot be marked complete.
+
+# Phase 2 boundary note:
+# - repo_integrity_check only proves code completeness, syntax, unit/integration and service-local HTTP coverage.
+# - cross_service_smoke belongs to release/path validation and must not be redefined as repository integrity.
+# - even after smoke is introduced, this script remains a code integrity gate rather than a release gate.

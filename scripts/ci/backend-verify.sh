@@ -11,6 +11,9 @@ CONTRACT_GATE_DOC="${ROOT_DIR}/tests/contract/gateway_token_runtime_supply_chain
 CONTRACT_GATE_CHECKLIST="${ROOT_DIR}/docs/plans/2026-04-21-phase1-contract-gate-checklist.md"
 CONTRACT_GATE_LOG="${OUT_DIR}/contract_gate_${TS}.log"
 CONTRACT_GATE_REPORT="${OUT_DIR}/contract_gate_${TS}.md"
+SMOKE_GATE_DOC="${ROOT_DIR}/tests/smoke/README.md"
+SMOKE_GATE_LOG="${OUT_DIR}/cross_service_smoke_${TS}.log"
+SMOKE_GATE_REPORT="${OUT_DIR}/cross_service_smoke_${TS}.md"
 # shellcheck disable=SC1091
 source "${LIB_FILE}"
 
@@ -57,6 +60,7 @@ run_e2e_skip_gate() {
   local title="$2"
   local out_file="${OUT_DIR}/${step_id,,}_${TS}.out.log"
 
+  # 当前 ./e2e 是 supply-api 单服务进程内 HTTP surface 测试，不是跨服务部署 smoke。
   log "[INFO] ${step_id} ${title} start"
   set +e
   bash -lc "cd \"${ROOT_DIR}/supply-api\" && \"${GO_BIN}\" test -tags=e2e -v ./e2e/..." > "${out_file}" 2>&1
@@ -95,7 +99,7 @@ run_step \
 
 run_e2e_skip_gate \
   "STEP-04" \
-  "supply-api E2E gate must not contain placeholder skip"
+  "supply-api service-http build-tag suite must not contain placeholder skip"
 
 # Phase 1 contract gate execution slot (design only at this stage):
 # - command entry: bash "${ROOT_DIR}/scripts/ci/backend-verify.sh" --phase1-contract-gate
@@ -104,6 +108,17 @@ run_e2e_skip_gate \
 # - planned artifacts: ${CONTRACT_GATE_LOG} and ${CONTRACT_GATE_REPORT}
 # - failure semantics: any scenario mismatch, missing required evidence, or non-zero command exit
 #   must mark the backend verify result as FAIL.
+
+# Phase 2 cross-service smoke slot (design only at this stage):
+# - command entry: bash "${ROOT_DIR}/scripts/ci/cross_service_smoke.sh"
+# - taxonomy source: ${SMOKE_GATE_DOC}
+# - planned artifacts: ${SMOKE_GATE_LOG} and ${SMOKE_GATE_REPORT}
+# - expected chain: gateway -> token-runtime -> supply-api
+# - status contract:
+#     * SKIP_LOCAL_PLACEHOLDER: local/mock/placeholder inputs, not a release pass
+#     * FAIL_REAL_SMOKE: real staging inputs present but any link in the chain fails
+#     * PASS: real staging smoke succeeds and report is manifest-collectable
+# - backend verify must treat SKIP_LOCAL_PLACEHOLDER as non-pass evidence and FAIL_REAL_SMOKE as hard failure.
 
 HAS_FAIL=0
 for row in "${STEP_RESULTS[@]}"; do

@@ -384,21 +384,21 @@
 - Create: `tests/smoke/README.md`
 - Create: `scripts/ci/cross_service_smoke.sh`
 
-- [ ] `P2-D-01` 盘点当前被叫做 `e2e` 的测试真实边界。
+- [x] `P2-D-01` 盘点当前被叫做 `e2e` 的测试真实边界。
   完成标准：区分进程内、单服务、跨服务三类。
-- [ ] `P2-D-02` 定义新的测试分类名。
+- [x] `P2-D-02` 定义新的测试分类名。
   完成标准：至少包含 `unit`、`integration`、`service-http`、`cross-service-smoke`。
-- [ ] `P2-D-03` 在 `supply-api/e2e/README.md` 改写术语草稿。
+- [x] `P2-D-03` 在 `supply-api/e2e/README.md` 改写术语草稿。
   完成标准：README 不再把进程内测试叫成真实部署 E2E。
-- [ ] `P2-D-04` 设计 `cross_service_smoke.sh` 的最小链路。
+- [x] `P2-D-04` 设计 `cross_service_smoke.sh` 的最小链路。
   完成标准：至少覆盖 `gateway -> token-runtime -> supply-api`。
-- [ ] `P2-D-05` 为 smoke 脚本设计输入环境变量。
+- [x] `P2-D-05` 为 smoke 脚本设计输入环境变量。
   完成标准：包含地址、token、期望模型或 scope。
-- [ ] `P2-D-06` 为 smoke 脚本设计输出报告路径。
+- [x] `P2-D-06` 为 smoke 脚本设计输出报告路径。
   完成标准：输出可被 manifest 收录。
-- [ ] `P2-D-07` 设计 `backend-verify.sh` 中新增 smoke 入口。
+- [x] `P2-D-07` 设计 `backend-verify.sh` 中新增 smoke 入口。
   完成标准：能区分“本地占位跳过”和“真实 smoke 失败”。
-- [ ] `P2-D-08` 设计 `repo_integrity_check.sh` 的职责边界说明。
+- [x] `P2-D-08` 设计 `repo_integrity_check.sh` 的职责边界说明。
   完成标准：明确它不是 release gate，只是代码完整性 gate。
 
 ---

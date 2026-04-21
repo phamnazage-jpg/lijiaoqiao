@@ -1,12 +1,19 @@
-# E2E 测试说明
+# supply-api service-http 测试说明
 
-`e2e/` 目录只存放带 `//go:build e2e` 的端到端测试源码，不再混放伪装成文档的 Go 文件。
+`e2e/` 目录保留现有 build tag 路径，但这里的测试分类在 Phase P2-D 之后明确记为 `service-http`，不是“真实部署 E2E”。
 
-当前测试分层如下：
+当前边界：
 
-- `e2e_test.go`: 核心 HTTP API、鉴权和审计行为的端到端断言。
-- `playbook_test.go`: 按业务剧本组织的多步骤流程验证。
-- `production_flow_test.go`: 面向上线前复核的关键流程和安全边界检查。
+- 进程内：`newE2ESystem` 直接在单进程内装配 handler、内存审计存储、静态 token backend。
+- 单服务 HTTP：覆盖 `supply-api` 的路由、鉴权、审计和关键业务剧本。
+- 非跨服务：不会启动 `gateway`、`platform-token-runtime`、真实数据库或外部网络依赖。
+
+新的测试分类名：
+
+- `unit`: 单函数、单组件、无跨进程依赖。
+- `integration`: 真实数据库/仓储/适配层集成。
+- `service-http`: 单服务 HTTP surface，在进程内装配依赖。
+- `cross-service-smoke`: `gateway -> token-runtime -> supply-api` 的真实跨服务链路。
 
 运行方式：
 
@@ -22,6 +29,6 @@ go test -tags=e2e ./e2e -run TestPlaybook_SupplierOnboarding
 
 约束说明：
 
-- E2E 测试应保留在 `*_test.go` 文件内。
-- 说明文档只保留 Markdown 内容，不内嵌 Go 源码。
-- 新增剧本时优先复用 `newE2ESystem`，避免重复搭建测试系统。
+- `e2e/` 目录下的 build-tag 测试应保留在 `*_test.go` 文件内，但对外一律称为 `service-http`。
+- 真实跨服务 smoke 不得继续写进 `supply-api/e2e/`，应放到 `tests/smoke/` 与 `scripts/ci/cross_service_smoke.sh`。
+- 新增剧本时优先复用 `newE2ESystem`，避免重复搭建单服务测试系统。
