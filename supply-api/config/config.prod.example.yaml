@@ -1,0 +1,56 @@
+# Supply API Production Example Configuration
+# Production rules:
+# - keep server.default_supplier_id at 0
+# - do not use HS256/HS384/HS512
+# - provide token.public_key for RSA verification
+
+server:
+  addr: ":18082"
+  read_timeout: 10s
+  write_timeout: 15s
+  idle_timeout: 30s
+  shutdown_timeout: 5s
+  default_supplier_id: 0
+
+database:
+  host: "prod-postgres.internal"
+  port: 5432
+  user: "supply_api"
+  password: "${SUPPLY_DB_PASSWORD}"
+  database: "supply_prod"
+  max_open_conns: 50
+  max_idle_conns: 10
+  conn_max_lifetime: 1h
+  conn_max_idle_time: 10m
+
+redis:
+  host: "prod-redis.internal"
+  port: 6379
+  password: "${SUPPLY_REDIS_PASSWORD}"
+  db: 0
+  pool_size: 20
+
+token:
+  algorithm: "RS256"
+  public_key: |
+    ${SUPPLY_TOKEN_PUBLIC_KEY}
+  issuer: "lijiaoqiao/supply-api"
+  access_token_ttl: 1h
+  refresh_token_ttl: 168h
+  revocation_cache_ttl: 30s
+
+settlement:
+  withdraw_enabled: false
+
+sms:
+  enabled: false
+  provider: ""
+  app_id: ""
+  app_secret: ""
+  sign_name: ""
+  template_code: ""
+
+audit:
+  buffer_size: 1000
+  flush_interval: 5s
+  export_timeout: 30s

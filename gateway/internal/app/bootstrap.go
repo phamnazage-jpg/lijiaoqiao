@@ -273,12 +273,9 @@ func validateStartupSecurity(cfg config.Config) error {
 }
 
 func isProductionEnv(env string) bool {
-	switch strings.ToLower(strings.TrimSpace(env)) {
-	case "production", "prod", "online":
-		return true
-	default:
-		return false
-	}
+	// 共享环境别名归一化只允许在 config.NormalizeEnv 一处定义，
+	// 启动安全校验只消费归一化后的 prod 结果，避免多处规则漂移。
+	return config.NormalizeEnv(env) == "prod"
 }
 
 func isDefaultEncryptionKey() bool {

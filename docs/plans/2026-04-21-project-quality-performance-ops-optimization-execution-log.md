@@ -113,3 +113,22 @@ git diff --check
 1. 已创建 `docs/plans/2026-04-21-real-staging-gate-rules.md`，逐项覆盖 `P2-B-01` 到 `P2-B-08`，写死 rehearsal / real staging 术语边界、`PASS_REAL|PASS_REHEARSAL|FAIL` 状态枚举、override 约束和完成率口径。
 2. 已在 `scripts/ci/superpowers_stage_validate.sh`、`scripts/ci/staging_real_readiness_check.sh`、`scripts/ci/superpowers_release_pipeline.sh`、`scripts/ci/final_decision_consistency_check.sh` 补入迁移设计注释，明确真实 staging 是唯一 release 硬门禁，且 `DEFERRED` / rehearsal 不得计入 release pass。
 3. 四个脚本 `bash -n` 通过，且 `git diff --check` 无格式错误；本批次仅落设计规则与迁移约束，没有伪装成已完成实现。
+
+## P2-C 环境归一化与模板骨架完成
+
+执行命令：
+
+```bash
+bash -n scripts/devtest/start_dev_stack.sh
+go test ./internal/config ./internal/app
+go test ./cmd/supply-api ./internal/app ./internal/config
+git diff --check
+```
+
+执行结果：
+
+1. 已在 `docs/plans/2026-04-21-env-normalization-checklist.md` 盘点 `gateway`、`supply-api`、`platform-token-runtime` 的环境枚举，统一仓库内规范值为 `dev`、`staging`、`prod`，并补全启动前、启动后、CI 三类检查项。
+2. 已在 `gateway/internal/config/config.go` 增加单一 `NormalizeEnv` 入口，并让 `gateway/internal/app/bootstrap.go` 的生产安全判定复用该入口，收敛 `production/online -> prod` 兼容逻辑。
+3. 已在 `supply-api/cmd/supply-api/main.go` 增加 `staging/prod + config.dev.yaml` 的 fail-fast 拒绝规则，并补充命令行测试覆盖；同时新增 `supply-api/config/config.staging.example.yaml` 与 `supply-api/config/config.prod.example.yaml` 模板骨架。
+4. 已在 `scripts/devtest/start_dev_stack.sh` 引入 `LIJIAOQIAO_DEVTEST_SUPPLY_CONFIG` 参数，默认改用 `./config/config.staging.example.yaml`，去除 staging 启动链路里的 `config.dev.yaml` 硬编码。
+5. `bash -n scripts/devtest/start_dev_stack.sh`、`go test ./internal/config ./internal/app`、`go test ./cmd/supply-api ./internal/app ./internal/config` 均通过，且 `git diff --check` 无格式错误。

@@ -444,6 +444,36 @@ func TestValidateAuthConfig_ProdRequiresRemoteIntrospection(t *testing.T) {
 	}
 }
 
+func TestValidateAuthConfig_OnlineAliasRequiresRemoteIntrospection(t *testing.T) {
+	cfg := AuthConfig{Env: "online", TokenRuntimeMode: "inmemory"}
+	if err := ValidateAuthConfig(cfg); err == nil {
+		t.Fatal("expected online alias to be normalized to prod and rejected")
+	}
+}
+
+func TestLoadConfig_NormalizesProductionAliases(t *testing.T) {
+	t.Setenv("GATEWAY_TOKEN_RUNTIME_MODE", "remote_introspection")
+	t.Setenv("GATEWAY_TOKEN_RUNTIME_URL", "http://127.0.0.1:18081")
+
+	t.Setenv("GATEWAY_ENV", "production")
+	cfg, err := LoadConfig("")
+	if err != nil {
+		t.Fatalf("unexpected error loading production alias: %v", err)
+	}
+	if cfg.Auth.Env != "prod" {
+		t.Fatalf("expected production alias to normalize to prod, got %q", cfg.Auth.Env)
+	}
+
+	t.Setenv("GATEWAY_ENV", "online")
+	cfg, err = LoadConfig("")
+	if err != nil {
+		t.Fatalf("unexpected error loading online alias: %v", err)
+	}
+	if cfg.Auth.Env != "prod" {
+		t.Fatalf("expected online alias to normalize to prod, got %q", cfg.Auth.Env)
+	}
+}
+
 func TestLoadConfig_DefaultProvider(t *testing.T) {
 	t.Setenv("OPENAI_BASE_URL", "https://api.openai.com")
 	t.Setenv("OPENAI_MODELS", "gpt-4o-mini,gpt-4o")

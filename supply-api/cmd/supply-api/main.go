@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,6 +32,9 @@ func main() {
 	// 确定配置文件路径
 	if *configPath == "" {
 		*configPath = "./config/config." + *env + ".yaml"
+	}
+	if err := validateEnvConfigPath(*env, *configPath); err != nil {
+		logging.NewLogger("supply-api", logging.LogLevelInfo).Fatalf("%v", err)
 	}
 
 	// P1-010修复: 初始化结构化日志
@@ -104,4 +110,24 @@ func main() {
 	}
 
 	jsonLogger.Info("shutdown complete")
+}
+
+func validateEnvConfigPath(envName, configPath string) error {
+	if envName == "dev" {
+		return nil
+	}
+
+	base := strings.ToLower(strings.TrimSpace(filepath.Base(configPath)))
+	switch base {
+	case "config.dev.yaml", "config.dev.yml":
+		return fmt.Errorf(
+			"config path %q is a dev template and cannot be used with -env=%s; use config.%s.yaml or a %s example template instead",
+			configPath,
+			envName,
+			envName,
+			envName,
+		)
+	default:
+		return nil
+	}
 }

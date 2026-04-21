@@ -1,0 +1,40 @@
+# Supply API Staging Example Configuration
+# Use with:
+#   go run ./cmd/supply-api -env=staging -config ./config/config.staging.example.yaml
+
+server:
+  addr: ":18082"
+  read_timeout: 10s
+  write_timeout: 15s
+  idle_timeout: 30s
+  shutdown_timeout: 5s
+
+database:
+  host: "staging-postgres.internal"
+  port: 5432
+  user: "supply_api"
+  password: "${SUPPLY_DB_PASSWORD}"
+  database: "supply_staging"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 1h
+  conn_max_idle_time: 10m
+
+redis:
+  host: "staging-redis.internal"
+  port: 6379
+  password: "${SUPPLY_REDIS_PASSWORD}"
+  db: 0
+  pool_size: 10
+
+token:
+  secret_key: "${SUPPLY_TOKEN_SECRET_KEY}"
+  issuer: "lijiaoqiao/supply-api-staging"
+  access_token_ttl: 1h
+  refresh_token_ttl: 168h
+  revocation_cache_ttl: 30s
+
+audit:
+  buffer_size: 1000
+  flush_interval: 5s
+  export_timeout: 30s

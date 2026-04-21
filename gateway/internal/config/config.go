@@ -38,11 +38,11 @@ type ServerConfig struct {
 
 // AuthConfig 鉴权运行时配置
 type AuthConfig struct {
-	Env               string
-	TokenRuntimeMode  string
-	TokenRuntimeURL   string
-	TrustedProxies    []string // 可信的代理IP列表，用于IP伪造防护
-	CORSAllowOrigins  []string // 允许的CORS来源，为空则使用默认通配符
+	Env              string
+	TokenRuntimeMode string
+	TokenRuntimeURL  string
+	TrustedProxies   []string // 可信的代理IP列表，用于IP伪造防护
+	CORSAllowOrigins []string // 允许的CORS来源，为空则使用默认通配符
 }
 
 // DatabaseConfig 数据库配置
@@ -166,7 +166,7 @@ func LoadConfig(path string) (*Config, error) {
 			IdleTimeout:  120 * time.Second,
 		},
 		Auth: AuthConfig{
-			Env:              strings.ToLower(getEnv("GATEWAY_ENV", "dev")),
+			Env:              NormalizeEnv(getEnv("GATEWAY_ENV", "dev")),
 			TokenRuntimeMode: strings.ToLower(getEnv("GATEWAY_TOKEN_RUNTIME_MODE", "inmemory")),
 			TokenRuntimeURL:  strings.TrimSpace(getEnv("GATEWAY_TOKEN_RUNTIME_URL", "")),
 		},
@@ -222,9 +222,24 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// NormalizeEnv 将兼容别名统一折叠到仓库内的唯一环境枚举。
+// Phase P2-C 之后，代码与文档内部只保留 dev/staging/prod。
+func NormalizeEnv(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "dev":
+		return "dev"
+	case "staging":
+		return "staging"
+	case "production", "online", "prod":
+		return "prod"
+	default:
+		return strings.ToLower(strings.TrimSpace(raw))
+	}
+}
+
 func ValidateAuthConfig(cfg AuthConfig) error {
 	mode := strings.ToLower(strings.TrimSpace(cfg.TokenRuntimeMode))
-	env := strings.ToLower(strings.TrimSpace(cfg.Env))
+	env := NormalizeEnv(cfg.Env)
 
 	switch mode {
 	case "inmemory", "remote_introspection":

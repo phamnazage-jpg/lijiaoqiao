@@ -357,21 +357,21 @@
 - Create: `supply-api/config/config.prod.example.yaml`
 - Create: `docs/plans/2026-04-21-env-normalization-checklist.md`
 
-- [ ] `P2-C-01` 盘点三服务支持的环境枚举和值别名。
+- [x] `P2-C-01` 盘点三服务支持的环境枚举和值别名。
   完成标准：清单覆盖 `dev`、`staging`、`prod`、`production`、`online`。
-- [ ] `P2-C-02` 定义统一枚举。
+- [x] `P2-C-02` 定义统一枚举。
   完成标准：计划文档只保留 `dev`、`staging`、`prod`。
-- [ ] `P2-C-03` 设计 `gateway` 对 `production/online -> prod` 的归一化入口。
+- [x] `P2-C-03` 设计 `gateway` 对 `production/online -> prod` 的归一化入口。
   完成标准：只保留一个真正规则。
-- [ ] `P2-C-04` 设计 `supply-api` 对 `-env=staging -config=config.dev.yaml` 的拒绝规则。
+- [x] `P2-C-04` 设计 `supply-api` 对 `-env=staging -config=config.dev.yaml` 的拒绝规则。
   完成标准：规则中包含错误信息草稿。
-- [ ] `P2-C-05` 复制 `config.dev.yaml` 所需段落，生成 staging 模板骨架。
+- [x] `P2-C-05` 复制 `config.dev.yaml` 所需段落，生成 staging 模板骨架。
   完成标准：`config.staging.example.yaml` 包含必要配置段。
-- [ ] `P2-C-06` 复制 prod 模板骨架。
+- [x] `P2-C-06` 复制 prod 模板骨架。
   完成标准：`config.prod.example.yaml` 包含关键安全配置占位。
-- [ ] `P2-C-07` 在 `scripts/devtest/start_dev_stack.sh` 设计改用 staging 模板的参数。
+- [x] `P2-C-07` 在 `scripts/devtest/start_dev_stack.sh` 设计改用 staging 模板的参数。
   完成标准：脚本不再硬编码 `config.dev.yaml`。
-- [ ] `P2-C-08` 写环境归一化检查清单。
+- [x] `P2-C-08` 写环境归一化检查清单。
   完成标准：包括启动前检查、启动后检查、CI 检查三类项。
 
 ### Task P2-D: 重构测试分类，补真实跨服务 smoke

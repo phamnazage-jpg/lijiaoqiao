@@ -25,6 +25,7 @@ GATEWAY_PORT="${LIJIAOQIAO_DEVTEST_GATEWAY_PORT:-18080}"
 
 SUPPLY_TOKEN_SECRET_KEY="${LIJIAOQIAO_DEVTEST_SUPPLY_TOKEN_SECRET_KEY:-devtest-secret-key-12345678901234567890}"
 SUPPLY_TOKEN_ISSUER="${LIJIAOQIAO_DEVTEST_SUPPLY_TOKEN_ISSUER:-lijiaoqiao/supply-api}"
+SUPPLY_CONFIG_PATH="${LIJIAOQIAO_DEVTEST_SUPPLY_CONFIG:-./config/config.staging.example.yaml}"
 
 OPENAI_MODELS="${LIJIAOQIAO_DEVTEST_OPENAI_MODELS:-gpt-4o-mini,gpt-4o,gpt-4.1,o3-mini,claude-3-5-sonnet,claude-3-7-sonnet,gemini-2.0-flash,deepseek-chat}"
 
@@ -132,6 +133,7 @@ export LIJIAOQIAO_DEVTEST_GATEWAY_PORT="${GATEWAY_PORT}"
 export LIJIAOQIAO_DEVTEST_OPENAI_MODELS="${OPENAI_MODELS}"
 export LIJIAOQIAO_DEVTEST_SUPPLY_TOKEN_SECRET_KEY="${SUPPLY_TOKEN_SECRET_KEY}"
 export LIJIAOQIAO_DEVTEST_SUPPLY_TOKEN_ISSUER="${SUPPLY_TOKEN_ISSUER}"
+export LIJIAOQIAO_DEVTEST_SUPPLY_CONFIG="${SUPPLY_CONFIG_PATH}"
 EOF
 }
 
@@ -187,7 +189,7 @@ start_process "platform-token-runtime" \
 wait_http "platform-token-runtime" "http://${TOKEN_RUNTIME_ADDR}/actuator/health"
 
 start_process "supply-api" \
-    "cd \"${ROOT_DIR}/supply-api\" && SUPPLY_API_ADDR=\"${SUPPLY_API_ADDR}\" SUPPLY_DB_HOST=\"${PG_HOST}\" SUPPLY_DB_PORT=\"${PG_PORT}\" SUPPLY_DB_USER=\"${PG_USER}\" SUPPLY_DB_PASSWORD=\"${PG_PASSWORD}\" SUPPLY_DB_NAME=\"${SUPPLY_DB}\" SUPPLY_API_IAM_ENABLED=\"true\" SUPPLY_TOKEN_SECRET_KEY=\"${SUPPLY_TOKEN_SECRET_KEY}\" SUPPLY_TOKEN_ISSUER=\"${SUPPLY_TOKEN_ISSUER}\" GOCACHE=\"${STATE_DIR}/go-cache/supply-api\" go run ./cmd/supply-api -env=staging -config ./config/config.dev.yaml"
+    "cd \"${ROOT_DIR}/supply-api\" && SUPPLY_API_ADDR=\"${SUPPLY_API_ADDR}\" SUPPLY_DB_HOST=\"${PG_HOST}\" SUPPLY_DB_PORT=\"${PG_PORT}\" SUPPLY_DB_USER=\"${PG_USER}\" SUPPLY_DB_PASSWORD=\"${PG_PASSWORD}\" SUPPLY_DB_NAME=\"${SUPPLY_DB}\" SUPPLY_API_IAM_ENABLED=\"true\" SUPPLY_TOKEN_SECRET_KEY=\"${SUPPLY_TOKEN_SECRET_KEY}\" SUPPLY_TOKEN_ISSUER=\"${SUPPLY_TOKEN_ISSUER}\" GOCACHE=\"${STATE_DIR}/go-cache/supply-api\" go run ./cmd/supply-api -env=staging -config \"${SUPPLY_CONFIG_PATH}\""
 wait_http "supply-api" "http://127.0.0.1${SUPPLY_API_ADDR#:}/actuator/health"
 
 start_process "gateway" \
