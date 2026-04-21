@@ -46,3 +46,18 @@ rg -n "IntrospectTokenResponse|tenant_id|project_id|operator_id|metadata|IssueTo
 1. `IssueTokenRequest` 已定义 `metadata`，但 `IntrospectTokenResponse.data` 尚未暴露 `tenant_id`。
 2. 现有 introspection 响应字段只有 `token_id`、`subject_id`、`role`、`status`、`scope`、`issued_at`、`expires_at`，与 canonical principal 最小字段清单相比缺少 `tenant_id`。
 3. `project_id`、`operator_id`、`metadata` 目前也未出现在 introspection 响应中，但它们尚未进入最小 canonical principal 强制字段，保留为 Phase 1 后续 schema / 审计收敛项。
+
+## P1-A-07 supply-api README 统一 principal 说明
+
+结论：
+
+1. 已在 `supply-api/README.md` 明确 `supply-api` 只消费 canonical principal，不自持独立 token authority。
+2. 文档现在把 token 状态与权限判断的唯一来源收束到 `platform-token-runtime` 的 introspection 结果。
+
+## P1-A-08 platform-token-runtime README 唯一 authority 与字段边界
+
+结论：
+
+1. 已在 `platform-token-runtime/README.md` 明确 `platform-token-runtime` 是唯一 token authority。
+2. 文档现在把 canonical principal 的最小字段边界写死为 `token_id`、`subject_id`、`tenant_id`、`role`、`scope`、`issued_at`、`expires_at`、`status`。
+3. 文档同时要求未来扩展字段必须同步更新 DDL、OpenAPI、存储模型和审计字段，避免边界漂移。

@@ -9,6 +9,7 @@
 - 数据库不可用时，开发模式下仍保留部分内存降级路径；当前仓库不把这种模式视为生产可用状态。
 - 告警 API 在 PostgreSQL 可用时走数据库仓储；数据库不可用时才显式回退内存实现。
 - IAM 路由默认不进入对外交付面；只有 `server.iam_enabled=true` 且 runtime 具备数据库依赖时才注册 `/api/v1/iam/*`。
+- `supply-api` 只消费 canonical principal，不自持独立 token authority；token 状态与权限判断以 `platform-token-runtime` 的 introspection 结果为准。
 - 提现接口路径存在不代表能力已上线。只有 `settlement.withdraw_enabled=true`、`sms.*` 配置齐备，且 runtime 显式注入了真实 `SMSVerifier` 时，提现才会从关闭态切到可用态。
 - 依赖幂等仓储的写接口在中间件缺失时会返回 `503 SUP_HTTP_5031`，不再静默切回内联逻辑。
 - Outbox processor 与补偿 worker 仅在数据库可用时启动。

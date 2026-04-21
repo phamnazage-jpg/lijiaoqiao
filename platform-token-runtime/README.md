@@ -6,6 +6,7 @@
 
 - 服务入口是 `cmd/platform-token-runtime/main.go`，装配逻辑收口在 `internal/app/bootstrap.go`。
 - 当前可用接口包括 `issue`、`refresh`、`revoke`、`introspect`、`audit-events`。
+- `platform-token-runtime` 是唯一 token authority；对外 introspection 仅暴露 canonical principal 最小字段边界，不在其他服务中复制 authority 语义。
 - `TOKEN_RUNTIME_ENV=dev` 且未显式注入 store 时，bootstrap 会自动使用内存 runtime store 与内存 audit store。
 - `TOKEN_RUNTIME_ENV=staging` 或 `TOKEN_RUNTIME_ENV=prod` 时，支持通过 `TOKEN_RUNTIME_DATABASE_URL` 自动装配 PostgreSQL runtime store 与 audit store；未提供 DSN 时仍会快速失败，而不是回退到内存实现。
 - `audit-events` 当前始终保持可查询接口语义；默认内存 audit store 会返回真实事件，未提供查询能力的自定义 emitter 会返回空结果而不是 `501` 占位响应。
@@ -15,6 +16,7 @@
 1. 仅支持 `Authorization: Bearer <token>` 入站。
 2. 外部 query key（`key`、`api_key`、`token`）一律拒绝。
 3. 不在任何响应或审计字段中输出 access token 明文。
+4. canonical principal 最小字段边界为 `token_id`、`subject_id`、`tenant_id`、`role`、`scope`、`issued_at`、`expires_at`、`status`；若后续扩展字段，必须同步更新 DDL、OpenAPI、存储模型与审计字段。
 
 ## 本地运行
 

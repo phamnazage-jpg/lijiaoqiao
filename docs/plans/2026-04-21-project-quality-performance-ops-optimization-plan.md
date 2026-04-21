@@ -206,9 +206,9 @@
   完成标准：OpenAPI 草案与最小规范字段一致。
 - [x] `P1-A-06` 在 `gateway/README.md` 增加“非 dev 环境只允许远程 introspection”说明。
   完成标准：README 不再给 staging/prod 留下本地 authority 的解释空间。
-- [ ] `P1-A-07` 在 `supply-api/README.md` 增加“消费统一 principal，不自持独立 authority”说明。
+- [x] `P1-A-07` 在 `supply-api/README.md` 增加“消费统一 principal，不自持独立 authority”说明。
   完成标准：README 用词与 Phase 1 目标一致。
-- [ ] `P1-A-08` 在 `platform-token-runtime/README.md` 增加“唯一 authority”声明和字段边界。
+- [x] `P1-A-08` 在 `platform-token-runtime/README.md` 增加“唯一 authority”声明和字段边界。
   完成标准：三份 README 口径一致。
 
 ### Task P1-B: 收敛 token schema、存储模型和审计字段
