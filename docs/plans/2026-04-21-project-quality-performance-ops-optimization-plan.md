@@ -246,17 +246,17 @@
 - Modify: `supply-api/internal/app/runtime.go`
 - Modify: `supply-api/internal/app/bootstrap.go`
 
-- [ ] `P1-C-01` 在 `gateway/internal/app/bootstrap.go` 标出 `inmemory` 与 `remote_introspection` 分支。
+- [x] `P1-C-01` 在 `gateway/internal/app/bootstrap.go` 标出 `inmemory` 与 `remote_introspection` 分支。
   完成标准：分支入口和调用点被记录。
-- [ ] `P1-C-02` 在 `supply-api/internal/middleware/auth.go` 标出 JWT 验证、token 状态检查和 principal 注入点。
+- [x] `P1-C-02` 在 `supply-api/internal/middleware/auth.go` 标出 JWT 验证、token 状态检查和 principal 注入点。
   完成标准：三个位置都被记录。
-- [ ] `P1-C-03` 在 `supply-api/internal/app/runtime.go` 标出 token backend 的装配点。
+- [x] `P1-C-03` 在 `supply-api/internal/app/runtime.go` 标出 token backend 的装配点。
   完成标准：DB-backed 与 memory-backed 装配点均被记录。
-- [ ] `P1-C-04` 写出 `gateway` 非 dev 禁用本地 authority 的代码改动清单。
+- [x] `P1-C-04` 写出 `gateway` 非 dev 禁用本地 authority 的代码改动清单。
   完成标准：至少包含 config、bootstrap、tests。
-- [ ] `P1-C-05` 写出 `supply-api` 从“JWT authority”迁到“principal consumer”的代码改动清单。
+- [x] `P1-C-05` 写出 `supply-api` 从“JWT authority”迁到“principal consumer”的代码改动清单。
   完成标准：至少包含 middleware、runtime、HTTP handler、tests。
-- [ ] `P1-C-06` 写出过渡期兼容策略。
+- [x] `P1-C-06` 写出过渡期兼容策略。
   完成标准：明确单写、双读、切流或一次性切换的方案。
 - [ ] `P1-C-07` 写出回滚条件。
   完成标准：明确何时回滚、回滚到哪一版契约。

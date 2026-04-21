@@ -69,3 +69,11 @@ rg -n "IntrospectTokenResponse|tenant_id|project_id|operator_id|metadata|IssueTo
 1. 已创建 `docs/plans/2026-04-21-token-runtime-schema-alignment-notes.md`，记录 schema、model、runtime store、audit store 的字段差异。
 2. 单一决策为“保留字段并贯穿”，不采用删除字段 / shrink SQL 路线。
 3. 后续实现顺序固定为：`model -> store -> API -> audit -> tests`。
+
+## P1-C 身份实现收敛策略
+
+执行结果：
+
+1. 已创建 `docs/plans/2026-04-21-auth-implementation-convergence-notes.md`，记录 gateway 与 supply-api 的身份入口、装配点和迁移清单。
+2. gateway 侧后续只保留 `remote_introspection` 作为非 `dev` 环境 authority 入口，本地 `inmemory` 仅允许 `dev`。
+3. supply-api 侧过渡策略固定为：`单写 + 双读短窗 + 一次性切断旧 JWT`。
