@@ -272,21 +272,21 @@
 - Create: `tests/contract/gateway_token_runtime_supply_chain.md`
 - Create: `docs/plans/2026-04-21-phase1-contract-gate-checklist.md`
 
-- [ ] `P1-D-01` 盘点当前 CI 对三服务身份链路的真实覆盖缺口。
+- [x] `P1-D-01` 盘点当前 CI 对三服务身份链路的真实覆盖缺口。
   完成标准：清单里明确“当前没有覆盖”的场景。
-- [ ] `P1-D-02` 定义最小 contract 场景 1：合法 token。
+- [x] `P1-D-02` 定义最小 contract 场景 1：合法 token。
   完成标准：说明中包含请求入口、期望状态码和关键字段。
-- [ ] `P1-D-03` 定义最小 contract 场景 2：吊销 token。
+- [x] `P1-D-03` 定义最小 contract 场景 2：吊销 token。
   完成标准：说明中包含吊销后的 gateway 与 supply-api 预期行为。
-- [ ] `P1-D-04` 定义最小 contract 场景 3：scope 不足。
+- [x] `P1-D-04` 定义最小 contract 场景 3：scope 不足。
   完成标准：说明中包含 principal 字段和拒绝行为。
-- [ ] `P1-D-05` 定义最小 contract 场景 4：token runtime 不可用。
+- [x] `P1-D-05` 定义最小 contract 场景 4：token runtime 不可用。
   完成标准：说明中包含入口超时和错误码约束。
-- [ ] `P1-D-06` 在 `backend-verify.sh` 设计新增执行位。
+- [x] `P1-D-06` 在 `backend-verify.sh` 设计新增执行位。
   完成标准：写清楚命令入口、产物路径和失败语义。
-- [ ] `P1-D-07` 在 `repo_integrity_check.sh` 设计新增 contract gate 入口。
+- [x] `P1-D-07` 在 `repo_integrity_check.sh` 设计新增 contract gate 入口。
   完成标准：文件里明确放在何处执行。
-- [ ] `P1-D-08` 写 Phase 1 gate checklist。
+- [x] `P1-D-08` 写 Phase 1 gate checklist。
   完成标准：只有当 contract tests 通过，Phase 1 才能标记完成。
 
 ---

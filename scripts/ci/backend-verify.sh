@@ -7,6 +7,10 @@ TS="$(date +%F_%H%M%S)"
 LOG_FILE="${OUT_DIR}/backend_verify_${TS}.log"
 REPORT_FILE="${OUT_DIR}/backend_verify_${TS}.md"
 LIB_FILE="${ROOT_DIR}/scripts/ci/lib/verification_common.sh"
+CONTRACT_GATE_DOC="${ROOT_DIR}/tests/contract/gateway_token_runtime_supply_chain.md"
+CONTRACT_GATE_CHECKLIST="${ROOT_DIR}/docs/plans/2026-04-21-phase1-contract-gate-checklist.md"
+CONTRACT_GATE_LOG="${OUT_DIR}/contract_gate_${TS}.log"
+CONTRACT_GATE_REPORT="${OUT_DIR}/contract_gate_${TS}.md"
 # shellcheck disable=SC1091
 source "${LIB_FILE}"
 
@@ -92,6 +96,14 @@ run_step \
 run_e2e_skip_gate \
   "STEP-04" \
   "supply-api E2E gate must not contain placeholder skip"
+
+# Phase 1 contract gate execution slot (design only at this stage):
+# - command entry: bash "${ROOT_DIR}/scripts/ci/backend-verify.sh" --phase1-contract-gate
+# - contract spec: ${CONTRACT_GATE_DOC}
+# - gate checklist: ${CONTRACT_GATE_CHECKLIST}
+# - planned artifacts: ${CONTRACT_GATE_LOG} and ${CONTRACT_GATE_REPORT}
+# - failure semantics: any scenario mismatch, missing required evidence, or non-zero command exit
+#   must mark the backend verify result as FAIL.
 
 HAS_FAIL=0
 for row in "${STEP_RESULTS[@]}"; do

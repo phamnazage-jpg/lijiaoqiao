@@ -78,3 +78,11 @@ rg -n "IntrospectTokenResponse|tenant_id|project_id|operator_id|metadata|IssueTo
 2. gateway 侧后续只保留 `remote_introspection` 作为非 `dev` 环境 authority 入口，本地 `inmemory` 仅允许 `dev`。
 3. supply-api 侧过渡策略固定为：`单写 + 双读短窗 + 一次性切断旧 JWT`。
 4. 回滚目标契约固定为“兼容窗口契约 v1”，不回滚到旧的多 authority 设计。
+
+## P1-D contract gate 设计完成
+
+执行结果：
+
+1. 已创建 `tests/contract/README.md` 与 `tests/contract/gateway_token_runtime_supply_chain.md`，明确当前 CI 覆盖缺口与四个最小 contract 场景。
+2. 已创建 `docs/plans/2026-04-21-phase1-contract-gate-checklist.md`，把 Phase 1 关闭条件绑定到 contract gate。
+3. 已在 `scripts/ci/backend-verify.sh` 和 `scripts/ci/repo_integrity_check.sh` 写明 contract gate 执行位、产物路径和失败语义。
