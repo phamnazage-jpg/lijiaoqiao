@@ -134,6 +134,7 @@ func NewPackageService(store PackageStore, accountStore AccountStore, auditStore
 
 // emitAudit 安全记录审计日志（失败只记录错误，不影响主流程）
 func (s *packageService) emitAudit(ctx context.Context, event audit.Event) {
+	audit.EnrichEventWithSubjectID(ctx, &event)
 	if err := s.auditStore.Emit(ctx, event); err != nil {
 		logger := logging.NewLogger("supply-api", logging.LogLevelError)
 		logger.Error("failed to emit audit event", map[string]interface{}{

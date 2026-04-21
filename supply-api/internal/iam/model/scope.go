@@ -24,12 +24,12 @@ var (
 // Scope Scope模型
 // 对应数据库 iam_scopes 表
 type Scope struct {
-	ID          int64   // 主键ID
-	Code        string  // Scope代码 (unique): platform:read, supply:account:write
-	Name        string  // Scope名称
-	Type        string  // Scope类型: platform, supply, consumer, router, billing
-	Description string  // 描述
-	IsActive    bool    // 是否激活
+	ID          int64  // 主键ID
+	Code        string // Scope代码 (unique): platform:read, supply:account:write
+	Name        string // Scope名称
+	Type        string // Scope类型: platform, supply, consumer, router, billing
+	Description string // 描述
+	IsActive    bool   // 是否激活
 
 	// 审计字段
 	RequestID string // 请求追踪ID
@@ -46,14 +46,14 @@ type Scope struct {
 func NewScope(code, name, scopeType string) *Scope {
 	now := time.Now()
 	return &Scope{
-		Code:        code,
-		Name:        name,
-		Type:        scopeType,
-		IsActive:    true,
-		RequestID:   generateRequestID(),
-		Version:     1,
-		CreatedAt:   &now,
-		UpdatedAt:   &now,
+		Code:      code,
+		Name:      name,
+		Type:      scopeType,
+		IsActive:  true,
+		RequestID: generateRequestID(),
+		Version:   1,
+		CreatedAt: &now,
+		UpdatedAt: &now,
 	}
 }
 
@@ -222,4 +222,25 @@ func GetPredefinedScopeByCode(code string) *Scope {
 // IsPredefinedScope 检查是否为预定义Scope
 func IsPredefinedScope(code string) bool {
 	return GetPredefinedScopeByCode(code) != nil
+}
+
+// ValidateUserTypeScopeMatch 验证userType与scopeType是否匹配
+// 平台管理员(platform)可使用所有类型的scope
+// 供应商(supply)只能使用supply和platform类型的scope
+// 消费者(consumer)只能使用consumer和platform类型的scope
+func ValidateUserTypeScopeMatch(userType, scopeType string) bool {
+	switch userType {
+	case ScopeTypePlatform:
+		// platform用户可使用所有scope类型
+		return true
+	case ScopeTypeSupply:
+		// supply用户只能使用supply和platform类型scope（不能操作consumer资源）
+		return scopeType == ScopeTypeSupply || scopeType == ScopeTypePlatform
+	case ScopeTypeConsumer:
+		// consumer用户只能使用consumer和platform类型scope（不能操作supply资源）
+		return scopeType == ScopeTypeConsumer || scopeType == ScopeTypePlatform
+	default:
+		// 未知userType默认严格模式，拒绝访问
+		return false
+	}
 }

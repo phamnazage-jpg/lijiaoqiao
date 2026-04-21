@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"lijiaoqiao/supply-api/internal/audit"
 	"lijiaoqiao/supply-api/internal/iam/model"
 	"lijiaoqiao/supply-api/internal/middleware"
 	"lijiaoqiao/supply-api/internal/pkg/logging"
@@ -29,8 +30,8 @@ type IAMTokenClaims struct {
 	Role        string   `json:"role"`
 	Scope       []string `json:"scope"`
 	TenantID    int64    `json:"tenant_id"`
-	UserType    string   `json:"user_type"`     // 用户类型: platform/supply/consumer
-	Permissions []string `json:"permissions"`    // 细粒度权限列表
+	UserType    string   `json:"user_type"`   // 用户类型: platform/supply/consumer
+	Permissions []string `json:"permissions"` // 细粒度权限列表
 
 	// 版本控制字段（未来迁移用）
 	Version int `json:"version,omitempty"`
@@ -38,15 +39,17 @@ type IAMTokenClaims struct {
 
 // MigrateClaims 将旧版本Claims迁移到当前版本
 // 迁移路径：
-//   v0 -> v1: 初始版本，添加 Version 字段
+//
+//	v0 -> v1: 初始版本，添加 Version 字段
 //
 // 使用示例：
-//   claims := &IAMTokenClaims{}
-//   if err := json.Unmarshal(data, claims); err != nil {
-//       return err
-//   }
-//   migrated := MigrateClaims(claims)
-//   // 使用 migrated
+//
+//	claims := &IAMTokenClaims{}
+//	if err := json.Unmarshal(data, claims); err != nil {
+//	    return err
+//	}
+//	migrated := MigrateClaims(claims)
+//	// 使用 migrated
 func MigrateClaims(claims *IAMTokenClaims) *IAMTokenClaims {
 	if claims == nil {
 		return nil
@@ -75,7 +78,7 @@ func ValidateClaims(claims *IAMTokenClaims) error {
 
 // 迁移相关错误
 var (
-	ErrInvalidClaims   = &ClaimsError{Code: "IAM_CLAIMS_4001", Message: "invalid claims structure"}
+	ErrInvalidClaims    = &ClaimsError{Code: "IAM_CLAIMS_4001", Message: "invalid claims structure"}
 	ErrInvalidSubjectID = &ClaimsError{Code: "IAM_CLAIMS_4002", Message: "subject_id is required"}
 )
 
@@ -244,11 +247,11 @@ func logWildcardScopeAccess(ctx context.Context, claims *IAMTokenClaims, require
 		// 记录审计日志
 		logger := logging.NewLogger("supply-api", logging.LogLevelWarn)
 		logger.Warn("P2-01 WILDCARD_SCOPE_ACCESS", map[string]interface{}{
-			"subject_id":    claims.SubjectID,
-			"role":          claims.Role,
+			"subject_id":     claims.SubjectID,
+			"role":           claims.Role,
 			"required_scope": requiredScope,
-			"tenant_id":     claims.TenantID,
-			"user_type":     claims.UserType,
+			"tenant_id":      claims.TenantID,
+			"user_type":      claims.UserType,
 		})
 	}
 }
@@ -388,6 +391,62 @@ func (m *ScopeAuthMiddleware) RequireMinLevel(minLevel int) func(http.Handler) h
 	}
 }
 
+// ValidateScopeCodeMatch 验证claims持有的scope code是否匹配userType（P4-C-07闭环）
+// supply用户不能使用consumer:* scope，反之亦然；platform用户可使用所有类型scope
+// 若scope为通配符"* "则跳过类型校验（通配符在RequireScope层面已处理）
+func ValidateScopeCodeMatch(claims *IAMTokenClaims, scopeCode string) bool {
+	if claims == nil {
+		return false
+	}
+	if scopeCode == "" || scopeCode == "*" {
+		// 空scope或通配符不做类型校验
+		return true
+	}
+	scopeType := model.GetScopeTypeFromCode(scopeCode)
+	if scopeType == "" {
+		// 未知类型的scope，保守拒绝
+		return false
+	}
+	return model.ValidateUserTypeScopeMatch(claims.UserType, scopeType)
+}
+
+// RequireScopeWithUserType 返回一个要求特定Scope且通过UserType校验的中间件（P4-C-07）
+// 同时检查：1) token持有该scope  2) userType与scope类型匹配
+func (m *ScopeAuthMiddleware) RequireScopeWithUserType(requiredScope string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims := getIAMTokenClaims(r.Context())
+
+			if claims == nil {
+				writeAuthError(w, http.StatusUnauthorized, "AUTH_CONTEXT_MISSING",
+					"authentication context is missing")
+				return
+			}
+
+			// 第一步：检查scope持有
+			if requiredScope != "" && !hasScope(claims.Scope, requiredScope) {
+				writeAuthError(w, http.StatusForbidden, "AUTH_SCOPE_DENIED",
+					"required scope is not granted")
+				return
+			}
+
+			// 第二步：检查UserType与ScopeType匹配（P4-C-07核心闭环）
+			if requiredScope != "" && !ValidateScopeCodeMatch(claims, requiredScope) {
+				writeAuthError(w, http.StatusForbidden, "AUTH_SCOPE_TYPE_MISMATCH",
+					"user type does not match required scope type")
+				return
+			}
+
+			// P2-01: 记录通配符scope访问的审计日志
+			if hasWildcardScope(claims.Scope) {
+				logWildcardScopeAccess(r.Context(), claims, requiredScope)
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // hasAnyScope 检查scope列表是否包含任一目标scope
 func hasAnyScope(scopes, targets []string) bool {
 	for _, scope := range scopes {
@@ -414,8 +473,16 @@ func writeAuthError(w http.ResponseWriter, status int, code, message string) {
 }
 
 // WithIAMClaims 设置IAM Claims到Context
+// 同时注入审计所需的SubjectID/OperatorID到context（用于audit.EnrichEventWithSubjectID）
 func WithIAMClaims(ctx context.Context, claims *IAMTokenClaims) context.Context {
-	return context.WithValue(ctx, IAMTokenClaimsKey, claims)
+	if claims == nil {
+		return ctx
+	}
+	// 注入IAM claims
+	ctx = context.WithValue(ctx, IAMTokenClaimsKey, claims)
+	// 注入SubjectID（字符串）供审计使用
+	ctx = audit.WithSubjectID(ctx, claims.SubjectID)
+	return ctx
 }
 
 // GetClaimsFromLegacy 从原有middleware.TokenClaims转换为IAMTokenClaims

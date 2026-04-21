@@ -14,6 +14,7 @@ type Event struct {
 	ObjectType  string         `json:"object_type"`
 	ObjectID    int64          `json:"object_id"`
 	Action      string         `json:"action"`
+	OperatorID  int64          `json:"operator_id,omitempty"` // 操作者ID（来自IAMTokenClaims.SubjectID解析）
 	BeforeState map[string]any `json:"before_state,omitempty"`
 	AfterState  map[string]any `json:"after_state,omitempty"`
 	RequestID   string         `json:"request_id,omitempty"`
@@ -142,4 +143,66 @@ func (s *MemoryAuditStore) GetByID(ctx context.Context, eventID string) (Event, 
 
 func generateEventID() string {
 	return time.Now().Format("20060102150405") + "-evt"
+}
+
+// SubjectIDContextKey context key for operator subject ID
+type SubjectIDContextKey string
+
+const subjectIDKey SubjectIDContextKey = "audit_subject_id"
+
+// WithSubjectID 将操作者SubjectID注入context（由auth中间件调用）
+func WithSubjectID(ctx context.Context, subjectID string) context.Context {
+	if subjectID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, subjectIDKey, subjectID)
+}
+
+// GetSubjectID 从context提取操作者SubjectID
+func GetSubjectID(ctx context.Context) string {
+	if v := ctx.Value(subjectIDKey); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// EnrichEventWithSubjectID 从ctx提取SubjectID并填充到Event（domain service调用）
+func EnrichEventWithSubjectID(ctx context.Context, event *Event) {
+	if event == nil {
+		return
+	}
+	subjectID := GetSubjectID(ctx)
+	if subjectID == "" {
+		return
+	}
+	// subjectID 是字符串（JWT解析后），Event.OperatorID 是 int64
+	// 如果有解析后的数值型ID，从context中取数值型版本
+	if opID := getOperatorIDFromContext(ctx); opID > 0 {
+		event.OperatorID = opID
+	}
+}
+
+// OperatorIDContextKey context key for numeric operator ID
+type OperatorIDContextKey string
+
+const operatorIDKey OperatorIDContextKey = "audit_operator_id"
+
+// WithOperatorID 将数值型操作者ID注入context
+func WithOperatorID(ctx context.Context, operatorID int64) context.Context {
+	if operatorID <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, operatorIDKey, operatorID)
+}
+
+// getOperatorIDFromContext 内部提取数值型操作者ID
+func getOperatorIDFromContext(ctx context.Context) int64 {
+	if v := ctx.Value(operatorIDKey); v != nil {
+		if id, ok := v.(int64); ok {
+			return id
+		}
+	}
+	return 0
 }
