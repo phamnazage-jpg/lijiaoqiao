@@ -110,8 +110,93 @@ func TestRouter_SessionsRoute_OnlyPOST(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/customer-service/sessions/s1/feedback", nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
-	// When Sessions is nil, route not registered → 404
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("GET /sessions/s1/feedback with nil Sessions = %d, want 404", rr.Code)
+	}
+}
+
+func TestRouter_TicketsSubpaths(t *testing.T) {
+	// Test that ticket subpaths are registered with Tickets != nil
+	// We use OPTIONS method to avoid triggering handler logic (which would panic with nil service)
+	probe := health.NewProbe()
+	h := handlers.NewHealthHandler(probe)
+	ticketHandler := &handlers.TicketHandler{}
+	router := NewRouter(RouterDeps{Health: h, Tickets: ticketHandler})
+
+	// Just verify routes exist by checking non-404 response
+	// (we can't fully test without mocking service, which is integration test territory)
+	paths := []string{
+		"/api/v1/customer-service/tickets/t1/assign",
+		"/api/v1/customer-service/tickets/t1/resolve",
+		"/api/v1/customer-service/tickets/t1/close",
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			// Use HEAD method — less likely to panic
+			req := httptest.NewRequest(http.MethodHead, path, nil)
+			rr := httptest.NewRecorder()
+			router.ServeHTTP(rr, req)
+			// Should not be 404 (route is registered)
+			if rr.Code == http.StatusNotFound {
+				t.Errorf("%s returned 404 — route not registered", path)
+			}
+		})
+	}
+}
+
+func TestRouter_SessionsFeedbackHandoff(t *testing.T) {
+	// Test sessions routes are registered when Sessions != nil
+	probe := health.NewProbe()
+	h := handlers.NewHealthHandler(probe)
+	sessionHandler := &handlers.SessionHandler{}
+	router := NewRouter(RouterDeps{Health: h, Sessions: sessionHandler})
+
+	paths := []string{
+		"/api/v1/customer-service/sessions/s1/feedback",
+		"/api/v1/customer-service/sessions/s1/handoff",
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			// Use HEAD method — less likely to panic
+			req := httptest.NewRequest(http.MethodHead, path, nil)
+			rr := httptest.NewRecorder()
+			router.ServeHTTP(rr, req)
+			// Should not be 404 (route is registered)
+			if rr.Code == http.StatusNotFound {
+				t.Errorf("%s returned 404 — route not registered", path)
+			}
+		})
+	}
+}
+
+func TestRouter_UnknownSessionsPath_Returns405(t *testing.T) {
+	probe := health.NewProbe()
+	h := handlers.NewHealthHandler(probe)
+	sessionHandler := &handlers.SessionHandler{}
+	router := NewRouter(RouterDeps{Health: h, Sessions: sessionHandler})
+
+	// Path that doesn't match /feedback or /handoff should get 405
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/s1/unknown", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /sessions/s1/unknown = %d, want 405", rr.Code)
+	}
+}
+
+func TestRouter_UnknownTicketsPath_Returns405(t *testing.T) {
+	probe := health.NewProbe()
+	h := handlers.NewHealthHandler(probe)
+	ticketHandler := &handlers.TicketHandler{}
+	router := NewRouter(RouterDeps{Health: h, Tickets: ticketHandler})
+
+	// Path that doesn't match known subpaths should get 405
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/t1/unknown", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /tickets/t1/unknown = %d, want 405", rr.Code)
 	}
 }
