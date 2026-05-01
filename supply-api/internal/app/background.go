@@ -248,13 +248,18 @@ func startCompensationWorker(ctx context.Context, view runtimeBackgroundView, fa
 }
 
 func runPartitionMaintenanceLoop(ctx context.Context, logger logging.Logger, manager partitionManager, tuning runtimeTuning) {
+	startTime := time.Now()
 	ticker := time.NewTicker(tuning.partitionMaintenanceInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("分区维护: 已停止 (context cancelled)", nil)
+			logger.Info("分区维护: 已停止", map[string]interface{}{
+				"worker_name": "partition_maintenance",
+				"exit_reason": ctx.Err().Error(),
+				"duration_ms": time.Since(startTime).Milliseconds(),
+			})
 			return
 		case <-ticker.C:
 			// P3-D-01: 使用 ctx 而非 context.Background() 以支持取消

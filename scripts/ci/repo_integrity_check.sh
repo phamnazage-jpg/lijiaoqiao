@@ -42,6 +42,8 @@ run_go_suite "${ROOT_DIR}" "${GO_BIN}" "supply-api service-http" "supply-api" te
 # - failure semantics: if the contract gate exits non-zero or any required scenario is missing,
 #   repo_integrity_check must fail and Phase 1 cannot be marked complete.
 echo "[repo] Phase 1 contract gate (SCENARIO-1~4)"
+TS="$(date +%Y%m%d_%H%M%S)"
+mkdir -p "${ROOT_DIR}/reports/archive/gate_verification"
 if ! bash "${ROOT_DIR}/scripts/ci/backend-verify.sh" --phase1-contract-gate >> "${ROOT_DIR}/reports/archive/gate_verification/repo_integrity_contract_gate_${TS}.log" 2>&1; then
   echo "[repo] contract gate FAILED — see contract_gate_*.log in reports/archive/gate_verification/"
   exit 1

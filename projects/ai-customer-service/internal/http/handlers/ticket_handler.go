@@ -63,6 +63,12 @@ func (h *TicketHandler) Assign(w http.ResponseWriter, r *http.Request) {
 	actorID := strings.TrimSpace(r.URL.Query().Get("actor_id"))
 	sourceIP := clientIP(r.RemoteAddr)
 	if err := h.service.Assign(r.Context(), ticketID, agentID, actorID, sourceIP, h.now()); err != nil {
+		// P0-2 fix: route error based on error code prefix from service layer
+		errStr := err.Error()
+		if strings.HasPrefix(errStr, "CS_TICKET_4001") {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"code": cserrors.CS_TICKET_4001, "message": cserrors.ErrorMsg(cserrors.CS_TICKET_4001)}})
+			return
+		}
 		writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{"code": cserrors.CS_TKT_4002, "message": cserrors.ErrorMsg(cserrors.CS_TKT_4002)}})
 		return
 	}
@@ -80,6 +86,12 @@ func (h *TicketHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 	actorID := strings.TrimSpace(r.URL.Query().Get("actor_id"))
 	sourceIP := clientIP(r.RemoteAddr)
 	if err := h.service.Resolve(r.Context(), ticketID, resolution, actorID, sourceIP, h.now()); err != nil {
+		// P0-2 fix: route error based on error code prefix from service layer
+		errStr := err.Error()
+		if strings.HasPrefix(errStr, "CS_TICKET_4001") {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"code": cserrors.CS_TICKET_4001, "message": cserrors.ErrorMsg(cserrors.CS_TICKET_4001)}})
+			return
+		}
 		writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{"code": cserrors.CS_TICKET_4092, "message": cserrors.ErrorMsg(cserrors.CS_TICKET_4092)}})
 		return
 	}
@@ -97,6 +109,12 @@ func (h *TicketHandler) Close(w http.ResponseWriter, r *http.Request) {
 	actorID := strings.TrimSpace(r.URL.Query().Get("actor_id"))
 	sourceIP := clientIP(r.RemoteAddr)
 	if err := h.service.Close(r.Context(), ticketID, resolution, actorID, sourceIP, h.now()); err != nil {
+		// P0-2 fix: route error based on error code prefix from service layer
+		errStr := err.Error()
+		if strings.HasPrefix(errStr, "CS_TICKET_4001") {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"code": cserrors.CS_TICKET_4001, "message": cserrors.ErrorMsg(cserrors.CS_TICKET_4001)}})
+			return
+		}
 		writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{"code": cserrors.CS_TICKET_4093, "message": cserrors.ErrorMsg(cserrors.CS_TICKET_4093)}})
 		return
 	}

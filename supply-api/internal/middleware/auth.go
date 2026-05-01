@@ -509,7 +509,7 @@ func (m *AuthMiddleware) ScopeRoleAuthzMiddleware(requiredScope string) func(htt
 func (m *AuthMiddleware) verifyToken(tokenString string) (*TokenClaims, error) {
 	expectedAlgorithm := strings.ToUpper(strings.TrimSpace(m.config.Algorithm))
 	if expectedAlgorithm == "" {
-		expectedAlgorithm = jwt.SigningMethodHS256.Alg()
+		return nil, errors.New("JWT algorithm not configured")
 	}
 
 	token, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {

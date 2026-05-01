@@ -183,13 +183,18 @@ func (p *CompensationProcessor) StartBackgroundWorker(ctx context.Context, inter
 	workerCtx, cancel := context.WithCancel(ctx)
 	p.workerCancel = cancel // 保存cancel函数以便后续停止worker
 	go func() {
+		startTime := time.Now()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-workerCtx.Done():
 				logger := logging.NewLogger("supply-api", logging.LogLevelInfo)
-				logger.Info("compensation worker stopped", nil)
+				logger.Info("compensation worker stopped", map[string]interface{}{
+					"worker_name": "compensation_worker",
+					"exit_reason": workerCtx.Err().Error(),
+					"duration_ms": time.Since(startTime).Milliseconds(),
+				})
 				return
 			case <-ticker.C:
 				p.processPendingCompensations(workerCtx)

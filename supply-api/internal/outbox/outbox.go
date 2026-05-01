@@ -51,6 +51,7 @@ func NewOutboxProcessorRunner(
 // Start 启动Outbox处理器
 func (r *OutboxProcessorRunner) Start(ctx context.Context) {
 	logger := logging.NewLogger("supply-api", logging.LogLevelInfo)
+	startTime := time.Now()
 	logger.Info("OutboxProcessor started", nil)
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
@@ -61,12 +62,20 @@ func (r *OutboxProcessorRunner) Start(ctx context.Context) {
 		case <-ctx.Done():
 			logger.Info("OutboxProcessor: context cancelled, waiting for current batch to finish...", nil)
 			r.waitForProcessingDone()
-			logger.Info("OutboxProcessor: stopped (context cancelled)", nil)
+			logger.Info("OutboxProcessor: stopped", map[string]interface{}{
+				"worker_name": "outbox_processor",
+				"exit_reason": "context_cancelled",
+				"duration_ms": time.Since(startTime).Milliseconds(),
+			})
 			return
 		case <-r.stopCh:
 			logger.Info("OutboxProcessor: stop requested, waiting for current batch to finish...", nil)
 			r.waitForProcessingDone()
-			logger.Info("OutboxProcessor: stopped (stopCh)", nil)
+			logger.Info("OutboxProcessor: stopped", map[string]interface{}{
+				"worker_name": "outbox_processor",
+				"exit_reason": "stop_requested",
+				"duration_ms": time.Since(startTime).Milliseconds(),
+			})
 			return
 		case <-ticker.C:
 			r.processing = true

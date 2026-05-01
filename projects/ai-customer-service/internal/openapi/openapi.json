@@ -1,0 +1,27 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AI Customer Service API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/actuator/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "service health"
+          }
+        }
+      }
+    },
+    "/api/v1/customer-service/webhook": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "message accepted"
+          }
+        }
+      }
+    }
+  }
+}

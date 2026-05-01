@@ -28,6 +28,10 @@ fi
 
 setup_go_env "${GO_BIN}" "${ROOT_DIR}/.tools/go-cache"
 
+log() {
+  echo "$1" | tee -a "${LOG_FILE}"
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -103,7 +107,7 @@ run_contract_gate() {
 
     if [[ -z "${token_id}" || "${http_code}" != "201" ]]; then
       echo "[FAIL] Token creation failed or returned non-201: ${http_code}"
-      echo "FAIL" > "${s1_log}"
+      echo "FAIL"
     else
       echo "[INFO] token_id=${token_id}"
 
@@ -138,11 +142,11 @@ run_contract_gate() {
       # 验收：introspect 必须返回 200 且 active=true
       if [[ "${intro_code}" == "200" && "${intro_active}" == "true" ]]; then
         echo "[PASS] SCENARIO-1"
-        echo "PASS" > "${s1_log}"
+        echo "PASS"
         s1_pass=1
       else
         echo "[FAIL] SCENARIO-1: introspect expected 200+active=true, got ${intro_code}+${intro_active}"
-        echo "FAIL" > "${s1_log}"
+        echo "FAIL"
       fi
     fi
   } > "${s1_log}" 2>&1
@@ -177,7 +181,7 @@ run_contract_gate() {
 
     if [[ -z "${token_id2}" || "${http_code2}" != "201" ]]; then
       echo "[FAIL] Token creation failed for scenario 2"
-      echo "SKIP (cannot create token)" > "${s2_log}"
+      echo "SKIP (cannot create token)"
     else
       echo "[INFO] Revoking token_id=${token_id2}"
       local revoke_resp
@@ -202,10 +206,10 @@ run_contract_gate() {
       # 验收：introspect 必须不再是 active=true
       if [[ "${intro2_active}" != "true" ]]; then
         echo "[PASS] SCENARIO-2: revoked token is not active (active=${intro2_active})"
-        echo "PASS" > "${s2_log}"
+        echo "PASS"
       else
         echo "[FAIL] SCENARIO-2: revoked token still reports active=true"
-        echo "FAIL" > "${s2_log}"
+        echo "FAIL"
       fi
     fi
   } > "${s2_log}" 2>&1
@@ -242,7 +246,7 @@ run_contract_gate() {
 
     if [[ -z "${token_id3}" || "${http_code3}" != "201" ]]; then
       echo "[FAIL] Token creation failed for scenario 3"
-      echo "SKIP (cannot create token)" > "${s3_log}"
+      echo "SKIP (cannot create token)"
     else
       echo "[INFO] Token has supply:read only. Supply-api verify with write scope."
       # supply-api verify 用这个 token 访问需要 supply:write 的接口
@@ -261,13 +265,13 @@ run_contract_gate() {
       # 验收：应返回 403 或 401，不能是 200
       if [[ "${verify_code3}" == "403" || "${verify_code3}" == "401" || "${verify_code3}" == "400" ]]; then
         echo "[PASS] SCENARIO-3: insufficient scope rejected with ${verify_code3}"
-        echo "PASS" > "${s3_log}"
+        echo "PASS"
       elif [[ "${verify_code3}" == "200" ]]; then
         echo "[FAIL] SCENARIO-3: scope check did not reject, got 200"
-        echo "FAIL" > "${s3_log}"
+        echo "FAIL"
       else
         echo "[WARN] SCENARIO-3: unexpected code ${verify_code3}, treating as non-pass"
-        echo "UNKNOWN" > "${s3_log}"
+        echo "UNKNOWN"
       fi
     fi
   } > "${s3_log}" 2>&1
@@ -318,10 +322,10 @@ run_contract_gate() {
     # 如果 timeout_code 是 000（连接失败）或 timeout 是 2-3s 范围，说明有超时保护
     if [[ ("${timeout_code}" == "000" || "${timeout_code}" == "" ) && (("${elapsed}" == "3."* || "${elapsed}" == "2."* || "${elapsed}" == "1."*)) ]]; then
       echo "[PASS] SCENARIO-4: runtime unavailable triggers fast-fail (~${elapsed}s)"
-      echo "PASS" > "${s4_log}"
+      echo "PASS"
     else
       echo "[WARN] SCENARIO-4: cannot confirm fast-fail behavior (elapsed=${elapsed}, code=${timeout_code})"
-      echo "PASS (best-effort)" > "${s4_log}"
+      echo "PASS (best-effort)"
     fi
   } > "${s4_log}" 2>&1
 
@@ -383,10 +387,6 @@ fi
 # ──────────────────────────────────────────────────────────────
 
 STEP_RESULTS=()
-
-log() {
-  echo "$1" | tee -a "${LOG_FILE}"
-}
 
 run_step() {
   local step_id="$1"

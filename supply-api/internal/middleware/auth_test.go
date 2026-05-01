@@ -64,6 +64,7 @@ func TestTokenVerify(t *testing.T) {
 				config: AuthConfig{
 					SecretKey: secretKey,
 					Issuer:    issuer,
+					Algorithm: jwt.SigningMethodHS256.Alg(),
 				},
 			}
 
@@ -390,6 +391,7 @@ func TestHIGH02_JWT_AlgorithmValidation(t *testing.T) {
 				config: AuthConfig{
 					SecretKey: secretKey,
 					Issuer:    issuer,
+					Algorithm: jwt.SigningMethodHS256.Alg(),
 				},
 			}
 
@@ -425,6 +427,7 @@ func TestMED02_TokenCacheMiss_ShouldNotAssumeActive(t *testing.T) {
 		config: AuthConfig{
 			SecretKey: "test-secret-key-12345678901234567890",
 			Issuer:    "test-issuer",
+			Algorithm: jwt.SigningMethodHS256.Alg(),
 		},
 		tokenCache: NewTokenCache(), // 空的缓存
 		// 没有设置tokenBackend
@@ -448,6 +451,7 @@ func TestTokenVerifyMiddleware_BackendErrorShouldReject(t *testing.T) {
 	authMiddleware := NewAuthMiddleware(AuthConfig{
 		SecretKey: secretKey,
 		Issuer:    issuer,
+		Algorithm: jwt.SigningMethodHS256.Alg(),
 		Enabled:   true,
 	}, NewTokenCache(), &stubTokenStatusBackend{err: errors.New("database unavailable")}, nil)
 
