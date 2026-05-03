@@ -44,6 +44,7 @@ func newTestApp() *app.App {
 	cfg.HTTP.IdleTimeout = 60
 	cfg.HTTP.MaxHeaderBytes = 1 << 20
 	cfg.HTTP.MaxBodyBytes = 1 << 20
+	cfg.Runtime.Env = "test"
 	application, err := app.New(cfg, logging.New())
 	if err != nil {
 		return nil

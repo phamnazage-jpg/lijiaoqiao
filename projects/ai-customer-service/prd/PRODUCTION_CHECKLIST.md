@@ -1,177 +1,217 @@
-# 生产一期上线前清单 (PRODUCTION_CHECKLIST)
+# 生产一期上线前清单（整改版）
 
-> 版本：v1.0 | 日期：2026-04-30
-> 负责人：PM（小龙团队）
-> 范围：ai-customer-service 生产一期（Phase 1）
-> 依据：SCOPE_PHASE1_VS_PHASE2.md、PRODUCTION_PHASE1_STATUS.md、QA_GATE_STATUS.md
+> 版本：v2.1  
+> 日期：2026-05-04  
+> 负责人：PM（小龙团队）  
+> 范围：ai-customer-service 生产一期（Phase 1）  
+> 依据：`docs/RECTIFICATION_REVIEW_REPORT_V2.md`、`test/QA_GATE_STATUS.md`、当前代码配置契约
 
 ---
 
-## 一、✅ 已验证功能（上线门禁全部通过）
+## 0. 使用说明
 
-### 1.1 Phase 1 接口实现
+本清单不再把“仓库内测试通过”直接等同于“生产可上线”。
 
-| ID | 接口 | 验证方法 | 测试状态 |
-|----|------|---------|----------|
-| P1-A | `GET /api/v1/customer-service/tickets/{id}` — 工单详情 | 代码审查 + handler 测试 | ✅ 通过 |
-| P1-B | `POST /api/v1/customer-service/sessions/{id}/handoff` — 手动转人工 | `TestSessionHandlerHandoff_*` (3 cases) | ✅ 通过 |
-| P1-C | `POST /api/v1/customer-service/sessions/{id}/feedback` — 反馈提交 | `TestSessionHandlerFeedback_*` (3 cases) | ✅ 通过 |
-| P1-D | `GET /api/v1/customer-service/tickets/stats` — 工单统计 | `TestTicketStats_*` (3 cases) | ✅ 通过 |
-| P1-E | 速率限制（滑动窗口 10 req/s/IP） | `TestWebhookRateLimit_*` (3 cases) | ✅ 通过 |
+本项目当前必须分三层判断：
+1. **代码级门禁**：代码主链存在，仓库内测试通过
+2. **预生产门禁**：真实依赖、真实配置、真实联调完成
+3. **生产放行门禁**：灰度、监控、回滚、运行基线闭环
 
-### 1.2 上线门禁验证
+**当前真实结论：**
+- 代码级门禁：已通过
+- 预生产门禁：未通过
+- 生产放行门禁：未通过
+
+因此：**当前仅可进入预生产整改与联调准备，不可按“生产已具备上线条件”放行。**
+
+---
+
+## 1. 当前已确认事实
+
+### 1.1 代码主链状态
+当前已确认具备：
+- webhook 收消息
+- dialog 意图识别
+- handoff 创建工单
+- ticket assign / resolve / close / get
+- feedback / manual handoff / stats 能力
+- Webhook HMAC / timestamp / dedup / body limit / rate limit 基础安全入口
+- Postgres 持久化路径
+
+### 1.2 仓库内验证状态
+已执行/已确认的关键验证包括：
 
 ```bash
-# 命令执行结果
-go build ./...      ✅ 无错误
-go vet ./...       ✅ 无警告
-go test ./...      ✅ 全部通过 (14 tests)
+go test ./internal/config ./internal/http/handlers ./internal/app -count=1
+go test ./... -count=1
 ```
 
-| 阻断条件 | 状态 | 说明 |
-|---------|------|------|
-| BC-01 接口路由漂移 | 🟢 解除 | Phase 1 核心端点已实现 |
-| BC-02 P0 安全测试覆盖 | 🟢 解除 | AC-09/AC-02/AC-07/08 测试已补齐 |
-| BC-03 错误码一致 | 🟢 解除 | CS_TKT_4002 为主码，统一使用 |
-| BC-04 会话端点 | 🟢 解除 | feedback + handoff 已实现并测试 |
-| BC-05 速率限制 | 🟢 解除 | RateLimiter 已实现并测试 |
+**当前解释口径：**
+- 这些结果说明：仓库内关键测试已通过
+- 这些结果**不等于**：生产依赖、配置、部署和运行门禁已闭环
 
-### 1.3 错误码统一
-
-| 错误码 | 状态 |
-|--------|------|
-| `CS_TKT_4002`（工单已被分配） | ✅ 已统一为主码 |
-| `CS_TICKET_4091` | ✅ 已废弃，保留为兼容别名 |
-| `CS_REQ_4009` | ✅ 已定义 |
-| `CS_REQ_4010` | ✅ 已定义 |
-| `CS_SES_4001`（会话不存在） | ✅ feedback/handoff 已使用 |
-| `CS_SES_4002`（消息频率过高） | ✅ 429 HTTP 响应已实现 |
-| 无 hardcode 错误码散落 | ✅ 统一定义在 `internal/domain/error/` |
-
-### 1.4 基线安全能力
-
-| 能力 | 状态 |
-|------|------|
-| Webhook HMAC 签名校验 | ✅ 已实现 |
-| 时间戳防重放 | ✅ 已实现 |
-| 消息幂等去重 | ✅ 已实现 |
-| BodyLimit 超大请求拒绝 | ✅ 已实现 |
-| 工单持久化 | ✅ 已实现 |
-| 审计日志持久化 | ✅ 已实现 |
-| 健康检查 | ✅ 已实现 |
+### 1.3 本轮已完成的代码级整改
+1. prod 下不再允许依赖 memory fallback 启动
+2. prod 下要求 `AI_CS_WEBHOOK_SECRET` 非空
+3. readiness 在 memory 模式下不再误报 ready=UP
+4. 测试初始化配置已同步到 `test` runtime，保证测试语义清晰
 
 ---
 
-## 二、⚠️ 需要人工确认项目（上线前必须确认）
+## 2. 当前仍阻断生产放行的事项
 
-### 2.1 环境配置（必须在真实环境验证）
+### 2.1 剩余 P0/P1 阻断项
+1. **真实环境 DB / migration / webhook / audit / ticket 入库验证未闭环**
+2. **部署侧关键配置 fail-fast、监控、回滚 runbook 未落地**
+3. **灰度观察项与放量证据尚未形成**
 
-| 项目 | 说明 | 确认人 |
-|------|------|--------|
-| 数据库连接配置 | `DATABASE_URL` / `POSTGRES_*` 环境变量已在真实 DB 可用 | DevOps |
-| HMAC 签名密钥 | `WEBHOOK_SECRET` 与飞书后台配置一致 | TechLead |
-| LLM API Key | `OPENAI_API_KEY` / `LLM_PROVIDER` 配置正确 | TechLead |
-| 飞书 App 凭证 | `FEISHU_APP_ID` + `FEISHU_APP_SECRET` 有效 | TechLead |
-| Telegram Bot Token | `TELEGRAM_BOT_TOKEN` 配置正确（如使用） | TechLead |
-| 速率限制配置 | `RATE_LIMIT_*` 环境变量（当前默认 10 req/s/IP）是否满足生产流量预期 | TechLead |
-| 日志级别配置 | `LOG_LEVEL` 生产环境设为 info/warn | TechLead |
-| 会话存储 | memory store（测试用）→ 生产需切换为 PostgreSQL | TechLead |
-
-### 2.2 密钥与权限
-
-| 项目 | 说明 | 确认人 |
-|------|------|--------|
-| 数据库迁移 | 是否有 migration scripts，schema 是否就绪 | DevOps |
-| 云函数/容器环境变量 | 所有 secrets 已通过安全方式注入（非硬编码） | DevOps |
-| 飞书机器人权限 | 机器人已添加到群组，且具有发送消息权限 | TechLead |
-| PostgreSQL 网络策略 | 服务可访问 DB，安全组/防火墙配置正确 | DevOps |
-
-### 2.3 监控与告警（灰度阶段必需）
-
-| 项目 | 说明 | 确认人 |
-|------|------|--------|
-| 监控大盘 | `GET /tickets/stats` 数据已接入监控面板 | TechLead |
-| 转人工率告警 | 灰度阶段需监控 handoff 率异常 | TechLead |
-| 接口错误率告警 | 5xx 错误率超过阈值需告警 | TechLead |
-| 日志聚合 | 结构化日志已接入日志系统（Datadog/Loki/ELK） | DevOps |
-| 健康检查端点 | `/health` 已在生产环境验证响应正常 | TechLead |
-
-### 2.4 E2E 测试覆盖（可选，建议上线前完成）
-
-| 项目 | 状态 | 说明 |
-|------|------|------|
-| E2E webhook 测试 | ⚠️ app.go 编译错误修复后验证 | TechLead |
-| 工单内容完整性 AC-07/08 | ⚠️ 同上 | TechLead |
+### 2.2 当前明确不能下的结论
+- 不能说“上线门禁全部通过”
+- 不能说“允许上线”
+- 不能把“代码主链通过”写成“生产 ready”
 
 ---
 
-## 三、📋 上线步骤（顺序执行）
+## 3. 代码真实配置契约（当前基线）
 
-> 灰度发布流程，参考 `GRAY_RELEASE_ROLLBACK_RUNBOOK.md`
+> 以下内容以 `internal/config/config.go` 当前实现为准。PM / QA / DevOps 文档均应以此为唯一来源。
 
-### 阶段 0：上线前准备（上线前 1-2 天）
+### 3.1 Runtime / 环境模式
+| 变量名 | 默认值 | 说明 | 是否允许 prod 使用默认值 |
+|---|---|---|---|
+| `AI_CS_RUNTIME_ENV` | `development` | 运行环境模式，支持 `development` / `production` / `test`（兼容旧 `AI_CS_ENV` 读法） | **不允许依赖默认值** |
 
-- [ ] **TechLead**：确认所有环境变量已在生产环境注入
-- [ ] **DevOps**：验证数据库连接和迁移脚本
-- [ ] **TechLead**：验证 HMAC 签名密钥与飞书后台一致
-- [ ] **TechLead**：确认所有 secrets 通过安全方式注入（非硬编码）
-- [ ] **TechLead**：配置灰度阶段监控告警（转人工率、接口错误率）
-- [ ] **DevOps**：确认日志已接入日志系统
-- [ ] **PM**：最终确认 Phase 1 范围所有人达成一致
+### 3.2 HTTP 相关
+| 变量名 | 默认值 | 说明 | 是否允许 prod 使用默认值 |
+|---|---|---|---|
+| `AI_CS_ADDR` | `:8080` | HTTP 监听地址 | 视部署环境决定 |
+| `AI_CS_READ_HEADER_TIMEOUT_SEC` | `5` | header 读取超时 | 可 |
+| `AI_CS_READ_TIMEOUT_SEC` | `10` | 请求读取超时 | 可 |
+| `AI_CS_WRITE_TIMEOUT_SEC` | `15` | 响应写超时 | 可 |
+| `AI_CS_IDLE_TIMEOUT_SEC` | `60` | 空闲连接超时 | 可 |
+| `AI_CS_MAX_HEADER_BYTES` | `1048576` | 最大 header 大小 | 可 |
+| `AI_CS_MAX_BODY_BYTES` | `1048576` | 最大 body 大小 | 需按生产流量评估 |
 
-### 阶段 1：生产部署（灰度 5%）
+### 3.3 Postgres 相关
+| 变量名 | 默认值 | 说明 | 是否允许 prod 使用默认值 |
+|---|---|---|---|
+| `AI_CS_POSTGRES_ENABLED` | `false` | 是否启用 PG store | **不允许** |
+| `AI_CS_POSTGRES_DSN` | 空 | PG 连接串 | **不允许为空** |
+| `AI_CS_POSTGRES_MIGRATION_DIR` | `db/migration` | migration 目录 | 需确认可用 |
+| `AI_CS_POSTGRES_MAX_OPEN_CONNS` | `20` | 最大打开连接数 | 需容量确认 |
+| `AI_CS_POSTGRES_MAX_IDLE_CONNS` | `5` | 最大空闲连接数 | 需容量确认 |
+| `AI_CS_POSTGRES_CONN_MAX_LIFETIME_SEC` | `300` | 连接最大生命周期 | 需容量确认 |
 
-- [ ] **DevOps**：执行数据库 migration（如有）
-- [ ] **DevOps**：部署生产镜像（1 个实例，5% 流量）
-- [ ] **DevOps**：验证 `/health` 端点返回 200
-- [ ] **TechLead**：验证 `GET /tickets/stats` 返回数据
-- [ ] **TechLead**：发送测试 webhook，验证 HMAC 签名通过
-- [ ] **QA**：执行冒烟测试（feedback、handoff、速率限制）
-- [ ] **PM**：确认无 P0 阻断项
-
-### 阶段 2：灰度观察（灰度 5% → 30%）
-
-- [ ] **TechLead**：监控转人工率、工单创建量、接口错误率
-- [ ] **TechLead**：验证审计日志写入正常
-- [ ] **PM**：抽查工单内容完整性
-- [ ] **TechLead**：若无异常，逐步放量至 30%
-
-### 阶段 3：全量上线（灰度 30% → 100%）
-
-- [ ] **TechLead**：确认监控指标在正常范围
-- [ ] **PM**：最终验收确认
-- [ ] **DevOps**：全量部署
-- [ ] **PM**：通知干系人上线完成
-
-### 阶段 4：回滚准备（随时可执行）
-
-- [ ] **DevOps**：保留上一版本镜像 tag
-- [ ] **TechLead**：熟悉回滚触发条件（见 `GRAY_RELEASE_ROLLBACK_RUNBOOK.md`）
+### 3.4 Webhook 安全相关
+| 变量名 | 默认值 | 说明 | 是否允许 prod 使用默认值 |
+|---|---|---|---|
+| `AI_CS_WEBHOOK_SECRET` | 空 | webhook HMAC secret | **不允许为空** |
+| `AI_CS_WEBHOOK_TIMESTAMP_HEADER` | `X-CS-Timestamp` | 时间戳 header | 通常可 |
+| `AI_CS_WEBHOOK_SIGNATURE_HEADER` | `X-CS-Signature` | 签名 header | 通常可 |
+| `AI_CS_WEBHOOK_MAX_SKEW_SECONDS` | `300` | 最大时钟偏差 | 需安全确认 |
 
 ---
 
-## 四、上线后 24h 内关键检查项
+## 4. 预生产前必须确认的配置与依赖
 
-| 时间 | 检查项 | 负责人 |
-|------|--------|--------|
-| +15min | 确认无 5xx 错误率飙升 | TechLead |
-| +30min | 确认工单创建正常，无异常空工单 | TechLead |
-| +1h | 确认速率限制未误杀正常流量 | TechLead |
-| +2h | 确认反馈提交写入审计日志 | TechLead |
-| +24h | 统计工单量、转人工率是否符合预期 | PM |
+### 4.1 必须由 TechLead / DevOps 共同确认
+| 项目 | 当前要求 | 责任角色 |
+|---|---|---|
+| runtime env 已明确 | `AI_CS_RUNTIME_ENV=production` | TechLead / DevOps |
+| Postgres 已启用 | `AI_CS_POSTGRES_ENABLED=true` | TechLead / DevOps |
+| Postgres 连接串有效 | `AI_CS_POSTGRES_DSN` 非空且可连通 | DevOps |
+| migration 目录可执行 | `AI_CS_POSTGRES_MIGRATION_DIR` 可访问且脚本可执行 | DevOps |
+| webhook secret 已配置 | `AI_CS_WEBHOOK_SECRET` 与上游一致 | TechLead |
+| body limit 配置已评估 | `AI_CS_MAX_BODY_BYTES` 满足真实流量 | TechLead |
+| webhook skew 已评估 | `AI_CS_WEBHOOK_MAX_SKEW_SECONDS` 满足时钟偏差策略 | TechLead |
+
+### 4.2 当前文档中不再使用的泛化变量写法
+以下写法不再作为正式部署基线：
+- `DATABASE_URL`
+- `POSTGRES_*`
+- `WEBHOOK_SECRET`
+- `RATE_LIMIT_*`
+- `LOG_LEVEL`
+- `OPENAI_API_KEY`
+- `LLM_PROVIDER`
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+- `TELEGRAM_BOT_TOKEN`
+
+原因：**这些名称不是 `internal/config/config.go` 当前真实读取项，继续使用会造成部署误配。**
 
 ---
 
-## 五、关键联系人
+## 5. 预生产门禁（Gate B）
 
-| 角色 | 职责 | 备注 |
-|------|------|------|
-| TechLead | 技术决策、生产环境配置、告警配置 | 主工程师 |
-| DevOps | 部署、数据库、环境变量、监控接入 | 运维 |
-| PM | 上线审批、范围管理、进度追踪 | 小龙团队 |
-| QA | 冒烟测试、回归测试 | 小龙团队 |
+以下全部完成前，不得进入“可灰度”结论：
+
+### 5.1 真实环境验证
+- [ ] 使用真实环境变量启动一次服务
+- [ ] 确认 `AI_CS_RUNTIME_ENV=production` 下启动行为符合预期
+- [ ] 确认 Postgres 可连通
+- [ ] 确认 migration 执行成功
+- [ ] 确认 webhook 签名联调成功
+- [ ] 确认 ticket 实际入库成功
+- [ ] 确认 audit 实际入库成功
+- [ ] 确认实例重启后数据仍然存在
+
+### 5.2 运行门禁验证
+- [ ] 确认缺关键配置时启动直接失败
+- [ ] 确认 memory 模式不会被误判为 ready
+- [ ] 确认 readiness 能反映关键依赖状态
+- [ ] 确认缺少 DB / secret 时不会以“假成功”状态进入流量
+
+### 5.3 文档一致性验证
+- [x] QA 文档与当前代码状态一致
+- [x] PM checklist 与配置契约一致
+- [x] 整改执行表状态已同步
 
 ---
 
-*本文档由 PM（小龙团队）基于最终验收结果生成*
-*生成时间：2026-04-30 21:10 GMT+8*
+## 6. 生产灰度门禁（Gate C）
+
+以下全部完成前，不得进入“生产可放量”结论：
+
+### 6.1 灰度准备
+- [ ] 已有真实部署基线文档
+- [ ] 已有监控大盘 / 告警项
+- [ ] 已有回滚 runbook
+- [ ] 已保留上一版本回滚路径
+
+### 6.2 灰度观察项
+- [ ] handoff 比率正常
+- [ ] ticket 创建量正常
+- [ ] audit 写入持续正常
+- [ ] 5xx / reject 未异常飙升
+- [ ] ready down 时长在可接受范围内
+
+### 6.3 放量条件
+- [ ] 5% 灰度稳定
+- [ ] 30% 灰度稳定
+- [ ] 回滚演练已验证
+- [ ] PM / QA / TechLead / DevOps 共同签字确认
+
+---
+
+## 7. 角色责任分工
+
+| 角色 | 当前必须完成的动作 |
+|---|---|
+| 小龙 | 统一阶段口径，禁止无证据放行 |
+| PM | 修正上线口径、配置契约表达、观察指标和失败线 |
+| TechLead | 禁止 prod fallback、收紧 readiness、输出配置契约基线 |
+| QA | 维护分层门禁结论，防止状态漂移 |
+| DevOps | 建立部署 fail-fast、监控、回滚、runbook |
+
+---
+
+## 8. 当前正式结论
+
+**ai-customer-service 当前应定义为：**
+
+> **代码级门禁已通过，适合进入预生产联调与部署基线整改阶段；但尚不应被标记为生产可直接上线。**
+
+因此：
+- **允许继续预生产整改和联调准备**
+- **不允许按“上线门禁全部通过”口径对外宣称可上线**

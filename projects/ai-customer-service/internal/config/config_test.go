@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGetEnvBool_True(t *testing.T) {
 	t.Setenv("TEST_BOOL", "true")
@@ -42,11 +45,19 @@ func TestGetEnvBool_Zero(t *testing.T) {
 	}
 }
 
-func TestGetEnvBool_InvalidValue(t *testing.T) {
+func TestGetEnvBool_Yes(t *testing.T) {
 	t.Setenv("TEST_BOOL", "yes")
+	got := getEnvBool("TEST_BOOL", false)
+	if !got {
+		t.Error("getEnvBool(yes) = false, want true")
+	}
+}
+
+func TestGetEnvBool_InvalidValueFallsBack(t *testing.T) {
+	t.Setenv("TEST_BOOL", "maybe")
 	got := getEnvBool("TEST_BOOL", true)
 	if !got {
-		t.Error("getEnvBool(yes) did not return fallback, got false, want true")
+		t.Error("getEnvBool(maybe) did not return fallback, got false, want true")
 	}
 }
 
@@ -89,6 +100,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Webhook.TimestampHeader != "X-CS-Timestamp" {
 		t.Fatalf("timestamp header = %s", cfg.Webhook.TimestampHeader)
 	}
+	if cfg.Runtime.Env != "development" {
+		t.Fatalf("runtime env = %s, want development", cfg.Runtime.Env)
+	}
 }
 
 func TestLoadOverride(t *testing.T) {
@@ -111,5 +125,86 @@ func TestLoadOverride(t *testing.T) {
 	}
 	if cfg.Webhook.MaxSkewSeconds != 60 {
 		t.Fatalf("skew = %d, want 60", cfg.Webhook.MaxSkewSeconds)
+	}
+}
+
+func TestLoad_RuntimeEnvFallsBackToLegacyEnv(t *testing.T) {
+	t.Setenv("AI_CS_RUNTIME_ENV", "")
+	t.Setenv("AI_CS_ENV", "prod")
+	t.Setenv("AI_CS_POSTGRES_ENABLED", "true")
+	t.Setenv("AI_CS_POSTGRES_DSN", "postgres://user:***@localhost:5432/db?sslmode=disable")
+	t.Setenv("AI_CS_WEBHOOK_SECRET", "secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Runtime.Env != "production" {
+		t.Fatalf("runtime env = %s, want production", cfg.Runtime.Env)
+	}
+}
+
+func TestLoad_RuntimeEnvOverridesLegacyEnv(t *testing.T) {
+	t.Setenv("AI_CS_RUNTIME_ENV", "test")
+	t.Setenv("AI_CS_ENV", "prod")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Runtime.Env != "test" {
+		t.Fatalf("runtime env = %s, want test", cfg.Runtime.Env)
+	}
+}
+
+func TestLoad_RuntimeEnvNormalizesAliases(t *testing.T) {
+	t.Setenv("AI_CS_RUNTIME_ENV", "dev")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Runtime.Env != "development" {
+		t.Fatalf("runtime env = %s, want development", cfg.Runtime.Env)
+	}
+}
+
+func TestLoad_RejectsInvalidRuntimeEnv(t *testing.T) {
+	t.Setenv("AI_CS_RUNTIME_ENV", "staging")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid runtime env")
+	}
+	if !strings.Contains(err.Error(), "AI_CS_RUNTIME_ENV") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoad_RejectsProdWhenPostgresDisabled(t *testing.T) {
+	t.Setenv("AI_CS_RUNTIME_ENV", "prod")
+	t.Setenv("AI_CS_POSTGRES_ENABLED", "false")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when prod runs without postgres")
+	}
+	if !strings.Contains(err.Error(), "AI_CS_POSTGRES_ENABLED") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoad_RejectsProdWhenWebhookSecretMissing(t *testing.T) {
+	t.Setenv("AI_CS_RUNTIME_ENV", "production")
+	t.Setenv("AI_CS_POSTGRES_ENABLED", "true")
+	t.Setenv("AI_CS_POSTGRES_DSN", "postgres://user:***@localhost:5432/db?sslmode=disable")
+	t.Setenv("AI_CS_WEBHOOK_SECRET", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when prod runs without webhook secret")
+	}
+	if !strings.Contains(err.Error(), "AI_CS_WEBHOOK_SECRET") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

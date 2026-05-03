@@ -1,211 +1,152 @@
-# QA_GATE_STATUS.md — 上线阻断条件检查结果
+# QA_GATE_STATUS.md — 质量门禁状态（整改版）
 
-> 生成时间：2026-04-30 17:50 GMT+8
-> QA：宰相（小龙团队 QA subagent）
-> 项目：ai-customer-service 生产一期
-
----
-
-## 阻断条件（BC）检查结果
-
-### BC-01：接口路由漂移
-
-**检查方法**：对照 `test/QA_CHECKLIST.md` 1.1 节，扫描代码实现与 INTERFACE.md 文档的漂移。
-
-**结果**：⚠️ **Phase 1 核心端点已实现，剩余为 Phase 2 范围**
-
-| 端点 | 状态 |
-|------|------|
-| `GET /api/v1/customer-service/tickets/stats` | ✅ **已实现** — `TicketStatsHandler` + 路由 |
-| `POST /api/v1/customer-service/sessions/{id}/feedback` | ✅ **已实现** — `session_handler.go` + 路由 |
-| `POST /api/v1/customer-service/sessions/{id}/handoff` | ✅ **已实现** — `session_handler.go` + 路由 |
-| `GET /api/v1/customer-service/sessions/{id}` | ❌ 未实现（Phase 2） |
-| `GET /api/v1/customer-service/sessions/{id}/messages` | ❌ 未实现（Phase 2） |
-| KB / Admin 端点（11 项） | ❌ 未实现（Phase 2） |
-
-**本次测试补齐**：
-- `TestTicketStats_Success` ✅ PASS
-- `TestTicketStats_Empty` ✅ PASS
-- `TestTicketStats_GroupedCounts` ✅ PASS
-
-**说明**：Phase 1 核心承诺的 3 个端点（含 tickets/stats）均已实现并测试通过。BC-01 中 tickets/stats 已解除。
+> 生成时间：2026-05-04 07:xx GMT+8  
+> QA：小龙团队质量复核  
+> 项目：ai-customer-service 生产一期  
+> 依据：`docs/RECTIFICATION_REVIEW_REPORT_V2.md`、当前代码实测结果、当前仓库文档对照
 
 ---
 
-### BC-02：P0 安全测试覆盖
+## 0. 阶段门控结论
 
-**检查方法**：对照 QA_CHECKLIST.md 2.1 节，验证 P0 安全测试是否已补齐。
+- **当前结论：REQUEST_CHANGES**
+- **是否可进入下一阶段（按“生产可直接上线”口径放行）：否**
+- **是否可进入预生产整改 / 灰度准备：是，但前提是先完成剩余 P0/P1 真实环境项**
 
-**结果**：✅ **已补齐（本次 QA 任务完成）**
+### 结论说明
+当前项目的**代码主链已可用，仓库内关键测试已通过**；但 QA 不接受把这直接等同于“生产已具备上线条件”。
 
-| 安全测试项 | 状态 | 说明 |
-|-----------|------|------|
-| AC-09 敏感意图"退款"→P1 handoff | ✅ 已补齐 | `TestWebhook_SensitiveIntent_Refund` |
-| AC-09 敏感意图"数据泄露"→P1 handoff | ✅ 已补齐 | `TestWebhook_SensitiveIntent_DataLeak` |
-| AC-02 意图识别矩阵（4 条路径） | ✅ 已补齐 | `TestDialogService_AC02_IntentMatrix` |
-| AC-07/08 工单内容完整性 | ✅ 已补齐 | `TestWebhook_HandoffPath_TicketContent` |
+本轮已完成的关键整改：
+1. **prod 默认 fallback 到 memory 的代码路径已收紧**
+2. **readiness 不再在 memory 模式下直接返回 ready=UP**
+3. **配置契约与执行板文档已同步回写**
 
-**补充**：AC-07/08 E2E 测试依赖 `app.New` 编译，当前 app.go 存在既有编译错误（undefined: ticket / ticketListerStore），这是 TechLead 正在修复的 P0 问题。一旦修复，E2E 测试可直接运行验证。
-
----
-
-### BC-03：错误码一致
-
-**检查方法**：对照 QA_CHECKLIST.md 1.2 节，对比文档错误码与代码实际错误码。
-
-**结果**：✅ **已解决（BC-03 已修复）**
-
-`CS_TKT_4002` 已作为主错误码（ticket_handler.go:66），`CS_TICKET_4091` 保留为兼容别名（`= CS_TKT_4002`）。
-
-| 文档定义 | 代码实际 | 状态 |
-|---------|---------|------|
-| `CS_TKT_4002`（工单已被分配） | `CS_TKT_4002`（主码）+ `CS_TICKET_4091`（兼容别名） | ✅ **一致** |
-| `CS_SES_4001`（会话不存在） | `CS_SES_4001`（feedback/handoff 已实现） | ✅ **已使用** |
-| `CS_SES_4002`（消息频率过高） | 429 HTTP 响应（速率限制已实现） | ✅ **已实现** |
-| `CS_LLM_5001`（LLM 服务不可用） | `CS_LLM_5001` + `CS_SYS_5001`（不同场景分开使用） | ✅ **已统一** |
-
-**BC-03 已解除**：所有错误码与文档一致。
+当前剩余阻断已收敛到：
+1. **真实环境门禁（DB / migration / webhook 联调 / 入库验证）未闭环**
+2. **部署侧 fail-fast / 监控 / 回滚基线仍未落地**
+3. **代码级通过 ≠ 预生产通过 ≠ 生产可放量，仍需严格分层门禁**
 
 ---
 
-### BC-04：会话端点实现状态
+## 1. 审查输入清单
 
-**检查方法**：扫描 `session_handler.go` 及 `router.go` 路由注册。
+### 1.1 已核对代码文件
+- `internal/config/config.go`
+- `internal/app/app.go`
+- `internal/http/handlers/health_handler.go`
+- `internal/http/router.go`
+- `internal/store/postgres/*`
+- `internal/store/memory/*`
 
-**结果**：✅ **已解决（本次 QA 任务完成）**
+### 1.2 已核对文档
+- `prd/PRODUCTION_CHECKLIST.md`
+- `docs/CONFIG_CONTRACT_BASELINE.md`
+- `docs/P0_P1_P2_RECTIFICATION_EXECUTION_BOARD.md`
 
-`POST /sessions/{id}/feedback` 和 `POST /sessions/{id}/handoff` 均已实现：
+### 1.3 本轮已执行验证
+```bash
+go test ./internal/config ./internal/http/handlers ./internal/app -count=1
+go test ./... -count=1
+```
 
-| 端点 | 实现文件 | 测试 |
-|------|---------|------|
-| `POST /sessions/{id}/feedback` | `session_handler.go` | `TestSessionHandlerFeedback_Success` ✅ |
-| `POST /sessions/{id}/handoff` | `session_handler.go` | `TestSessionHandlerHandoff_Success` ✅, `TestSessionHandlerHandoff_CreatesTicket` ✅ |
-
-**说明**：BC-04 已解除。
-
----
-
-### BC-05：速率限制实现状态
-
-**检查方法**：扫描 `internal/platform/httpx/limits.go` 中的 `RateLimiter` 类型并运行实际测试。
-
-**结果**：✅ **已实现并测试通过**
-
-`RateLimiter`（滑动窗口，限制 10 req/s/IP）已在 `internal/platform/httpx/limits.go` 实现，并通过 `WithRateLimit` 中间件挂载到 webhook 路由。
-
-| 测试项 | 文件 | 状态 |
-|--------|------|------|
-| 5 个请求在限制内全部通过 | `ratelimit_webhook_test.go` | ✅ `TestWebhookRateLimit_WithinLimit` PASS |
-| 第 11 个请求返回 429 | `ratelimit_webhook_test.go` | ✅ `TestWebhookRateLimit_ExceedLimit` PASS |
-| 不同 IP 不共享配额 | `ratelimit_webhook_test.go` | ✅ `TestWebhookRateLimit_DifferentIPs` PASS |
-
-**说明**：BC-05 已解除；EC-02 速率限制已有完整测试覆盖。
+### 1.4 关键事实校准
+- 当前仓库实测结论：**全量 Go 测试已通过**
+- prod fallback / readiness 相关代码阻断：**已落地并有测试覆盖**
+- 旧的“prod 默认可退回 memory / ready 过宽”结论：**对当前代码已不再成立**
+- 旧的“可以直接按生产上线口径放行”结论：**仍不成立**
 
 ---
 
-## 测试执行状态
+## 2. 规范审查结果
 
-| 测试套件 | 状态 | 说明 |
-|---------|------|------|
-| `test/integration/...` | ✅ 全部通过 | AC-02 矩阵 4 条路径全部 PASS |
-| `test/e2e/...` | ❌ 编译失败 | app.go 存在既有编译错误（undefined: ticket/ticketListerStore）— TechLead P0 修复中 |
-| `internal/http/handlers/...` | 未测试 | 未纳入本次 QA 任务范围 |
+- **结果：FAIL（针对预生产 / 生产放行门禁）**
 
----
+### 2.1 已通过项
+- webhook / dialog / handoff / ticket 主链已落地
+- feedback / handoff / stats 等 Phase 1 核心接口已具备
+- Webhook HMAC / timestamp / dedup / body limit / rate limit 已存在
+- Postgres 持久化链路已接通
+- 仓库内全量 Go 测试已通过
+- prod memory fallback 已收紧
+- readiness 语义已收紧到不再对 memory 模式误报 ready=UP
 
-## 阻断结论
+### 2.2 未通过项
+- 真实环境 DB / migration / webhook / audit / ticket 入库验证缺证据
+- 部署侧关键配置 fail-fast、监控、回滚 runbook 未闭环
+- 生产放行仍缺 Gate B / Gate C 证据
 
-| 阻断条件 | 是否阻断上线 |
-|---------|------------|
-| BC-01 接口路由漂移 | 🟡 **Phase 2 范围** — Phase 1 tickets/stats + 会话端点已实现 |
-| BC-02 P0 安全测试覆盖 | 🟢 通过 — 已补齐 |
-| BC-03 错误码一致 | 🟢 **已解除** — CS_TKT_4002 为主码，CS_TICKET_4091 为兼容别名 |
-| BC-04 会话端点 | 🟢 **已解除** — feedback + handoff 已实现并测试通过 |
-| BC-05 速率限制 | 🟢 **已解除** — RateLimiter 已实现，3 个测试全部 PASS |
-
-**上线门禁结论**：🟢 **允许上线**（所有 P0 阻断条件已解决）
-
----
-
-## 补测记录
-
-| 补测项 | 文件 | 状态 |
-|--------|------|------|
-| 速率限制-5请求通过 | `ratelimit_webhook_test.go` | ✅ `TestWebhookRateLimit_WithinLimit` PASS |
-| 速率限制-第11请求429 | `ratelimit_webhook_test.go` | ✅ `TestWebhookRateLimit_ExceedLimit` PASS |
-| 速率限制-不同IP独立配额 | `ratelimit_webhook_test.go` | ✅ `TestWebhookRateLimit_DifferentIPs` PASS |
-| 统计接口-正常数据 | `ticket_stats_handler_test.go` | ✅ `TestTicketStats_Success` PASS |
-| 统计接口-空数据 | `ticket_stats_handler_test.go` | ✅ `TestTicketStats_Empty` PASS |
-| 统计接口-分组统计 | `ticket_stats_handler_test.go` | ✅ `TestTicketStats_GroupedCounts` PASS |
+### 2.3 结论
+若目标是“代码级门禁是否通过”，当前可判定通过；
+若目标是“是否可按预生产完成或生产可上线放行”，**当前不通过**。
 
 ---
 
----
+## 3. 实施漂移检测报告
 
-## 测试覆盖率现状（截至 2026-04-30）
-
-### go test -cover 执行结果
-
-| 包 | 覆盖率 | 状态 |
-|----|--------|------|
-| `internal/config` | **70.6%** | ✅ 达标 |
-| `internal/service/handoff` | **75.0%** | ✅ 达标 |
-| `internal/service/intent` | **80.8%** | ✅ 达标 |
-| `internal/http/handlers` | **65.7%** | ✅ 达标 |
-| `test/integration` | 53.1% | ⚠️ 接近目标 |
-| `test/e2e` | 32.7% | ⚠️ 需提升 |
-| `internal/service/dialog` | 49.2% | ⚠️ 接近目标 |
-| `internal/app` | 17.4% | ❌ 待补齐 |
-| `internal/store/postgres` | 1.6% | ❌ 待补齐（Phase 2） |
-| `internal/store/memory` | 0.0% | ❌ 待补齐 |
-| `internal/http` | 0.0% | ❌ 待补齐 |
-| `internal/platform/httpx` | 0.0% | ❌ 待补齐 |
-| `internal/platform/health` | 0.0% | ❌ 待补齐 |
-| `internal/platform/logging` | 0.0% | ❌ 待补齐 |
-| `internal/domain/error/cserrors` | 0.0% | ❌ 待补齐 |
-| Domain 包（audit/ticketstats/ticket/intent/message/session） | 0.0% | ❌ 无测试文件 |
-| `cmd/ai-customer-service` | 0.0% | ❌ 待补齐 |
-
-**整体覆盖率：47.0%**
-
-### 覆盖率目标
-
-- **Phase 1 核心包（handlers/service/config）**：目标 >60%，当前 4/5 达标
-- **测试套件（integration/e2e）**：目标 >50%，当前 1/2 达标
-- **Phase 2 包（postgres/store/全部 domain）**：目标 >40%
-
-### 测试套件完整性评估
-
-| 测试套件 | 测试文件数 | 通过率 | 评估 |
-|---------|-----------|--------|------|
-| `test/integration/...` | 7+ | 100% | ✅ 核心路径覆盖完整 |
-| `test/e2e/...` | 4+ | 编译失败（app.go 问题） | ⚠️ TechLead 修复中 |
-| `internal/http/handlers/...` | 6 | 100% | ✅ Phase 1 端点全覆蓋 |
-| `internal/service/intent/...` | 2 | 100% | ✅ 识别逻辑完整 |
-| `internal/service/handoff/...` | 2 | 100% | ✅ 人工转接逻辑完整 |
-| `internal/service/dialog/...` | 1 | 100% | ⚠️ Process 核心方法待增强 |
-| `internal/config/...` | 1 | 100% | ✅ 配置解析完整 |
-
-### 计划补齐的测试文件
-
-**Phase 1 补齐（上线前必须）**：
-
-| 文件 | 当前状态 | 目标覆盖率 |
-|------|---------|-----------|
-| `internal/service/dialog/service_test.go` | 49.2% | >60% |
-| `internal/app/app_test.go` | 17.4% | >40% |
-| `test/e2e/...` | 编译失败 | 稳定运行 |
-
-**Phase 2 规划（上线后补齐）**：
-
-| 包 | 当前覆盖率 | 目标覆盖率 |
-|----|-----------|-----------|
-| `internal/store/postgres/...` | 1.6% | >60% |
-| `internal/store/memory/...` | 0.0% | >50% |
-| `internal/platform/httpx/...` | 0.0% | >60% |
-| `internal/http/...` | 0.0% | >50% |
-| Domain 包（6 个） | 0.0% | >30% |
+| 检查项 | 结果 | 说明 |
+|---|---|---|
+| 模块拆分 | PASS | 当前实现与主链模块划分基本一致 |
+| 接口签名 | PASS | 本轮关注的核心接口已存在 |
+| 错误码 | PASS | 当前主要错误码口径已基本统一 |
+| 数据模型 | PASS | session/ticket/audit/dedup 对应存储结构已存在 |
+| 配置项 | PASS | 文档已收敛到 `internal/config/config.go` 真实读取项 |
+| 测试覆盖状态 | PASS | 本轮新增约束已有单测/集成链路覆盖，且全量 Go 测试通过 |
+| readiness / 运行门禁 | PASS（代码级） | memory 模式不再误报 ready=UP；prod 约束已落地 |
+| 上线状态文档 | PASS（当前基线） | 已回写执行板与 QA 文档 |
+| 日志/监控/运行闭环 | PARTIAL | 代码未覆盖真实部署监控与回滚基线 |
 
 ---
 
-*QA 负责人：宰相 | 更新于 2026-04-30 21:52 GMT+8*
+## 4. 自动化验证结果表
+
+| 检查项 | 状态 | 说明 |
+|---|---|---|
+| 构建 / 测试现状 | PASS | `go test ./... -count=1` 已通过 |
+| 代码主链可用性 | PASS | webhook → dialog → handoff → ticket 主链存在 |
+| 生产运行约束 | PASS（代码级） | prod 下要求 Postgres；缺失时 fail-fast |
+| readiness 真实性 | PASS（代码级） | memory 模式 startup not ready，避免假 ready |
+| 配置契约一致性 | PASS | 文档与代码变量名已对齐 |
+| 真实环境门禁 | FAIL | DB/migration/webhook/入库闭环未完成证据化验证 |
+| 文档状态一致性 | PASS | 当前 QA / board / checklist 已同步 |
+
+---
+
+## 5. 当前问题清单
+
+### Critical
+1. **真实环境验证闭环缺证据**  
+   - 影响：无法证明 Gate B 已满足  
+   - 建议：补预生产验证记录（真实 DB / migration / webhook / audit / ticket）
+
+2. **部署侧 fail-fast 与运行基线未闭环**  
+   - 影响：代码已具备门禁，但部署入口仍可能绕过或缺失运行保障  
+   - 建议：补 DevOps 基线、监控、回滚 runbook
+
+### Important
+1. **代码级通过与生产放行边界仍需持续防漂移**  
+   - 影响：团队可能再次把仓库内通过误写成“生产可上线”  
+   - 建议：后续所有状态文档继续坚持三层门禁表达
+
+---
+
+## 6. QA 最终判定
+
+**当前项目应被定义为：**
+
+> **代码级门禁已通过，prod fallback 与 readiness P0 技术阻断已完成整改；但预生产与生产放行门禁尚未闭环，不能按“生产可直接上线”口径放行。**
+
+因此 QA 当前给出的正式门禁结论是：
+
+- **代码级门禁：通过**
+- **预生产门禁：未通过**
+- **生产放行门禁：未通过**
+
+---
+
+## 7. QA 自检清单
+
+- [x] 结论基于真实文件或实测结果
+- [x] 已明确区分代码门禁、预生产门禁、生产放行门禁
+- [x] 已根据代码实际状态回收旧阻断项
+- [x] 已保留仍未完成的真实环境与部署阻断项
+- [x] 没有把“全量测试通过”夸大成“生产可上线”

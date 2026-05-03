@@ -31,6 +31,10 @@ func (h *HealthHandler) Live(w http.ResponseWriter, _ *http.Request) {
 
 func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 	ok, checks := h.evaluate(r.Context())
+	if h.probe != nil && !h.probe.IsReady() {
+		ok = false
+		checks = append([]health.CheckResult{{Name: "startup", Status: "DOWN", Error: "service not ready to receive traffic"}}, checks...)
+	}
 	if h.probe != nil {
 		h.probe.SetReady(ok)
 	}

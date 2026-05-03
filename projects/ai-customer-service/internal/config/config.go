@@ -11,6 +11,11 @@ type Config struct {
 	HTTP     HTTPConfig
 	Postgres PostgresConfig
 	Webhook  WebhookConfig
+	Runtime  RuntimeConfig
+}
+
+type RuntimeConfig struct {
+	Env string
 }
 
 type HTTPConfig struct {
@@ -64,6 +69,9 @@ func Load() (*Config, error) {
 			SignatureHeader: getEnv("AI_CS_WEBHOOK_SIGNATURE_HEADER", "X-CS-Signature"),
 			MaxSkewSeconds:  getEnvInt("AI_CS_WEBHOOK_MAX_SKEW_SECONDS", 300),
 		},
+		Runtime: RuntimeConfig{
+			Env: normalizeRuntimeEnv(getEnv("AI_CS_RUNTIME_ENV", getEnv("AI_CS_ENV", "development"))),
+		},
 	}
 	if strings.TrimSpace(cfg.HTTP.Addr) == "" {
 		return nil, fmt.Errorf("AI_CS_ADDR must not be empty")
@@ -77,7 +85,29 @@ func Load() (*Config, error) {
 	if cfg.Webhook.MaxSkewSeconds <= 0 {
 		return nil, fmt.Errorf("AI_CS_WEBHOOK_MAX_SKEW_SECONDS must be positive")
 	}
+	if cfg.Runtime.Env != "production" && cfg.Runtime.Env != "development" && cfg.Runtime.Env != "test" {
+		return nil, fmt.Errorf("AI_CS_RUNTIME_ENV must be one of production/development/test, got: %s", cfg.Runtime.Env)
+	}
+	if cfg.Runtime.Env == "production" && !cfg.Postgres.Enabled {
+		return nil, fmt.Errorf("AI_CS_RUNTIME_ENV=production requires AI_CS_POSTGRES_ENABLED=true, but it is false (memory fallback is not allowed in production)")
+	}
+	if cfg.Runtime.Env == "production" && strings.TrimSpace(cfg.Webhook.Secret) == "" {
+		return nil, fmt.Errorf("AI_CS_WEBHOOK_SECRET must not be empty in production")
+	}
 	return cfg, nil
+}
+
+func normalizeRuntimeEnv(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "", "dev", "development":
+		return "development"
+	case "prod", "production":
+		return "production"
+	case "test":
+		return "test"
+	default:
+		return strings.TrimSpace(strings.ToLower(value))
+	}
 }
 
 func getEnv(key, fallback string) string {

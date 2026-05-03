@@ -24,6 +24,7 @@ func minimalHTTPConfig() *config.Config {
 	cfg.HTTP.MaxHeaderBytes = 1 << 20
 	cfg.HTTP.MaxBodyBytes = 1 << 20
 	cfg.Postgres.Enabled = false
+	cfg.Runtime.Env = "test"
 	return cfg
 }
 
@@ -38,16 +39,9 @@ func TestNew_NilConfig(t *testing.T) {
 }
 
 func TestNew_DefaultLogger(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.HTTP.Addr = ":0"
-	cfg.HTTP.ReadHeaderTimeout = 5
-	cfg.HTTP.ReadTimeout = 10
-	cfg.HTTP.WriteTimeout = 15
-	cfg.HTTP.IdleTimeout = 60
-	cfg.HTTP.MaxHeaderBytes = 1 << 20
-	cfg.HTTP.MaxBodyBytes = 1 << 20
+	cfg := minimalHTTPConfig()
+	cfg.Webhook.Secret = "test-secret"
 
-	// Passing nil logger should not panic and should use default
 	app, err := New(cfg, nil)
 	if err != nil {
 		t.Fatalf("New() with nil logger failed: %v", err)
@@ -61,15 +55,8 @@ func TestNew_DefaultLogger(t *testing.T) {
 }
 
 func TestNew_WithPostgresDisabled(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.HTTP.Addr = ":0"
-	cfg.HTTP.ReadHeaderTimeout = 5
-	cfg.HTTP.ReadTimeout = 10
-	cfg.HTTP.WriteTimeout = 15
-	cfg.HTTP.IdleTimeout = 60
-	cfg.HTTP.MaxHeaderBytes = 1 << 20
-	cfg.HTTP.MaxBodyBytes = 1 << 20
-	cfg.Postgres.Enabled = false
+	cfg := minimalHTTPConfig()
+	cfg.Webhook.Secret = "test-secret"
 
 	app, err := New(cfg, logging.New())
 	if err != nil {
@@ -86,7 +73,7 @@ func TestNew_WithPostgresDisabled(t *testing.T) {
 	}
 }
 
-func TestApp_TicketStore(t *testing.T) {
+func TestNew_RejectsMemoryModeWithoutExplicitNonProdEnv(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.HTTP.Addr = ":0"
 	cfg.HTTP.ReadHeaderTimeout = 5
@@ -96,6 +83,30 @@ func TestApp_TicketStore(t *testing.T) {
 	cfg.HTTP.MaxHeaderBytes = 1 << 20
 	cfg.HTTP.MaxBodyBytes = 1 << 20
 	cfg.Postgres.Enabled = false
+	cfg.Webhook.Secret = "test-secret"
+
+	_, err := New(cfg, logging.New())
+	if err == nil {
+		t.Fatal("expected error when runtime env is not explicitly non-prod for memory mode")
+	}
+}
+
+func TestNew_AllowsMemoryModeInTestEnv(t *testing.T) {
+	cfg := minimalHTTPConfig()
+	cfg.Webhook.Secret = "test-secret"
+
+	app, err := New(cfg, logging.New())
+	if err != nil {
+		t.Fatalf("New() failed in test env: %v", err)
+	}
+	if app == nil {
+		t.Fatal("expected non-nil app")
+	}
+}
+
+func TestApp_TicketStore(t *testing.T) {
+	cfg := minimalHTTPConfig()
+	cfg.Webhook.Secret = "test-secret"
 
 	app, err := New(cfg, logging.New())
 	if err != nil {
@@ -107,8 +118,6 @@ func TestApp_TicketStore(t *testing.T) {
 		t.Fatal("TicketStore() returned nil")
 	}
 
-	// Should be usable as ticketLister
-	// Just verify it's not nil and the type assertion works
 	_ = store
 }
 
@@ -129,7 +138,6 @@ func TestApp_Shutdown_NilServer(t *testing.T) {
 
 func TestApp_Shutdown_ServerShutdownCalled(t *testing.T) {
 	t.Run("server is shut down and stops accepting connections", func(t *testing.T) {
-		// Use a real httptest server to get a valid listener
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 		listener := ts.Listener
 		ts.Close()
@@ -150,7 +158,6 @@ func TestApp_Shutdown_ServerShutdownCalled(t *testing.T) {
 			t.Fatalf("Shutdown returned unexpected error: %v", err)
 		}
 
-		// Verify the server is actually shut down by checking it no longer accepts connections
 		conn, err := net.Dial("tcp", listener.Addr().String())
 		if err == nil {
 			conn.Close()
@@ -215,7 +222,7 @@ func TestApp_Shutdown_ProbeSetNotReady(t *testing.T) {
 			Addr:    listener.Addr().String(),
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 		},
-		Probe: probe,
+		Probe:  probe,
 		Logger: logging.New(),
 	}
 
@@ -234,6 +241,8 @@ func TestApp_Shutdown_ProbeSetNotReady(t *testing.T) {
 
 func TestNew_WithPostgresEnabled_InvalidDSN(t *testing.T) {
 	cfg := minimalHTTPConfig()
+	cfg.Runtime.Env = "production"
+	cfg.Webhook.Secret = "test-secret"
 	cfg.Postgres.Enabled = true
 	cfg.Postgres.DSN = "invalid_dsn_format"
 	cfg.Postgres.MaxOpenConns = 5
@@ -248,8 +257,9 @@ func TestNew_WithPostgresEnabled_InvalidDSN(t *testing.T) {
 
 func TestNew_WithPostgresEnabled_MigrationFails(t *testing.T) {
 	cfg := minimalHTTPConfig()
+	cfg.Runtime.Env = "production"
+	cfg.Webhook.Secret = "test-secret"
 	cfg.Postgres.Enabled = true
-	// Point to a db that exists but migration dir doesn't exist
 	cfg.Postgres.DSN = "host=127.0.0.1 port=9999 user=postgres dbname=nonexistent password=nonexistent sslmode=disable"
 	cfg.Postgres.MigrationDir = "/nonexistent/migration/dir"
 	cfg.Postgres.MaxOpenConns = 5

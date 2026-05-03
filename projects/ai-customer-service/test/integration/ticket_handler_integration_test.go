@@ -261,6 +261,7 @@ func TestTicketList_PaginationParams(t *testing.T) {
 	cfg.HTTP.IdleTimeout = 60
 	cfg.HTTP.MaxHeaderBytes = 1 << 20
 	cfg.HTTP.MaxBodyBytes = 1 << 20
+	cfg.Runtime.Env = "test"
 	application, err := app.New(cfg, logging.New())
 	if err != nil {
 		t.Fatalf("app.New() error = %v", err)

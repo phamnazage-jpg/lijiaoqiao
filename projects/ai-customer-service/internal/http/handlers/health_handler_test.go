@@ -63,6 +63,7 @@ func TestHealthHandler_Ready_WithFailingChecker(t *testing.T) {
 func TestHealthHandler_Ready_WithPassingChecker(t *testing.T) {
 	probe := health.NewProbe()
 	probe.SetLive(true)
+	probe.SetReady(true)
 	h := NewHealthHandler(probe, &passingHealthChecker{})
 
 	req := httptest.NewRequest(http.MethodGet, "/actuator/health/ready", nil)
@@ -70,6 +71,20 @@ func TestHealthHandler_Ready_WithPassingChecker(t *testing.T) {
 	h.Ready(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Errorf("Ready() with passing checker status = %d, want 200", rr.Code)
+	}
+}
+
+func TestHealthHandler_Ready_ReturnsDownWhenProbeNotReady(t *testing.T) {
+	probe := health.NewProbe()
+	probe.SetLive(true)
+	probe.SetReady(false)
+	h := NewHealthHandler(probe, &passingHealthChecker{})
+
+	req := httptest.NewRequest(http.MethodGet, "/actuator/health/ready", nil)
+	rr := httptest.NewRecorder()
+	h.Ready(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("Ready() with probe not ready status = %d, want 503", rr.Code)
 	}
 }
 

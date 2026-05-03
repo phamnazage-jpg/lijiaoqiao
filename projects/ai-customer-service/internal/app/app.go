@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"github.com/bridge/ai-customer-service/internal/config"
-	httpserver "github.com/bridge/ai-customer-service/internal/http"
+	"github.com/bridge/ai-customer-service/internal/domain/ticket"
 	"github.com/bridge/ai-customer-service/internal/domain/ticketstats"
+	httpserver "github.com/bridge/ai-customer-service/internal/http"
 	"github.com/bridge/ai-customer-service/internal/http/handlers"
 	"github.com/bridge/ai-customer-service/internal/platform/health"
 	"github.com/bridge/ai-customer-service/internal/platform/httpx"
-	intentservice "github.com/bridge/ai-customer-service/internal/service/intent"
 	"github.com/bridge/ai-customer-service/internal/service/dialog"
 	"github.com/bridge/ai-customer-service/internal/service/handoff"
+	intentservice "github.com/bridge/ai-customer-service/internal/service/intent"
 	"github.com/bridge/ai-customer-service/internal/service/reply"
-	"github.com/bridge/ai-customer-service/internal/domain/ticket"
 	memoryStore "github.com/bridge/ai-customer-service/internal/store/memory"
 	pgstore "github.com/bridge/ai-customer-service/internal/store/postgres"
 )
@@ -43,6 +43,9 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if !cfg.Postgres.Enabled && cfg.Runtime.Env == "" {
+		return nil, fmt.Errorf("runtime env is required when postgres is disabled; memory mode must be explicitly limited to non-prod")
+	}
 
 	var (
 		sessions          dialog.SessionRepository
@@ -56,6 +59,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		sessionStore      dialog.SessionRepository
 		ticketStore       dialog.TicketRepository
 	)
+
+	probe := health.NewProbe()
 
 	if cfg.Postgres.Enabled {
 		db, err := pgstore.Open(pgstore.Config{DSN: cfg.Postgres.DSN, MaxOpenConns: cfg.Postgres.MaxOpenConns, MaxIdleConns: cfg.Postgres.MaxIdleConns, ConnMaxLifetime: time.Duration(cfg.Postgres.ConnMaxLifetime) * time.Second})
@@ -78,6 +83,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		checkers = append(checkers, pgstore.NewDBChecker(db))
 		closers = append(closers, db.Close)
 		ticketListerStore = ticketStore
+		probe.SetReady(true)
 	} else {
 		sessionStore := memoryStore.NewSessionStore()
 		auditStore := memoryStore.NewAuditStore()
@@ -89,6 +95,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		dedup = dedupStore
 		ticketService = ticketStore
 		ticketListerStore = ticketStore
+		probe.SetReady(false)
 	}
 
 	knowledgeStore := memoryStore.NewKnowledgeStore()
@@ -96,10 +103,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	replySvc := reply.NewService(knowledgeStore)
 	handoffSvc := handoff.NewService()
 	dialogSvc := dialog.NewService(sessions, audits, tickets, dedup, intentSvc, replySvc, handoffSvc)
-	// P1-2: webhook rate limiter — 10 messages per second per IP
 	rateLimiter := httpx.NewRateLimiter(time.Second, 10)
 
-	probe := health.NewProbe()
 	healthHandler := handlers.NewHealthHandler(probe, checkers...)
 	webhookHandler := handlers.NewWebhookHandler(dialogSvc, logger, audits)
 	ticketHandler := handlers.NewTicketHandler(ticketService, audits)
@@ -108,7 +113,6 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	webhookSecurity := handlers.WebhookSecurity{Secret: cfg.Webhook.Secret, TimestampHeader: cfg.Webhook.TimestampHeader, SignatureHeader: cfg.Webhook.SignatureHeader, MaxSkew: time.Duration(cfg.Webhook.MaxSkewSeconds) * time.Second, Audit: audits}
 	router := httpserver.NewRouter(httpserver.RouterDeps{Health: healthHandler, Webhook: webhookHandler, Tickets: ticketHandler, TicketStats: ticketStatsHandler, Sessions: sessionHandler, WebhookAuth: webhookSecurity, MaxBodyBytes: cfg.HTTP.MaxBodyBytes, RateLimiter: rateLimiter})
 
-	probe.SetReady(true)
 	return &App{
 		Server: &http.Server{
 			Addr:              cfg.HTTP.Addr,

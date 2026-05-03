@@ -11,6 +11,7 @@ import (
 
 func TestRouter_HealthEndpoint(t *testing.T) {
 	probe := health.NewProbe()
+	probe.SetReady(true)
 	h := handlers.NewHealthHandler(probe)
 	router := NewRouter(RouterDeps{Health: h})
 
@@ -38,6 +39,7 @@ func TestRouter_HealthEndpoint(t *testing.T) {
 
 func TestRouter_UnknownPath_Returns404(t *testing.T) {
 	probe := health.NewProbe()
+	probe.SetReady(true)
 	h := handlers.NewHealthHandler(probe)
 	router := NewRouter(RouterDeps{Health: h})
 
@@ -64,6 +66,7 @@ func TestRouter_UnknownPath_Returns404(t *testing.T) {
 
 func TestRouter_WebhookChannel_MissingChannel_Returns400(t *testing.T) {
 	probe := health.NewProbe()
+	probe.SetReady(true)
 	h := handlers.NewHealthHandler(probe)
 	router := NewRouter(RouterDeps{Health: h})
 
@@ -77,6 +80,7 @@ func TestRouter_WebhookChannel_MissingChannel_Returns400(t *testing.T) {
 
 func TestRouter_WebhookPath_CanBeCalledWithGET(t *testing.T) {
 	probe := health.NewProbe()
+	probe.SetReady(true)
 	h := handlers.NewHealthHandler(probe)
 	router := NewRouter(RouterDeps{Health: h})
 
@@ -90,6 +94,7 @@ func TestRouter_WebhookPath_CanBeCalledWithGET(t *testing.T) {
 
 func TestRouter_TicketsList_POST_Returns405(t *testing.T) {
 	probe := health.NewProbe()
+	probe.SetReady(true)
 	h := handlers.NewHealthHandler(probe)
 	ticketHandler := &handlers.TicketHandler{}
 	router := NewRouter(RouterDeps{Health: h, Tickets: ticketHandler})
@@ -104,6 +109,7 @@ func TestRouter_TicketsList_POST_Returns405(t *testing.T) {
 
 func TestRouter_SessionsRoute_OnlyPOST(t *testing.T) {
 	probe := health.NewProbe()
+	probe.SetReady(true)
 	h := handlers.NewHealthHandler(probe)
 	router := NewRouter(RouterDeps{Health: h, Sessions: nil})
 
@@ -119,6 +125,7 @@ func TestRouter_TicketsSubpaths(t *testing.T) {
 	// Test that ticket subpaths are registered with Tickets != nil
 	// We use OPTIONS method to avoid triggering handler logic (which would panic with nil service)
 	probe := health.NewProbe()
+	probe.SetReady(true)
 	h := handlers.NewHealthHandler(probe)
 	ticketHandler := &handlers.TicketHandler{}
 	router := NewRouter(RouterDeps{Health: h, Tickets: ticketHandler})
@@ -148,6 +155,7 @@ func TestRouter_TicketsSubpaths(t *testing.T) {
 func TestRouter_SessionsFeedbackHandoff(t *testing.T) {
 	// Test sessions routes are registered when Sessions != nil
 	probe := health.NewProbe()
+	probe.SetReady(true)
 	h := handlers.NewHealthHandler(probe)
 	sessionHandler := &handlers.SessionHandler{}
 	router := NewRouter(RouterDeps{Health: h, Sessions: sessionHandler})
@@ -173,6 +181,7 @@ func TestRouter_SessionsFeedbackHandoff(t *testing.T) {
 
 func TestRouter_UnknownSessionsPath_Returns405(t *testing.T) {
 	probe := health.NewProbe()
+	probe.SetReady(true)
 	h := handlers.NewHealthHandler(probe)
 	sessionHandler := &handlers.SessionHandler{}
 	router := NewRouter(RouterDeps{Health: h, Sessions: sessionHandler})
@@ -188,6 +197,7 @@ func TestRouter_UnknownSessionsPath_Returns405(t *testing.T) {
 
 func TestRouter_UnknownTicketsPath_Returns405(t *testing.T) {
 	probe := health.NewProbe()
+	probe.SetReady(true)
 	h := handlers.NewHealthHandler(probe)
 	ticketHandler := &handlers.TicketHandler{}
 	router := NewRouter(RouterDeps{Health: h, Tickets: ticketHandler})

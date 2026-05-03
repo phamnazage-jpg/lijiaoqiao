@@ -24,6 +24,7 @@ func newTestApp(t *testing.T) *app.App {
 	cfg.HTTP.IdleTimeout = 60
 	cfg.HTTP.MaxHeaderBytes = 1 << 20
 	cfg.HTTP.MaxBodyBytes = 1 << 20
+	cfg.Runtime.Env = "test"
 	application, err := app.New(cfg, logging.New())
 	if err != nil {
 		t.Fatalf("app.New() error = %v", err)
@@ -224,6 +225,7 @@ func TestWebhook_SignedRequestPath(t *testing.T) {
 	cfg.Webhook.TimestampHeader = "X-CS-Timestamp"
 	cfg.Webhook.SignatureHeader = "X-CS-Signature"
 	cfg.Webhook.MaxSkewSeconds = 300
+	cfg.Runtime.Env = "test"
 	application, err := app.New(cfg, logging.New())
 	if err != nil {
 		t.Fatalf("app.New() error = %v", err)

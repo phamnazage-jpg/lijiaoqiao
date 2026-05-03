@@ -30,6 +30,7 @@ func newTestAppWithSecret(t *testing.T) *app.App {
 	cfg.Webhook.TimestampHeader = "X-CS-Timestamp"
 	cfg.Webhook.SignatureHeader = "X-CS-Signature"
 	cfg.Webhook.MaxSkewSeconds = 300
+	cfg.Runtime.Env = "test"
 	application, err := app.New(cfg, logging.New())
 	if err != nil {
 		t.Fatalf("app.New() error = %v", err)
