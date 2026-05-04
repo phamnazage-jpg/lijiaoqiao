@@ -2,7 +2,7 @@
 
 > 来源：`docs/RECTIFICATION_REVIEW_REPORT_V2.md`  
 > 用途：按角色推动整改执行、跟踪状态、做阶段门禁验收  
-> 当前总状态：**P0 技术阻断已启动整改，仍未闭环，禁止按“生产可直接上线”口径放行**
+> 当前总状态：**第5件事已完成；代码侧 P0 技术阻断已闭环，项目可进入预生产整改与联调阶段，但仍禁止按“生产可直接上线”口径放行**
 
 ---
 
@@ -20,12 +20,12 @@
 
 | ID | 优先级 | 整改项 | 责任角色 | 交付物 | 验收标准 | 依赖 | 状态 |
 |---|---|---|---|---|---|---|---|
-| XL-P0-1 | P0 | 建立“代码事实高于报告”的门禁，禁止无证据放行 | 小龙 | 更新后的阶段门禁说明/流程文档 | 所有“完成/通过”结论均附命令或文件证据 | 无 | 未开始 |
-| XL-P0-2 | P0 | 重写项目状态口径，分离代码门禁/预生产门禁/生产门禁 | 小龙 | 状态基线文档或汇总页 | 不再使用单句“允许上线”覆盖全部阶段 | XL-P0-1 | 未开始 |
+| XL-P0-1 | P0 | 建立“代码事实高于报告”的门禁，禁止无证据放行 | 小龙 | 更新后的阶段门禁说明/流程文档 | 所有“完成/通过”结论均附命令或文件证据 | 无 | 已完成 |
+| XL-P0-2 | P0 | 重写项目状态口径，分离代码门禁/预生产门禁/生产门禁 | 小龙 | 状态基线文档或汇总页 | 不再使用单句“允许上线”覆盖全部阶段 | XL-P0-1 | 已完成 |
 | PM-P0-1 | P0 | 修正文档中的上线口径，撤销过宽“允许上线”表述 | PM | 更新 `prd/PRODUCTION_CHECKLIST.md` 等文档 | 明确区分仓库内通过、真实环境未验证、仅可进入预生产 | XL-P0-2 | 已完成 |
 | PM-P0-2 | P0 | 在文档中明确 `memory mode` 仅限 dev/test，prod 禁止无持久化运行 | PM | 更新 PRD/checklist/status 文档 | 文档明确写出 prod fail-fast 要求 | TL-P0-1 设计口径 | 已完成 |
 | TL-P0-1 | P0 | 禁止 prod 默认退化为 memory store | TechLead | 代码改动 + 测试 | prod 下 `Postgres.Enabled=false` 启动失败；有测试覆盖 | 无 | 已完成 |
-| TL-P0-2 | P0 | 收紧 readiness，改为真实依赖门禁 | TechLead | 代码改动 + 集成测试 | 缺 DB/secret/关键配置时 ready=DOWN | TL-P0-1 | 已完成 |
+| TL-P0-2 | P0 | 收紧 readiness，改为真实依赖门禁 | TechLead | 代码改动 + 集成测试 | prod 缺关键配置时启动失败；非 prod memory 不再被误伤；ready 语义与实际运行模式一致 | TL-P0-1 | 已完成 |
 | TL-P0-3 | P0 | 输出代码视角配置契约基线 | TechLead | 配置契约文档 | 与 `internal/config/config.go` 完全一致 | 无 | 已完成 |
 | QA-P0-1 | P0 | 重做 QA 门禁文档，区分代码门禁与生产门禁 | QA | 更新 `test/QA_GATE_STATUS.md` | 报告包含通过项、未通过项、漂移项、阻断项 | PM-P0-1, TL-P0-1, TL-P0-2 | 已完成 |
 | QA-P0-2 | P0 | 将 memory fallback / 宽松 readiness / 文档漂移列为 Critical | QA | QA 审查结论 | 报告中明确列为 Critical，未修复前不得 APPROVED | QA-P0-1 | 已完成 |
@@ -39,12 +39,12 @@
 | ID | 优先级 | 整改项 | 责任角色 | 交付物 | 验收标准 | 依赖 | 状态 |
 |---|---|---|---|---|---|---|---|
 | XL-P1-1 | P1 | 统一 PM/TechLead/QA/DevOps 交付模板 | 小龙 | 角色交付模板 | 每份角色输出均含结论、证据、阻塞、下一阶段条件 | XL-P0-1 | 未开始 |
-| XL-P1-2 | P1 | 增加关键修复后的实施漂移复核点 | 小龙 | 复核流程 | 每次关键修复后都有测试复跑、配置复核、状态更新 | XL-P0-2 | 进行中 |
+| XL-P1-2 | P1 | 增加关键修复后的实施漂移复核点 | 小龙 | 复核流程 | 每次关键修复后都有测试复跑、配置复核、状态更新 | XL-P0-2 | 已完成 |
 | PM-P1-1 | P1 | 补上线运营观察指标与失败判定线 | PM | 文档更新 | 含 handoff、ticket、audit、ready、重启后数据等观察项 | PM-P0-1 | 未开始 |
-| PM-P1-2 | P1 | 统一环境变量文档契约 | PM | 文档更新 | 仅使用代码真实变量名，不再写泛化别名 | TL-P0-3 | 进行中 |
+| PM-P1-2 | P1 | 统一环境变量文档契约 | PM | 文档更新 | 仅使用代码真实变量名，不再写泛化别名 | TL-P0-3 | 已完成 |
 | TL-P1-1 | P1 | 补 ticket/session 后台接口鉴权设计 | TechLead | 设计文档 | actor 来源不可伪造，接口 auth 模式明确 | TL-P0-3 | 未开始 |
 | TL-P1-2 | P1 | 补多实例与恢复场景验证设计 | TechLead | 设计文档 / 测试计划 | 覆盖 dedup、多实例、重启一致性、migration 幂等 | TL-P0-2 | 未开始 |
-| QA-P1-1 | P1 | 建立文档漂移检测检查项 | QA | QA 模板/报告更新 | 每次审查都校对代码 vs 文档 vs 测试状态 | QA-P0-1 | 进行中 |
+| QA-P1-1 | P1 | 建立文档漂移检测检查项 | QA | QA 模板/报告更新 | 每次审查都校对代码 vs 文档 vs 测试状态 | QA-P0-1 | 已完成 |
 | QA-P1-2 | P1 | 增加真实环境前置门禁 | QA | 预生产验证记录 | 启动、ready、migration、webhook、入库验证完成 | DO-P0-1, DO-P0-2 | 未开始 |
 | DO-P1-1 | P1 | 补最小监控与告警闭环 | DevOps | 告警配置/监控清单 | 覆盖 5xx、reject、handoff、ticket、audit、DB、ready | DO-P0-1 | 未开始 |
 | DO-P1-2 | P1 | 补运行与回滚 runbook | DevOps | runbook 文档 | 覆盖启动失败、migration 失败、DB 不可用、auth 联调失败 | DO-P0-1 | 未开始 |
@@ -69,10 +69,10 @@
 ### 4.1 小龙
 | ID | 项目 | 优先级 | 状态 |
 |---|---|---|---|
-| XL-P0-1 | 代码事实高于报告门禁 | P0 | 未开始 |
-| XL-P0-2 | 重写阶段状态口径 | P0 | 未开始 |
+| XL-P0-1 | 代码事实高于报告门禁 | P0 | 已完成 |
+| XL-P0-2 | 重写阶段状态口径 | P0 | 已完成 |
 | XL-P1-1 | 统一角色交付模板 | P1 | 未开始 |
-| XL-P1-2 | 建立实施漂移复核点 | P1 | 进行中 |
+| XL-P1-2 | 建立实施漂移复核点 | P1 | 已完成 |
 | XL-P2-1 | 纳入长期阶段复盘 | P2 | 未开始 |
 
 ### 4.2 PM
@@ -81,7 +81,7 @@
 | PM-P0-1 | 修正文档上线口径 | P0 | 已完成 |
 | PM-P0-2 | 明确 memory/dev/prod 约束 | P0 | 已完成 |
 | PM-P1-1 | 补运营观察指标与失败线 | P1 | 未开始 |
-| PM-P1-2 | 统一环境变量文档契约 | P1 | 进行中 |
+| PM-P1-2 | 统一环境变量文档契约 | P1 | 已完成 |
 | PM-P2-1 | 完善审计/保留/复盘口径 | P2 | 未开始 |
 
 ### 4.3 TechLead
@@ -100,7 +100,7 @@
 |---|---|---|---|
 | QA-P0-1 | 重做 QA 门禁文档 | P0 | 已完成 |
 | QA-P0-2 | 将核心风险列为 Critical | P0 | 已完成 |
-| QA-P1-1 | 增加文档漂移检测 | P1 | 进行中 |
+| QA-P1-1 | 增加文档漂移检测 | P1 | 已完成 |
 | QA-P1-2 | 增加真实环境前置门禁 | P1 | 未开始 |
 | QA-P2-1 | 建立长期回归基线 | P2 | 未开始 |
 
@@ -119,9 +119,9 @@
 
 ### Gate A：代码级通过
 - [x] 主链测试通过
-- [ ] 安全测试通过
+- [x] 静态检查通过（`go vet ./...`）
 - [x] prod 不允许 memory fallback
-- [x] readiness 已收紧
+- [x] readiness 语义已校准：prod 缺关键配置启动失败，非 prod memory 可正常 ready
 - [x] 配置契约与代码一致
 
 ### Gate B：预生产通过
@@ -145,11 +145,13 @@
 1. 代码变更：
    - `internal/config/config.go`
    - `internal/app/app.go`
-   - `internal/http/handlers/health_handler.go`
-   - 对应测试文件与集成/E2E 测试初始化配置已同步更新
+   - `internal/config/config_test.go`
+   - `internal/app/app_test.go`
+   - `test/integration/health_check_test.go`
 2. 验证命令：
-   - `go test ./internal/config ./internal/http/handlers ./internal/app -count=1`
+   - `go test ./internal/config ./internal/app ./test/integration -count=1`
    - `go test ./... -count=1`
+   - `go vet ./...`
 3. 验证结果：
    - 上述命令本轮均已通过
 

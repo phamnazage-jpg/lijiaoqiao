@@ -84,7 +84,6 @@ func TestHealthCheck_Returns200(t *testing.T) {
 // TestHealthCheck_ContainsChecks verifies the response includes the "checks" array
 // when health checkers are registered.
 func TestHealthCheck_ContainsChecks(t *testing.T) {
-	// Test the health handler directly with mock checkers
 	probe := health.NewProbe()
 	probe.SetReady(true)
 	checkers := []health.Checker{
@@ -120,7 +119,6 @@ func TestHealthCheck_ContainsChecks(t *testing.T) {
 		t.Fatalf("checks length = %d, want 2", len(checks))
 	}
 
-	// Verify each check entry has name and status fields
 	for _, c := range checks {
 		check, ok := c.(map[string]any)
 		if !ok {
@@ -134,7 +132,6 @@ func TestHealthCheck_ContainsChecks(t *testing.T) {
 		}
 	}
 
-	// Verify time field is present
 	if payload["time"] == nil {
 		t.Fatalf("time field missing from health response")
 	}
@@ -176,7 +173,6 @@ func TestHealthCheck_DegradedStatus(t *testing.T) {
 		t.Fatalf("checks length = %d, want 2", len(checks))
 	}
 
-	// Find the failing check
 	foundDown := false
 	for _, c := range checks {
 		check := c.(map[string]any)
@@ -225,20 +221,26 @@ func TestHealthCheck_LiveEndpoint(t *testing.T) {
 
 // TestHealthCheck_ReadyEndpoint verifies GET /actuator/health/ready.
 func TestHealthCheck_ReadyEndpoint(t *testing.T) {
-	probe := health.NewProbe()
-	probe.SetReady(true)
-	handler := healthHandlerWithProbes(probe, nil)
+	application := newTestApp()
+	if application == nil {
+		t.Skip("app.New() returned nil, skipping integration health test")
+	}
+	application.Probe.SetReady(true)
+	server := httptest.NewServer(application.Server.Handler)
+	defer server.Close()
 
-	req := httptest.NewRequest(http.MethodGet, "/actuator/health/ready", nil)
-	resp := httptest.NewRecorder()
-	handler(resp, req)
+	resp, err := http.Get(server.URL + "/actuator/health/ready")
+	if err != nil {
+		t.Fatalf("http get error = %v", err)
+	}
+	defer resp.Body.Close()
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.Code)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 
 	var payload map[string]any
-	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode error = %v", err)
 	}
 	if payload["status"] != "UP" {

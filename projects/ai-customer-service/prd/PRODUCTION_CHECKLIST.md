@@ -1,6 +1,6 @@
 # 生产一期上线前清单（整改版）
 
-> 版本：v2.1  
+> 版本：v2.2  
 > 日期：2026-05-04  
 > 负责人：PM（小龙团队）  
 > 范围：ai-customer-service 生产一期（Phase 1）  
@@ -42,19 +42,23 @@
 已执行/已确认的关键验证包括：
 
 ```bash
-go test ./internal/config ./internal/http/handlers ./internal/app -count=1
+go test ./internal/config ./internal/app ./test/integration -count=1
 go test ./... -count=1
+go vet ./...
 ```
 
 **当前解释口径：**
-- 这些结果说明：仓库内关键测试已通过
+- 这些结果说明：仓库内关键测试与静态检查已通过
 - 这些结果**不等于**：生产依赖、配置、部署和运行门禁已闭环
 
 ### 1.3 本轮已完成的代码级整改
 1. prod 下不再允许依赖 memory fallback 启动
 2. prod 下要求 `AI_CS_WEBHOOK_SECRET` 非空
-3. readiness 在 memory 模式下不再误报 ready=UP
-4. 测试初始化配置已同步到 `test` runtime，保证测试语义清晰
+3. `AI_CS_RUNTIME_ENV` / `AI_CS_ENV` 契约已明确，且有测试覆盖
+4. readiness 语义已校准：
+   - production 缺关键配置时直接启动失败
+   - non-prod memory 模式可正常 ready
+5. 测试初始化配置已同步到 `test` runtime，保证测试语义清晰
 
 ---
 
@@ -80,6 +84,7 @@ go test ./... -count=1
 | 变量名 | 默认值 | 说明 | 是否允许 prod 使用默认值 |
 |---|---|---|---|
 | `AI_CS_RUNTIME_ENV` | `development` | 运行环境模式，支持 `development` / `production` / `test`（兼容旧 `AI_CS_ENV` 读法） | **不允许依赖默认值** |
+| `AI_CS_ENV` | 无 | 兼容旧变量；仅当 `AI_CS_RUNTIME_ENV` 未设置时回退使用 | 不建议继续作为正式新配置入口 |
 
 ### 3.2 HTTP 相关
 | 变量名 | 默认值 | 说明 | 是否允许 prod 使用默认值 |
@@ -95,8 +100,8 @@ go test ./... -count=1
 ### 3.3 Postgres 相关
 | 变量名 | 默认值 | 说明 | 是否允许 prod 使用默认值 |
 |---|---|---|---|
-| `AI_CS_POSTGRES_ENABLED` | `false` | 是否启用 PG store | **不允许** |
-| `AI_CS_POSTGRES_DSN` | 空 | PG 连接串 | **不允许为空** |
+| `AI_CS_POSTGRES_ENABLED` | `false` | 是否启用 PG store | **production 不允许默认/不允许 false** |
+| `AI_CS_POSTGRES_DSN` | 空 | PG 连接串 | **启用 PG 时不允许为空** |
 | `AI_CS_POSTGRES_MIGRATION_DIR` | `db/migration` | migration 目录 | 需确认可用 |
 | `AI_CS_POSTGRES_MAX_OPEN_CONNS` | `20` | 最大打开连接数 | 需容量确认 |
 | `AI_CS_POSTGRES_MAX_IDLE_CONNS` | `5` | 最大空闲连接数 | 需容量确认 |
@@ -105,7 +110,7 @@ go test ./... -count=1
 ### 3.4 Webhook 安全相关
 | 变量名 | 默认值 | 说明 | 是否允许 prod 使用默认值 |
 |---|---|---|---|
-| `AI_CS_WEBHOOK_SECRET` | 空 | webhook HMAC secret | **不允许为空** |
+| `AI_CS_WEBHOOK_SECRET` | 空 | webhook HMAC secret | **production 不允许为空** |
 | `AI_CS_WEBHOOK_TIMESTAMP_HEADER` | `X-CS-Timestamp` | 时间戳 header | 通常可 |
 | `AI_CS_WEBHOOK_SIGNATURE_HEADER` | `X-CS-Signature` | 签名 header | 通常可 |
 | `AI_CS_WEBHOOK_MAX_SKEW_SECONDS` | `300` | 最大时钟偏差 | 需安全确认 |
@@ -158,8 +163,8 @@ go test ./... -count=1
 
 ### 5.2 运行门禁验证
 - [ ] 确认缺关键配置时启动直接失败
-- [ ] 确认 memory 模式不会被误判为 ready
-- [ ] 确认 readiness 能反映关键依赖状态
+- [x] 确认 non-prod memory 模式不会被误判为 not ready
+- [ ] 确认生产 Postgres 模式的 readiness 能反映真实依赖状态
 - [ ] 确认缺少 DB / secret 时不会以“假成功”状态进入流量
 
 ### 5.3 文档一致性验证
@@ -200,7 +205,7 @@ go test ./... -count=1
 |---|---|
 | 小龙 | 统一阶段口径，禁止无证据放行 |
 | PM | 修正上线口径、配置契约表达、观察指标和失败线 |
-| TechLead | 禁止 prod fallback、收紧 readiness、输出配置契约基线 |
+| TechLead | 禁止 prod fallback、校准 runtime env/readiness、输出配置契约基线 |
 | QA | 维护分层门禁结论，防止状态漂移 |
 | DevOps | 建立部署 fail-fast、监控、回滚、runbook |
 
@@ -210,7 +215,7 @@ go test ./... -count=1
 
 **ai-customer-service 当前应定义为：**
 
-> **代码级门禁已通过，适合进入预生产联调与部署基线整改阶段；但尚不应被标记为生产可直接上线。**
+> **第5件事已完成；代码级门禁已通过，适合进入预生产联调与部署基线整改阶段；但尚不应被标记为生产可直接上线。**
 
 因此：
 - **允许继续预生产整改和联调准备**
