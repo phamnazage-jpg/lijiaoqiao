@@ -69,7 +69,10 @@ func newMockSessionService(audits *sessionAuditRecorder) *mockSessionService {
 
 func (m *mockSessionService) GetSession(ctx context.Context, id string) (*session.Session, error) {
 	m.mu.Lock()
-	m.calls = append(m.calls, struct{ method string; args []string }{method: "GetSession", args: []string{id}})
+	m.calls = append(m.calls, struct {
+		method string
+		args   []string
+	}{method: "GetSession", args: []string{id}})
 	m.mu.Unlock()
 	sessions := m.sessions.List()
 	for _, s := range sessions {
@@ -82,14 +85,20 @@ func (m *mockSessionService) GetSession(ctx context.Context, id string) (*sessio
 
 func (m *mockSessionService) UpdateSession(ctx context.Context, sess *session.Session) error {
 	m.mu.Lock()
-	m.calls = append(m.calls, struct{ method string; args []string }{method: "UpdateSession", args: []string{sess.ID}})
+	m.calls = append(m.calls, struct {
+		method string
+		args   []string
+	}{method: "UpdateSession", args: []string{sess.ID}})
 	m.mu.Unlock()
 	return m.sessions.Save(ctx, sess)
 }
 
 func (m *mockSessionService) CreateTicket(ctx context.Context, t *ticket.Ticket) error {
 	m.mu.Lock()
-	m.calls = append(m.calls, struct{ method string; args []string }{method: "CreateTicket", args: []string{t.ID, string(t.Priority), t.SessionID}})
+	m.calls = append(m.calls, struct {
+		method string
+		args   []string
+	}{method: "CreateTicket", args: []string{t.ID, string(t.Priority), t.SessionID}})
 	m.mu.Unlock()
 	return m.tickets.Create(ctx, t)
 }
@@ -159,12 +168,12 @@ func (h *SessionHandler) Feedback(w http.ResponseWriter, r *http.Request) {
 	// Record feedback audit event
 	now := h.now()
 	_ = h.audit.Add(r.Context(), audit.Event{
-		ID:       fmt.Sprintf("fb-%d", now.UnixNano()),
-		Type:     "session_feedback",
-		Action:   "feedback",
+		ID:        fmt.Sprintf("fb-%d", now.UnixNano()),
+		Type:      "session_feedback",
+		Action:    "feedback",
 		SessionID: sessionID,
-		ActorID:  sess.OpenID,
-		Payload:  map[string]any{"score": reqBody.Score, "note": reqBody.Note},
+		ActorID:   sess.OpenID,
+		Payload:   map[string]any{"score": reqBody.Score, "note": reqBody.Note},
 		CreatedAt: now,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"received": true})
@@ -199,7 +208,7 @@ func (h *SessionHandler) Handoff(w http.ResponseWriter, r *http.Request) {
 		HandoffReason: reqBody.Reason,
 		ContextSnapshot: map[string]any{
 			"channel": sess.Channel,
-			"open_id":  sess.OpenID,
+			"open_id": sess.OpenID,
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -213,13 +222,13 @@ func (h *SessionHandler) Handoff(w http.ResponseWriter, r *http.Request) {
 	_ = h.service.UpdateSession(r.Context(), sess)
 
 	_ = h.audit.Add(r.Context(), audit.Event{
-		ID:       fmt.Sprintf("ho-%d", now.UnixNano()),
-		Type:     "session_handoff",
-		Action:   "handoff",
+		ID:        fmt.Sprintf("ho-%d", now.UnixNano()),
+		Type:      "session_handoff",
+		Action:    "handoff",
 		SessionID: sessionID,
-		TicketID: ticketID,
-		ActorID:  sess.OpenID,
-		Payload:  map[string]any{"reason": reqBody.Reason},
+		TicketID:  ticketID,
+		ActorID:   sess.OpenID,
+		Payload:   map[string]any{"reason": reqBody.Reason},
 		CreatedAt: now,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"handoff": true, "ticket_id": ticketID})
@@ -374,6 +383,7 @@ func TestSessionHandlerHandoff_Success(t *testing.T) {
 	bodyBytes, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/widget:u_handoff_ok/handoff", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
+	req = withActor(req, "agent-handoff", "agent")
 	resp := httptest.NewRecorder()
 	h.Handoff(resp, req)
 
@@ -409,6 +419,7 @@ func TestSessionHandlerHandoff_SessionNotFound(t *testing.T) {
 	bodyBytes, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/nonexistent-session/handoff", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
+	req = withActor(req, "agent-missing", "agent")
 	resp := httptest.NewRecorder()
 	h.Handoff(resp, req)
 
@@ -442,6 +453,7 @@ func TestSessionHandlerHandoff_CreatesTicket(t *testing.T) {
 	bodyBytes, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/telegram:u_ticket_create/handoff", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
+	req = withActor(req, "agent-ticket-create", "agent")
 	resp := httptest.NewRecorder()
 	h.Handoff(resp, req)
 

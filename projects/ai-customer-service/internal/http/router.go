@@ -6,6 +6,7 @@ import (
 
 	"github.com/bridge/ai-customer-service/internal/domain/error/cserrors"
 	"github.com/bridge/ai-customer-service/internal/http/handlers"
+	"github.com/bridge/ai-customer-service/internal/http/middleware"
 	"github.com/bridge/ai-customer-service/internal/platform/httpx"
 )
 
@@ -57,18 +58,18 @@ func NewRouter(deps RouterDeps) http.Handler {
 				writeMethodNotAllowed(w)
 				return
 			}
-			deps.Tickets.List(w, r)
+			middleware.RequireRoles(http.HandlerFunc(deps.Tickets.List), "agent", "supervisor", "admin").ServeHTTP(w, r)
 		})
 		mux.HandleFunc("/api/v1/customer-service/tickets/", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer-service/tickets/stats" {
 				if deps.TicketStats != nil {
-					deps.TicketStats.Get(w, r)
+					middleware.RequireRoles(http.HandlerFunc(deps.TicketStats.Get), "supervisor", "admin").ServeHTTP(w, r)
 					return
 				}
 			}
 			// P1-3: GET /api/v1/customer-service/tickets/{id} — Phase 1 minimum implementation
 			if r.Method == http.MethodGet {
-				deps.Tickets.Get(w, r)
+				middleware.RequireRoles(http.HandlerFunc(deps.Tickets.Get), "agent", "supervisor", "admin").ServeHTTP(w, r)
 				return
 			}
 			if strings.HasSuffix(r.URL.Path, "/assign") {
@@ -76,7 +77,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 					writeMethodNotAllowed(w)
 					return
 				}
-				deps.Tickets.Assign(w, r)
+				middleware.RequireRoles(http.HandlerFunc(deps.Tickets.Assign), "supervisor", "admin").ServeHTTP(w, r)
 				return
 			}
 			if strings.HasSuffix(r.URL.Path, "/resolve") {
@@ -84,7 +85,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 					writeMethodNotAllowed(w)
 					return
 				}
-				deps.Tickets.Resolve(w, r)
+				middleware.RequireRoles(http.HandlerFunc(deps.Tickets.Resolve), "agent", "supervisor", "admin").ServeHTTP(w, r)
 				return
 			}
 			if strings.HasSuffix(r.URL.Path, "/close") {
@@ -92,7 +93,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 					writeMethodNotAllowed(w)
 					return
 				}
-				deps.Tickets.Close(w, r)
+				middleware.RequireRoles(http.HandlerFunc(deps.Tickets.Close), "supervisor", "admin").ServeHTTP(w, r)
 				return
 			}
 			writeMethodNotAllowed(w)
@@ -115,7 +116,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 					writeMethodNotAllowed(w)
 					return
 				}
-				deps.Sessions.Handoff(w, r)
+				middleware.RequireRoles(http.HandlerFunc(deps.Sessions.Handoff), "agent", "supervisor", "admin").ServeHTTP(w, r)
 				return
 			}
 			writeMethodNotAllowed(w)

@@ -206,11 +206,11 @@ func TestFeedback_EmptySessionID(t *testing.T) {
 func TestHandoff_CreatesTicketAndAudit(t *testing.T) {
 	sessions := newMockSessionGetter()
 	sessions.AddSession(&session.Session{
-		ID:       "sess-hw-1",
-		Channel:  "feishu",
-		OpenID:   "open-123",
-		UserID:   "user-456",
-		Status:   session.StatusProcessing,
+		ID:        "sess-hw-1",
+		Channel:   "feishu",
+		OpenID:    "open-123",
+		UserID:    "user-456",
+		Status:    session.StatusProcessing,
 		TurnCount: 3,
 	})
 	tickets := newMockTicketCreator()
@@ -221,7 +221,8 @@ func TestHandoff_CreatesTicketAndAudit(t *testing.T) {
 	h.now = func() time.Time { return now }
 
 	body := `{"reason":"customer requested human","priority":"P1"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/sess-hw-1/handoff?actor_id=admin-1", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/sess-hw-1/handoff", strings.NewReader(body))
+	req = withActor(req, "admin-1", "admin")
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "10.0.0.1:12345"
 	resp := httptest.NewRecorder()
@@ -293,6 +294,7 @@ func TestHandoff_DefaultPriorityP2(t *testing.T) {
 
 	body := `{"reason":"need help"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/sess-p2/handoff", strings.NewReader(body))
+	req = withActor(req, "agent-1", "agent")
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 
@@ -317,6 +319,7 @@ func TestHandoff_SessionNotFound(t *testing.T) {
 
 	body := `{"reason":"urgent"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/nonexistent/handoff", strings.NewReader(body))
+	req = withActor(req, "agent-1", "agent")
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 
@@ -336,6 +339,7 @@ func TestHandoff_ReasonRequired(t *testing.T) {
 
 	// empty reason
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/sess-r1/handoff", strings.NewReader(`{"reason":""}`))
+	req = withActor(req, "agent-1", "agent")
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 	h.Handoff(resp, req)
@@ -345,6 +349,7 @@ func TestHandoff_ReasonRequired(t *testing.T) {
 
 	// missing reason field
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/sess-r1/handoff", strings.NewReader(`{}`))
+	req = withActor(req, "agent-1", "agent")
 	req.Header.Set("Content-Type", "application/json")
 	resp = httptest.NewRecorder()
 	h.Handoff(resp, req)
@@ -360,6 +365,7 @@ func TestHandoff_InvalidJSON(t *testing.T) {
 	h := NewSessionHandler(sessions, tickets, audits)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/sess-1/handoff", strings.NewReader(`{bad json}`))
+	req = withActor(req, "agent-1", "agent")
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 	h.Handoff(resp, req)
@@ -379,6 +385,7 @@ func TestHandoff_TicketCreateFailure(t *testing.T) {
 
 	body := `{"reason":"fail"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/sess-err/handoff", strings.NewReader(body))
+	req = withActor(req, "agent-1", "agent")
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 
@@ -386,6 +393,23 @@ func TestHandoff_TicketCreateFailure(t *testing.T) {
 
 	if resp.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", resp.Code)
+	}
+}
+
+func TestHandoff_RejectsWhenActorOnlyProvidedByQuery(t *testing.T) {
+	sessions := newMockSessionGetter()
+	sessions.AddSession(&session.Session{ID: "sess-query", Channel: "feishu", OpenID: "open-1", Status: session.StatusProcessing})
+	tickets := newMockTicketCreator()
+	audits := newMockAuditRecorder()
+	h := NewSessionHandler(sessions, tickets, audits)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/sess-query/handoff?actor_id=forged-admin", strings.NewReader(`{"reason":"need help"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	h.Handoff(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", resp.Code)
 	}
 }
 

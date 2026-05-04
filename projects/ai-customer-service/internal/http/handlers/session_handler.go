@@ -12,6 +12,7 @@ import (
 	"github.com/bridge/ai-customer-service/internal/domain/error/cserrors"
 	"github.com/bridge/ai-customer-service/internal/domain/session"
 	"github.com/bridge/ai-customer-service/internal/domain/ticket"
+	"github.com/bridge/ai-customer-service/internal/http/middleware"
 )
 
 type SessionGetter interface {
@@ -35,8 +36,8 @@ func NewSessionHandler(sessions SessionGetter, tickets TicketCreator, audits Aud
 	return &SessionHandler{
 		sessions: sessions,
 		tickets:  tickets,
-		audits:  audits,
-		now:     time.Now,
+		audits:   audits,
+		now:      time.Now,
 	}
 }
 
@@ -69,9 +70,9 @@ func (h *SessionHandler) Feedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID := strings.TrimSpace(r.URL.Query().Get("actor_id"))
-	if actorID == "" {
-		actorID = "system"
+	actorID := "system"
+	if actor, ok := middleware.ActorFromContext(r.Context()); ok {
+		actorID = actor.ID
 	}
 	sourceIP := clientIP(r.RemoteAddr)
 	now := h.now()
@@ -137,10 +138,12 @@ func (h *SessionHandler) Handoff(w http.ResponseWriter, r *http.Request) {
 		priority = ticket.PriorityP2
 	}
 
-	actorID := strings.TrimSpace(r.URL.Query().Get("actor_id"))
-	if actorID == "" {
-		actorID = "system"
+	actor, ok := middleware.ActorFromContext(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"code": cserrors.CS_AUTH_4001, "message": cserrors.ErrorMsg(cserrors.CS_AUTH_4001)}})
+		return
 	}
+	actorID := actor.ID
 	sourceIP := clientIP(r.RemoteAddr)
 	now := h.now()
 
@@ -154,11 +157,11 @@ func (h *SessionHandler) Handoff(w http.ResponseWriter, r *http.Request) {
 		Status:        ticket.StatusOpen,
 		HandoffReason: req.Reason,
 		ContextSnapshot: map[string]any{
-			"channel":       sess.Channel,
-			"open_id":       sess.OpenID,
-			"manual":        true,
-			"actor_id":      actorID,
-			"source":        "customer_service_api",
+			"channel":  sess.Channel,
+			"open_id":  sess.OpenID,
+			"manual":   true,
+			"actor_id": actorID,
+			"source":   "customer_service_api",
 		},
 		CreatedAt: now,
 		UpdatedAt: now,

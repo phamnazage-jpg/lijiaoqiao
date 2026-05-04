@@ -11,7 +11,7 @@
 
 ```bash
 # 1. 确认环境变量完整
-echo "AI_CS_ENV=$AI_CS_ENV"
+echo "AI_CS_RUNTIME_ENV=$AI_CS_RUNTIME_ENV"
 echo "AI_CS_POSTGRES_ENABLED=$AI_CS_POSTGRES_ENABLED"
 echo "AI_CS_POSTGRES_DSN=${AI_CS_POSTGRES_DSN:+[SET]}"
 echo "AI_CS_WEBHOOK_SECRET=${AI_CS_WEBHOOK_SECRET:+[SET]}"
@@ -28,7 +28,7 @@ nohup ./ai-customer-service > /var/log/ai-cs.log 2>&1 &
 sleep 3
 
 # 5. 验证 ready probe
-curl -s http://localhost:8080/ready | grep -q '"status":"UP"' || { echo "READY FAILED"; cat /var/log/ai-cs.log; exit 1; }
+curl -s http://localhost:8080/actuator/health/ready | grep -q '"status":"UP"' || { echo "READY FAILED"; cat /var/log/ai-cs.log; exit 1; }
 ```
 
 ---
@@ -42,7 +42,7 @@ curl -s http://localhost:8080/ready | grep -q '"status":"UP"' || { echo "READY F
 | `listen tcp :8080: bind: address already in use` | 8080 端口被占用 | `pkill -f ai-customer-service` 或改 `AI_CS_ADDR=:8081` |
 | `pq: connection refused` | PostgreSQL 不可达 | 检查 PG 主机/端口/防火墙，确认 `psql` 可连 |
 | `pq: password authentication failed` | 密码错误 | 核对 `AI_CS_POSTGRES_DSN` 中的密码 |
-| 启动成功但 `/ready` 返回 `postgres:DOWN` | PG 连通但 health check 失败 | 检查 PG 是否在 `AI_CS_POSTGRES_DSN` 指定端口响应 |
+| 启动成功但 `/actuator/health/ready` 返回 `postgres:DOWN` | PG 连通但 health check 失败 | 检查 PG 是否在 `AI_CS_POSTGRES_DSN` 指定端口响应 |
 
 ---
 
@@ -115,7 +115,7 @@ nohup ./ai-customer-service-v1.0.0 > /var/log/ai-cs-v1.0.0.log 2>&1 &
 sleep 3
 
 # 6. 验证
-curl -s http://localhost:8080/ready
+curl -s http://localhost:8080/actuator/health/ready
 curl -s http://localhost:8080/actuator/health
 ```
 
@@ -155,7 +155,7 @@ ps aux | grep "ai-customer-service" | grep -v grep || echo "  NOT RUNNING ❌"
 
 echo ""
 echo "[2/5] HTTP endpoints:"
-for endpoint in "/live" "/ready" "/actuator/health"; do
+for endpoint in "/actuator/health/live" "/actuator/health/ready" "/actuator/health"; do
   status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080$endpoint)
   echo "  $endpoint → HTTP $status $([ "$status" = "200" ] && echo '✅' || echo '❌')"
 done

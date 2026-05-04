@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bridge/ai-customer-service/internal/domain/audit"
+	"github.com/google/uuid"
 	"github.com/bridge/ai-customer-service/internal/domain/ticket"
 )
 
@@ -36,7 +37,7 @@ func (s *TicketWorkflowStore) writeAudit(ctx context.Context, ticketID, action, 
 	}
 	now := time.Now()
 	event := audit.Event{
-		ID:        fmt.Sprintf("wf-%d", now.UnixNano()),
+		ID:        uuid.New().String(),
 		Type:      "ticket_state_changed",
 		Action:    action,
 		TicketID:  ticketID,

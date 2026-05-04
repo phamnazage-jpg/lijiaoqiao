@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/bridge/ai-customer-service/internal/http/handlers"
+	"github.com/bridge/ai-customer-service/internal/http/middleware"
 	"github.com/bridge/ai-customer-service/internal/platform/health"
 )
 
@@ -208,5 +209,52 @@ func TestRouter_UnknownTicketsPath_Returns405(t *testing.T) {
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST /tickets/t1/unknown = %d, want 405", rr.Code)
+	}
+}
+
+func TestRouter_TicketAssign_RejectsWhenAuthHeadersMissing(t *testing.T) {
+	probe := health.NewProbe()
+	probe.SetReady(true)
+	h := handlers.NewHealthHandler(probe)
+	ticketHandler := &handlers.TicketHandler{}
+	router := NewRouter(RouterDeps{Health: h, Tickets: ticketHandler})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/t1/assign?agent_id=a1", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("POST /tickets/t1/assign without auth = %d, want 403", rr.Code)
+	}
+}
+
+func TestRouter_TicketAssign_RejectsWhenRoleNotAllowed(t *testing.T) {
+	probe := health.NewProbe()
+	probe.SetReady(true)
+	h := handlers.NewHealthHandler(probe)
+	ticketHandler := &handlers.TicketHandler{}
+	router := NewRouter(RouterDeps{Health: h, Tickets: ticketHandler})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/t1/assign?agent_id=a1", nil)
+	req.Header.Set(middleware.HeaderActorID, "agent-1")
+	req.Header.Set(middleware.HeaderActorRole, "agent")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("POST /tickets/t1/assign with agent role = %d, want 403", rr.Code)
+	}
+}
+
+func TestRouter_SessionHandoff_RejectsWhenAuthHeadersMissing(t *testing.T) {
+	probe := health.NewProbe()
+	probe.SetReady(true)
+	h := handlers.NewHealthHandler(probe)
+	sessionHandler := &handlers.SessionHandler{}
+	router := NewRouter(RouterDeps{Health: h, Sessions: sessionHandler})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/s1/handoff", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("POST /sessions/s1/handoff without auth = %d, want 403", rr.Code)
 	}
 }

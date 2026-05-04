@@ -11,11 +11,12 @@
 - webhook body schema 校验
 - webhook HMAC 签名与时间戳防重放校验
 - 消息幂等去重
-- 基于依赖检查的 `/actuator/health`、`/live`、`/ready`
+- 基于依赖检查的 `/actuator/health`、`/actuator/health/live`、`/actuator/health/ready`
 - 转人工工单创建
-- 工单列表 / 分配 / 解决最小闭环 API
+- 工单列表 / 分配 / 解决 / 关闭最小闭环 API
 - 审计日志持久化写入
 - PostgreSQL migration 基础表结构
+- 后台接口最小 header 鉴权与角色校验
 
 但距离“生产一期完成”仍有明显缺口，不能作为可灰度上线结论。
 
@@ -32,8 +33,8 @@
 | webhook 签名校验 | 已完成 | `internal/http/handlers/webhook_security.go` | HMAC-SHA256 |
 | 时间戳防重放 | 已完成 | `internal/http/handlers/webhook_security.go` | 仅做 skew 校验，未持久化 nonce |
 | 幂等去重 | 已完成 | `internal/store/postgres/dedup_store.go`, `internal/store/memory/dedup_store.go` | 基于 `(channel,message_id)` |
-| 速率限制 | 未完成 | 无 | P1 缺口 |
-| 渠道级独立 webhook | 未完成 | 当前仅统一 webhook | 与 INTERFACE 文档仍有漂移 |
+| 速率限制 | 已完成 | `internal/platform/httpx/limits.go`, `internal/http/router.go` | 当前已挂到 webhook 路由 |
+| 渠道级独立 webhook 适配器 | 未完成 | 当前仅具备统一 webhook 与路径覆写 channel | 与最终多渠道适配目标仍有距离 |
 
 ### 2.2 工单闭环
 
@@ -42,9 +43,9 @@
 | 转人工自动创建工单 | 已完成 | `internal/service/dialog/service.go` | 退款/敏感意图触发 |
 | 工单持久化 | 已完成 | `internal/store/postgres/ticket_store.go` | PostgreSQL / memory 均可 |
 | 工单列表 | 已完成 | `internal/http/handlers/ticket_handler.go` | `GET /tickets` |
-| 工单分配 | 已完成 | `internal/http/handlers/ticket_handler.go`, `internal/store/postgres/ticket_workflow.go` | 当前 query 参数驱动 |
-| 工单解决 | 已完成 | 同上 | 当前 query 参数驱动 |
-| 工单关闭 | 未完成 | 无 | 只有 resolve，没有 close |
+| 工单分配 | 已完成 | `internal/http/handlers/ticket_handler.go`, `internal/store/postgres/ticket_workflow.go` | 当前由 header 鉴权 + query 业务参数驱动 |
+| 工单解决 | 已完成 | 同上 | 当前由 header 鉴权 + query 业务参数驱动 |
+| 工单关闭 | 已完成 | `internal/http/handlers/ticket_handler.go`, `internal/store/postgres/ticket_workflow.go` | 当前由 header 鉴权 + query 业务参数驱动 |
 | 工单回复用户 | 未完成 | 无 | 尚无人工回消息链路 |
 | 排队位置查询 | 未完成 | 无 | 文档要求未落地 |
 
@@ -55,9 +56,9 @@
 | message processed 审计 | 已完成 | `internal/service/dialog/service.go` | 成功路径会写审计 |
 | 审计持久化 | 已完成 | `internal/store/postgres/audit_store.go` | 写 `cs_audit_logs` |
 | fail-closed 审计 | 已完成 | `dialog.Process()` | 审计失败时整体返回错误 |
-| 安全拒绝事件审计 | 未完成 | 无 | 签名失败/非法请求未记审计 |
-| 工单状态流转审计 | 未完成 | 无 | assign/resolve 未写审计 |
-| source_ip / actor / action 分类完备 | 部分完成 | `internal/store/postgres/audit_store.go` | 当前 action 固定为 `update`，source_ip 未写 |
+| 安全拒绝事件审计 | 已完成 | `internal/http/handlers/webhook_security.go` | 签名缺失/时间戳异常/签名不匹配会写审计 |
+| 工单状态流转审计 | 已完成 | `internal/http/handlers/ticket_handler.go`, `internal/store/postgres/ticket_workflow.go` | assign/resolve/close 已写状态流转审计 |
+| source_ip / actor / action 分类完备 | 部分完成 | `internal/http/handlers/ticket_handler.go`, `internal/http/handlers/session_handler.go`, `internal/store/postgres/audit_store.go` | 当前已记录 source_ip/actor，但完整分类体系仍可继续收紧 |
 
 ### 2.4 运维与健康检查
 
@@ -68,15 +69,15 @@
 | graceful shutdown | 已完成 | `internal/app/app.go` | |
 | 结构化日志 | 部分完成 | `internal/platform/logging/logger.go`, `webhook_handler.go` | 仅少量入口日志 |
 | metrics/tracing | 未完成 | 无 | P1 缺口 |
-| 灰度/回滚 runbook | 未完成 | 无 | 文档缺失 |
+| 灰度/回滚 runbook | 部分完成 | `docs/RUNBOOK.md`, `prd/GRAY_RELEASE_ROLLBACK_RUNBOOK.md` | 文档已交付，演练与证据化验证待补 |
 
 ---
 
 ## 3. 当前与文档的主要漂移
 
-1. `tech/INTERFACE.md` 约定了按渠道 webhook（`/webhook/{channel}`），当前实现仍只有统一入口 `/api/v1/customer-service/webhook`。
-2. 文档要求人工接单/回复/关闭完整后台闭环，当前只做到 list/assign/resolve 最小 API。
-3. 文档要求安全事件审计，当前签名失败、时间戳失败、非法 body 不入审计。
+1. 文档中的最终形态仍包含真实多渠道适配器、LLM、RAG 与运营后台，当前代码尚未覆盖这些范围。
+2. 当前后台接口已加最小 header 鉴权，但完整 RBAC、用户级数据隔离仍未落地。
+3. 当前仍缺人工回复用户链路与排队位置查询。
 4. 文档要求更完整的运维可观测（metrics/tracing/SLO），当前尚未实现。
 
 ---
@@ -85,18 +86,18 @@
 
 ### P0（继续执行必须优先收口）
 
-1. 工单状态流转审计补齐
-2. 安全拒绝事件审计补齐
-3. 工单 API 与接口文档对齐（至少明确当前最小契约）
-4. 工单关闭语义补齐或文档明确 resolve=关闭
+1. 完整 RBAC 与用户级数据隔离补齐
+2. 工单 API 与接口文档继续对齐（尤其是后台鉴权契约）
+3. 人工回复用户链路补齐
+4. 灰度与回滚演练证据化
 
 ### P1（生产一期仍必须完成）
 
-1. webhook 速率限制
-2. 人工回复用户链路
-3. 排队位置查询
-4. metrics / tracing / SLO 基础设施
-5. 灰度/回滚 runbook
+1. 排队位置查询
+2. metrics / tracing / SLO 基础设施
+3. 灰度/回滚演练
+4. 真实多渠道适配器产品化
+5. 真实 LLM / RAG 能力
 
 ---
 

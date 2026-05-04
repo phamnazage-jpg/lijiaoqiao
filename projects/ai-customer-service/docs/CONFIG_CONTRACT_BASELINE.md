@@ -2,18 +2,18 @@
 
 > 来源：`internal/config/config.go` 当前实现  
 > 用途：作为 PM / QA / DevOps / 部署文档的唯一配置事实来源  
-> 状态：当前代码事实基线，不等同于“prod 已自动强制保证”
+> 状态：当前代码事实基线；production 下的关键运行约束已经由 `internal/config/config.go` 执行校验
 
 ---
 
 ## 0. 重要说明
 
-当前代码已经实现了基础配置解析与部分校验，但**尚未完全实现生产模式强约束**。
+当前代码已经实现了基础配置解析，并对 production 下的关键约束做了 fail-fast 校验。
 
 这意味着：
 - 本文档描述的是**当前代码真实读取和校验的配置契约**
-- 不代表所有生产要求都已被代码自动 enforce
-- 对于 prod fail-fast、readiness 收紧等要求，当前仍属于待整改项
+- production 下缺少关键配置时，`Load()` 会直接返回错误
+- readiness / 依赖可观测仍需结合运行态和部署层继续完善
 
 ---
 
@@ -46,7 +46,7 @@
 
 | 变量名 | 默认值 | 含义 | 当前代码是否校验 | prod 是否应允许默认值 |
 |---|---|---|---|---|
-| `AI_CS_WEBHOOK_SECRET` | 空 | webhook HMAC secret | 当前无必填校验 | **不允许为空** |
+| `AI_CS_WEBHOOK_SECRET` | 空 | webhook HMAC secret | production 下必填 | **不允许为空** |
 | `AI_CS_WEBHOOK_TIMESTAMP_HEADER` | `X-CS-Timestamp` | 时间戳请求头 | 无额外校验 | 可 |
 | `AI_CS_WEBHOOK_SIGNATURE_HEADER` | `X-CS-Signature` | 签名请求头 | 无额外校验 | 可 |
 | `AI_CS_WEBHOOK_MAX_SKEW_SECONDS` | `300` | 最大时钟偏差（秒） | 必须 > 0 | 需安全确认 |
@@ -61,18 +61,19 @@
 2. `AI_CS_MAX_BODY_BYTES` 必须为正数
 3. `AI_CS_POSTGRES_ENABLED=true` 时，`AI_CS_POSTGRES_DSN` 不允许为空
 4. `AI_CS_WEBHOOK_MAX_SKEW_SECONDS` 必须为正数
+5. `AI_CS_RUNTIME_ENV` 只允许 `production/development/test`
+6. `AI_CS_RUNTIME_ENV=production` 时，`AI_CS_POSTGRES_ENABLED` 必须为 `true`
+7. `AI_CS_RUNTIME_ENV=production` 时，`AI_CS_WEBHOOK_SECRET` 不允许为空
 
 ---
 
 ## 3. 当前代码尚未自动保证、但生产必须满足的要求
 
-以下要求目前主要是**生产约束**，而不是代码已强制执行的事实：
+以下要求目前仍需部署层和运行态共同保证：
 
-1. **prod 环境必须启用 Postgres**
-2. **prod 环境必须禁止 memory fallback**
-3. **prod 环境必须要求 webhook secret 完整配置**
-4. **readiness 必须反映 DB / migration / 关键配置就绪状态**
-5. **migration 目录必须真实可执行，且执行成功才能接流量**
+1. **readiness 必须反映 DB / migration / 关键配置就绪状态**
+2. **migration 目录必须真实可执行，且执行成功才能接流量**
+3. **部署文档和环境模板必须只使用真实变量名**
 
 ---
 

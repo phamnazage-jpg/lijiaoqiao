@@ -11,6 +11,7 @@ import (
 
 	"github.com/bridge/ai-customer-service/internal/app"
 	"github.com/bridge/ai-customer-service/internal/config"
+	"github.com/bridge/ai-customer-service/internal/http/middleware"
 	"github.com/bridge/ai-customer-service/internal/platform/logging"
 )
 
@@ -59,11 +60,16 @@ func mustReadBody(t *testing.T, resp *http.Response, dest any) {
 	}
 }
 
+func setActorHeaders(req *http.Request, actorID, role string) {
+	req.Header.Set(middleware.HeaderActorID, actorID)
+	req.Header.Set(middleware.HeaderActorRole, role)
+}
+
 // TestFullTicketFlow_E2E exercises the complete ticket lifecycle:
-//   1. Webhook triggers handoff → ticket created
-//   2. Ticket is assigned to an agent
-//   3. Ticket is resolved by the agent
-//   4. Ticket is retrieved and verified in final resolved state
+//  1. Webhook triggers handoff → ticket created
+//  2. Ticket is assigned to an agent
+//  3. Ticket is resolved by the agent
+//  4. Ticket is retrieved and verified in final resolved state
 func TestFullTicketFlow_E2E(t *testing.T) {
 	application := newTestAppE2E(t)
 	server := httptest.NewServer(application.Server.Handler)
@@ -98,11 +104,12 @@ func TestFullTicketFlow_E2E(t *testing.T) {
 	ticketID := whResult.TicketID
 
 	// ── Step 2: Assign the ticket to an agent ────────────────────────────
-	assignURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/assign?agent_id=agent-e2e-001&actor_id=admin-e2e", baseURL, ticketID)
+	assignURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/assign?agent_id=agent-e2e-001", baseURL, ticketID)
 	assignReq, err := http.NewRequest(http.MethodPost, assignURL, nil)
 	if err != nil {
 		t.Fatalf("new assign request error = %v", err)
 	}
+	setActorHeaders(assignReq, "admin-e2e", "admin")
 	assignReq.RemoteAddr = "192.168.1.1:12345"
 	assignResp, err := http.DefaultClient.Do(assignReq)
 	if err != nil {
@@ -126,11 +133,12 @@ func TestFullTicketFlow_E2E(t *testing.T) {
 	}
 
 	// ── Step 3: Resolve the ticket ────────────────────────────────────────
-	resolveURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/resolve?resolution=refund+processed+and+closed&actor_id=agent-e2e-001", baseURL, ticketID)
+	resolveURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/resolve?resolution=refund+processed+and+closed", baseURL, ticketID)
 	resolveReq, err := http.NewRequest(http.MethodPost, resolveURL, nil)
 	if err != nil {
 		t.Fatalf("new resolve request error = %v", err)
 	}
+	setActorHeaders(resolveReq, "agent-e2e-001", "agent")
 	resolveReq.RemoteAddr = "192.168.1.2:54321"
 	resolveResp, err := http.DefaultClient.Do(resolveReq)
 	if err != nil {
@@ -155,7 +163,12 @@ func TestFullTicketFlow_E2E(t *testing.T) {
 
 	// ── Step 4: Verify ticket is retrievable in final resolved state ──────
 	getURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s", baseURL, ticketID)
-	getResp, err := http.Get(getURL)
+	getReq, err := http.NewRequest(http.MethodGet, getURL, nil)
+	if err != nil {
+		t.Fatalf("new get request error = %v", err)
+	}
+	setActorHeaders(getReq, "agent-e2e-001", "agent")
+	getResp, err := http.DefaultClient.Do(getReq)
 	if err != nil {
 		t.Fatalf("GET ticket error = %v", err)
 	}
@@ -215,8 +228,9 @@ func TestFullTicketFlow_AuditLogVerification(t *testing.T) {
 	ticketID := whResult.TicketID
 
 	// ── Step 2: Assign ticket ────────────────────────────────────────────
-	assignURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/assign?agent_id=agent-audit-99&actor_id=supervisor-audit", baseURL, ticketID)
+	assignURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/assign?agent_id=agent-audit-99", baseURL, ticketID)
 	assignReq, _ := http.NewRequest(http.MethodPost, assignURL, nil)
+	setActorHeaders(assignReq, "supervisor-audit", "supervisor")
 	assignReq.RemoteAddr = "10.0.0.1:11111"
 	assignResp, _ := http.DefaultClient.Do(assignReq)
 	if assignResp.StatusCode != http.StatusOK {
@@ -226,8 +240,9 @@ func TestFullTicketFlow_AuditLogVerification(t *testing.T) {
 	assignResp.Body.Close()
 
 	// ── Step 3: Resolve ticket ───────────────────────────────────────────
-	resolveURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/resolve?resolution=account+secured&actor_id=agent-audit-99", baseURL, ticketID)
+	resolveURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/resolve?resolution=account+secured", baseURL, ticketID)
 	resolveReq, _ := http.NewRequest(http.MethodPost, resolveURL, nil)
+	setActorHeaders(resolveReq, "agent-audit-99", "agent")
 	resolveReq.RemoteAddr = "10.0.0.2:22222"
 	resolveResp, _ := http.DefaultClient.Do(resolveReq)
 	if resolveResp.StatusCode != http.StatusOK {
@@ -238,7 +253,12 @@ func TestFullTicketFlow_AuditLogVerification(t *testing.T) {
 
 	// ── Step 4: Verify final ticket state (audit writes were persisted) ──
 	getURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s", baseURL, ticketID)
-	getResp, err := http.Get(getURL)
+	getReq, err := http.NewRequest(http.MethodGet, getURL, nil)
+	if err != nil {
+		t.Fatalf("new get request error = %v", err)
+	}
+	setActorHeaders(getReq, "agent-audit-99", "agent")
+	getResp, err := http.DefaultClient.Do(getReq)
 	if err != nil {
 		t.Fatalf("GET ticket error = %v", err)
 	}
@@ -300,7 +320,12 @@ func TestFullTicketFlow_ListEndpoint_ShowsCreatedTicket(t *testing.T) {
 	ticketID := whResult.TicketID
 
 	// Verify ticket appears in GET /tickets list
-	listResp, err := http.Get(baseURL + "/api/v1/customer-service/tickets")
+	listReq, err := http.NewRequest(http.MethodGet, baseURL+"/api/v1/customer-service/tickets", nil)
+	if err != nil {
+		t.Fatalf("new tickets list request error = %v", err)
+	}
+	setActorHeaders(listReq, "supervisor-list", "supervisor")
+	listResp, err := http.DefaultClient.Do(listReq)
 	if err != nil {
 		t.Fatalf("GET tickets list error = %v", err)
 	}
@@ -388,7 +413,12 @@ func TestFullTicketFlow_MultipleTickets_MaintainedSeparately(t *testing.T) {
 		// Assign only the first ticket
 		if i == 0 {
 			assignURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/assign?agent_id=agent-only-first", baseURL, ticketID)
-			assignResp, err := http.Post(assignURL, "application/octet-stream", nil)
+			assignReq, err := http.NewRequest(http.MethodPost, assignURL, nil)
+			if err != nil {
+				t.Fatalf("new assign request error = %v", err)
+			}
+			setActorHeaders(assignReq, "supervisor-first", "supervisor")
+			assignResp, err := http.DefaultClient.Do(assignReq)
 			if err != nil {
 				t.Fatalf("assign POST error = %v", err)
 			}
@@ -401,7 +431,12 @@ func TestFullTicketFlow_MultipleTickets_MaintainedSeparately(t *testing.T) {
 
 		// Check state
 		getURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s", baseURL, ticketID)
-		getResp, err := http.Get(getURL)
+		getReq, err := http.NewRequest(http.MethodGet, getURL, nil)
+		if err != nil {
+			t.Fatalf("new get request error = %v", err)
+		}
+		setActorHeaders(getReq, "agent-check", "agent")
+		getResp, err := http.DefaultClient.Do(getReq)
 		if err != nil {
 			t.Fatalf("GET ticket error = %v", err)
 		}
@@ -469,7 +504,12 @@ func TestFullTicketFlow_WebhookAuditEvent(t *testing.T) {
 
 	// Verify ticket is in open state
 	getURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s", baseURL, whResult.TicketID)
-	getResp, err := http.Get(getURL)
+	getReq, err := http.NewRequest(http.MethodGet, getURL, nil)
+	if err != nil {
+		t.Fatalf("new get request error = %v", err)
+	}
+	setActorHeaders(getReq, "agent-audit-read", "agent")
+	getResp, err := http.DefaultClient.Do(getReq)
 	if err != nil {
 		t.Fatalf("GET ticket error = %v", err)
 	}
@@ -529,7 +569,12 @@ func TestFullTicketFlow_StateTransitionAuditOrder(t *testing.T) {
 
 	// Assign (audit event: assign)
 	assignURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/assign?agent_id=agent-order-1", baseURL, ticketID)
-	assignResp, err := http.Post(assignURL, "application/octet-stream", nil)
+	assignReq, err := http.NewRequest(http.MethodPost, assignURL, nil)
+	if err != nil {
+		t.Fatalf("new assign request error = %v", err)
+	}
+	setActorHeaders(assignReq, "supervisor-order", "supervisor")
+	assignResp, err := http.DefaultClient.Do(assignReq)
 	if err != nil {
 		t.Fatalf("assign POST error = %v", err)
 	}
@@ -541,7 +586,12 @@ func TestFullTicketFlow_StateTransitionAuditOrder(t *testing.T) {
 
 	// Resolve (audit event: resolve)
 	resolveURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/resolve?resolution=handled", baseURL, ticketID)
-	resolveResp, err := http.Post(resolveURL, "application/octet-stream", nil)
+	resolveReq, err := http.NewRequest(http.MethodPost, resolveURL, nil)
+	if err != nil {
+		t.Fatalf("new resolve request error = %v", err)
+	}
+	setActorHeaders(resolveReq, "agent-order-1", "agent")
+	resolveResp, err := http.DefaultClient.Do(resolveReq)
 	if err != nil {
 		t.Fatalf("resolve POST error = %v", err)
 	}
@@ -553,7 +603,12 @@ func TestFullTicketFlow_StateTransitionAuditOrder(t *testing.T) {
 
 	// Final state check: proves all audit writes succeeded in order
 	getURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s", baseURL, ticketID)
-	getResp, err := http.Get(getURL)
+	getReq, err := http.NewRequest(http.MethodGet, getURL, nil)
+	if err != nil {
+		t.Fatalf("new get request error = %v", err)
+	}
+	setActorHeaders(getReq, "agent-order-1", "agent")
+	getResp, err := http.DefaultClient.Do(getReq)
 	if err != nil {
 		t.Fatalf("GET ticket (final) error = %v", err)
 	}

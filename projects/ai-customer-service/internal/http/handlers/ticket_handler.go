@@ -9,6 +9,7 @@ import (
 	"github.com/bridge/ai-customer-service/internal/domain/audit"
 	"github.com/bridge/ai-customer-service/internal/domain/error/cserrors"
 	"github.com/bridge/ai-customer-service/internal/domain/ticket"
+	"github.com/bridge/ai-customer-service/internal/http/middleware"
 )
 
 type TicketService interface {
@@ -60,7 +61,12 @@ func (h *TicketHandler) Assign(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"code": cserrors.CS_REQ_4005, "message": cserrors.ErrorMsg(cserrors.CS_REQ_4005)}})
 		return
 	}
-	actorID := strings.TrimSpace(r.URL.Query().Get("actor_id"))
+	actor, ok := middleware.ActorFromContext(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"code": cserrors.CS_AUTH_4001, "message": cserrors.ErrorMsg(cserrors.CS_AUTH_4001)}})
+		return
+	}
+	actorID := actor.ID
 	sourceIP := clientIP(r.RemoteAddr)
 	if err := h.service.Assign(r.Context(), ticketID, agentID, actorID, sourceIP, h.now()); err != nil {
 		// P0-2 fix: route error based on error code prefix from service layer
@@ -83,7 +89,12 @@ func (h *TicketHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"code": cserrors.CS_REQ_4006, "message": cserrors.ErrorMsg(cserrors.CS_REQ_4006)}})
 		return
 	}
-	actorID := strings.TrimSpace(r.URL.Query().Get("actor_id"))
+	actor, ok := middleware.ActorFromContext(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"code": cserrors.CS_AUTH_4001, "message": cserrors.ErrorMsg(cserrors.CS_AUTH_4001)}})
+		return
+	}
+	actorID := actor.ID
 	sourceIP := clientIP(r.RemoteAddr)
 	if err := h.service.Resolve(r.Context(), ticketID, resolution, actorID, sourceIP, h.now()); err != nil {
 		// P0-2 fix: route error based on error code prefix from service layer
@@ -106,7 +117,12 @@ func (h *TicketHandler) Close(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"code": cserrors.CS_REQ_4007, "message": cserrors.ErrorMsg(cserrors.CS_REQ_4007)}})
 		return
 	}
-	actorID := strings.TrimSpace(r.URL.Query().Get("actor_id"))
+	actor, ok := middleware.ActorFromContext(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"code": cserrors.CS_AUTH_4001, "message": cserrors.ErrorMsg(cserrors.CS_AUTH_4001)}})
+		return
+	}
+	actorID := actor.ID
 	sourceIP := clientIP(r.RemoteAddr)
 	if err := h.service.Close(r.Context(), ticketID, resolution, actorID, sourceIP, h.now()); err != nil {
 		// P0-2 fix: route error based on error code prefix from service layer

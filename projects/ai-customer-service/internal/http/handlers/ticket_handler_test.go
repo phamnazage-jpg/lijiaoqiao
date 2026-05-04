@@ -43,10 +43,10 @@ func (r *ticketAuditRecorder) eventsOfType(action string) []audit.Event {
 // mockTicketService implements TicketService for testing,
 // mirroring TicketWorkflowStore behavior (calls store + writes audit).
 type mockTicketService struct {
-	mu             sync.Mutex
-	tickets        *memory.TicketStore
-	auditRecorder  *ticketAuditRecorder
-	calls          []struct {
+	mu            sync.Mutex
+	tickets       *memory.TicketStore
+	auditRecorder *ticketAuditRecorder
+	calls         []struct {
 		method string
 		args   []string
 	}
@@ -66,20 +66,23 @@ func (m *mockTicketService) GetByID(ctx context.Context, id string) (*ticket.Tic
 
 func (m *mockTicketService) Assign(ctx context.Context, ticketID, agentID, actorID, sourceIP string, now time.Time) error {
 	m.mu.Lock()
-	m.calls = append(m.calls, struct{ method string; args []string }{method: "Assign", args: []string{ticketID, agentID, actorID, sourceIP}})
+	m.calls = append(m.calls, struct {
+		method string
+		args   []string
+	}{method: "Assign", args: []string{ticketID, agentID, actorID, sourceIP}})
 	m.mu.Unlock()
 	if err := m.tickets.Assign(ctx, ticketID, agentID, actorID, sourceIP, now); err != nil {
 		return err
 	}
 	evt := audit.Event{
-		ID:        fmt.Sprintf("wf-%d", now.UnixNano()),
-		Type:      "ticket_state_changed",
-		Action:    "assign",
-		TicketID:  ticketID,
-		ActorID:   actorID,
-		SourceIP:  sourceIP,
+		ID:         fmt.Sprintf("wf-%d", now.UnixNano()),
+		Type:       "ticket_state_changed",
+		Action:     "assign",
+		TicketID:   ticketID,
+		ActorID:    actorID,
+		SourceIP:   sourceIP,
 		AfterState: map[string]any{"assigned_to": agentID, "status": ticket.StatusAssigned},
-		CreatedAt: now,
+		CreatedAt:  now,
 	}
 	m.auditRecorder.Add(ctx, evt)
 	return nil
@@ -87,20 +90,23 @@ func (m *mockTicketService) Assign(ctx context.Context, ticketID, agentID, actor
 
 func (m *mockTicketService) Resolve(ctx context.Context, ticketID, resolution, actorID, sourceIP string, now time.Time) error {
 	m.mu.Lock()
-	m.calls = append(m.calls, struct{ method string; args []string }{method: "Resolve", args: []string{ticketID, resolution, actorID, sourceIP}})
+	m.calls = append(m.calls, struct {
+		method string
+		args   []string
+	}{method: "Resolve", args: []string{ticketID, resolution, actorID, sourceIP}})
 	m.mu.Unlock()
 	if err := m.tickets.Resolve(ctx, ticketID, resolution, actorID, sourceIP, now); err != nil {
 		return err
 	}
 	evt := audit.Event{
-		ID:        fmt.Sprintf("wf-%d", now.UnixNano()),
-		Type:      "ticket_state_changed",
-		Action:    "resolve",
-		TicketID:  ticketID,
-		ActorID:   actorID,
-		SourceIP:  sourceIP,
+		ID:         fmt.Sprintf("wf-%d", now.UnixNano()),
+		Type:       "ticket_state_changed",
+		Action:     "resolve",
+		TicketID:   ticketID,
+		ActorID:    actorID,
+		SourceIP:   sourceIP,
 		AfterState: map[string]any{"resolution": resolution, "status": ticket.StatusResolved},
-		CreatedAt: now,
+		CreatedAt:  now,
 	}
 	m.auditRecorder.Add(ctx, evt)
 	return nil
@@ -108,20 +114,23 @@ func (m *mockTicketService) Resolve(ctx context.Context, ticketID, resolution, a
 
 func (m *mockTicketService) Close(ctx context.Context, ticketID, resolution, actorID, sourceIP string, now time.Time) error {
 	m.mu.Lock()
-	m.calls = append(m.calls, struct{ method string; args []string }{method: "Close", args: []string{ticketID, resolution, actorID, sourceIP}})
+	m.calls = append(m.calls, struct {
+		method string
+		args   []string
+	}{method: "Close", args: []string{ticketID, resolution, actorID, sourceIP}})
 	m.mu.Unlock()
 	if err := m.tickets.Close(ctx, ticketID, resolution, actorID, sourceIP, now); err != nil {
 		return err
 	}
 	evt := audit.Event{
-		ID:        fmt.Sprintf("wf-%d", now.UnixNano()),
-		Type:      "ticket_state_changed",
-		Action:    "close",
-		TicketID:  ticketID,
-		ActorID:   actorID,
-		SourceIP:  sourceIP,
+		ID:         fmt.Sprintf("wf-%d", now.UnixNano()),
+		Type:       "ticket_state_changed",
+		Action:     "close",
+		TicketID:   ticketID,
+		ActorID:    actorID,
+		SourceIP:   sourceIP,
 		AfterState: map[string]any{"resolution": resolution, "status": ticket.StatusClosed},
-		CreatedAt: now,
+		CreatedAt:  now,
 	}
 	m.auditRecorder.Add(ctx, evt)
 	return nil
@@ -154,7 +163,8 @@ func TestTicketHandlerAssignAuditsStateChange(t *testing.T) {
 	h := NewTicketHandler(svc, auditRecorder)
 	h.now = func() time.Time { return now.Add(time.Minute) }
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/ticket-1/assign?agent_id=agent-007&actor_id=admin-1", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/ticket-1/assign?agent_id=agent-007", nil)
+	req = withActor(req, "admin-1", "admin")
 	resp := httptest.NewRecorder()
 	h.Assign(resp, req)
 
@@ -202,7 +212,8 @@ func TestTicketHandlerResolveAuditsStateChange(t *testing.T) {
 	h := NewTicketHandler(svc, auditRecorder)
 	h.now = func() time.Time { return now.Add(2 * time.Minute) }
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/ticket-2/resolve?resolution=handled&actor_id=admin-2", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/ticket-2/resolve?resolution=handled", nil)
+	req = withActor(req, "admin-2", "admin")
 	resp := httptest.NewRecorder()
 	h.Resolve(resp, req)
 
@@ -271,7 +282,8 @@ func TestTicketHandlerAssignPassesActorAndSourceIP(t *testing.T) {
 	h := NewTicketHandler(svc, auditRecorder)
 	h.now = func() time.Time { return now }
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/ticket-3/assign?agent_id=agent-x&actor_id=supervisor-1", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/ticket-3/assign?agent_id=agent-x", nil)
+	req = withActor(req, "supervisor-1", "supervisor")
 	req.RemoteAddr = "192.168.1.100:12345"
 	resp := httptest.NewRecorder()
 	h.Assign(resp, req)
@@ -309,7 +321,8 @@ func TestTicketHandlerClosePassesActorAndSourceIP(t *testing.T) {
 	h := NewTicketHandler(svc, auditRecorder)
 	h.now = func() time.Time { return now }
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/ticket-4/close?resolution=closed+by+agent&actor_id=admin-1", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/ticket-4/close?resolution=closed+by+agent", nil)
+	req = withActor(req, "admin-1", "admin")
 	req.RemoteAddr = "10.0.0.1:54321"
 	resp := httptest.NewRecorder()
 	h.Close(resp, req)
@@ -409,5 +422,31 @@ func TestTicketHandlerGetByID_Success(t *testing.T) {
 	}
 	if tkt["context_snapshot"] == nil {
 		t.Fatalf("context_snapshot is nil, want non-nil")
+	}
+}
+
+func TestTicketHandlerAssign_RejectsWhenActorOnlyProvidedByQuery(t *testing.T) {
+	auditRecorder := &ticketAuditRecorder{}
+	svc := newMockTicketService(auditRecorder)
+	now := time.Date(2026, 4, 29, 21, 0, 0, 0, time.UTC)
+	if err := svc.tickets.Create(context.Background(), &ticket.Ticket{
+		ID:            "ticket-auth-1",
+		SessionID:     "session-auth-1",
+		Priority:      ticket.PriorityP1,
+		Status:        ticket.StatusOpen,
+		HandoffReason: "refund",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	h := NewTicketHandler(svc, auditRecorder)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/ticket-auth-1/assign?agent_id=agent-007&actor_id=forged-admin", nil)
+	resp := httptest.NewRecorder()
+	h.Assign(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", resp.Code)
 	}
 }

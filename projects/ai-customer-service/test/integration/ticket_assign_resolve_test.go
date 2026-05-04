@@ -151,7 +151,8 @@ func TestAssign_UpdatesStatusToAssigned(t *testing.T) {
 
 	h := handlers.NewTicketHandler(svc, auditRecorder)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/assign-tkt-1/assign?agent_id=agent-001&actor_id=supervisor-1", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/assign-tkt-1/assign?agent_id=agent-001", nil)
+	req = withActor(req, "supervisor-1", "supervisor")
 	req.RemoteAddr = "10.0.0.5:12345"
 	resp := httptest.NewRecorder()
 	h.Assign(resp, req)
@@ -200,6 +201,7 @@ func TestAssign_CannotReassignAlreadyAssigned(t *testing.T) {
 	h := handlers.NewTicketHandler(svc, auditRecorder)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/assign-tkt-2/assign?agent_id=agent-second", nil)
+	req = withActor(req, "supervisor-2", "supervisor")
 	resp := httptest.NewRecorder()
 	h.Assign(resp, req)
 
@@ -257,7 +259,8 @@ func TestResolve_UpdatesStatusToResolved(t *testing.T) {
 
 	h := handlers.NewTicketHandler(svc, auditRecorder)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/resolve-tkt-1/resolve?resolution=issue+fixed&actor_id=agent-001", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/resolve-tkt-1/resolve?resolution=issue+fixed", nil)
+	req = withActor(req, "agent-001", "agent")
 	req.RemoteAddr = "10.0.0.6:54321"
 	resp := httptest.NewRecorder()
 	h.Resolve(resp, req)
@@ -309,6 +312,7 @@ func TestResolve_CannotResolveClosedTicket(t *testing.T) {
 	h := handlers.NewTicketHandler(svc, auditRecorder)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/resolve-tkt-closed/resolve?resolution=already+closed", nil)
+	req = withActor(req, "agent-001", "agent")
 	resp := httptest.NewRecorder()
 	h.Resolve(resp, req)
 
@@ -339,6 +343,7 @@ func TestResolve_TicketNotFound(t *testing.T) {
 	h := handlers.NewTicketHandler(svc, auditRecorder)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/nonexistent/resolve?resolution=not+found", nil)
+	req = withActor(req, "agent-404", "agent")
 	resp := httptest.NewRecorder()
 	h.Resolve(resp, req)
 
@@ -373,7 +378,8 @@ func TestStateTransition_OpenToAssignedToResolved(t *testing.T) {
 	h := handlers.NewTicketHandler(svc, auditRecorder)
 
 	// Step 1: Assign
-	assignReq := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/state-tkt-1/assign?agent_id=agent-alpha&actor_id=admin-1", nil)
+	assignReq := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/state-tkt-1/assign?agent_id=agent-alpha", nil)
+	assignReq = withActor(assignReq, "admin-1", "admin")
 	assignResp := httptest.NewRecorder()
 	h.Assign(assignResp, assignReq)
 	if assignResp.Code != http.StatusOK {
@@ -389,7 +395,8 @@ func TestStateTransition_OpenToAssignedToResolved(t *testing.T) {
 	}
 
 	// Step 2: Resolve
-	resolveReq := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/state-tkt-1/resolve?resolution=refund+processed&actor_id=agent-alpha", nil)
+	resolveReq := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/state-tkt-1/resolve?resolution=refund+processed", nil)
+	resolveReq = withActor(resolveReq, "agent-alpha", "agent")
 	resolveResp := httptest.NewRecorder()
 	h.Resolve(resolveResp, resolveReq)
 	if resolveResp.Code != http.StatusOK {
@@ -430,6 +437,7 @@ func TestStateTransition_InvalidTransition(t *testing.T) {
 
 	// Try to resolve an open ticket directly (should fail — must be assigned first)
 	resolveReq := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/state-tkt-2/resolve?resolution=skip+assign", nil)
+	resolveReq = withActor(resolveReq, "agent-skip", "agent")
 	resolveResp := httptest.NewRecorder()
 	h.Resolve(resolveResp, resolveReq)
 	if resolveResp.Code != http.StatusConflict {

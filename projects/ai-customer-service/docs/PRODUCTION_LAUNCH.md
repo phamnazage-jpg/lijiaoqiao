@@ -1,7 +1,7 @@
 # AI-Customer-Service 生产上线文档
 
 > 版本：v1.0 | 日期：2026-05-01
-> 状态：✅ 已通过全部上线门禁，可灰度发布
+> 状态：⚠️ 代码级主链已通过验证，但预生产与灰度门禁尚未闭环
 > 代码基准：`3e9022a`（`upload/ai-customer-service` 分支）
 
 ---
@@ -9,13 +9,20 @@
 ## 1. 项目概述
 
 **项目名**：ai-customer-service（立交桥智能客服系统）
-**一句话**：多渠道接入的 AI 客服系统，自动处理用户初始化、配额/计费异常等常见问题，降低人工介入率 60%+。
+**一句话**：当前交付物是面向生产一期的客服后端最小闭环服务，覆盖 webhook、会话、转人工工单、审计与健康检查。
 
-**核心能力**：
-- 多渠道 Webhook 接收（Telegram/Discord/微信/网页）
-- 基于 LLM 的意图识别 + 知识库 RAG
-- 自动转人工工单闭环（创建→分配→解决→关闭）
+**当前已验证能力**：
+- 统一 Webhook 入口与按路径覆写 channel 的入口
+- 基于规则的意图识别与静态 FAQ 回复
+- 自动转人工工单最小闭环（创建→分配→解决→关闭）
 - 审计日志持久化
+- PostgreSQL 持久化、健康检查、优雅停机
+
+**当前未完成但属于后续目标能力**：
+- 真实 LLM 意图识别与多供应商 failover
+- 真实 RAG 检索与知识库运营
+- 完整多渠道适配器产品化
+- 运营后台 UI 与完整 RBAC
 
 ---
 
@@ -55,7 +62,7 @@ store/
 | 方法 | 路径 | 说明 | 状态 |
 |------|------|------|------|
 | POST | `/api/v1/customer-service/webhook` | 统一 Webhook 入口 | ✅ 已实现 |
-| GET | `/api/v1/customer-service/webhook/channels` | 查询已注册渠道 | ✅ 已实现 |
+| POST | `/api/v1/customer-service/webhook/{channel}` | 按路径指定 channel 的 Webhook 入口 | ✅ 已实现 |
 
 **安全特性**：HMAC-SHA256 签名校验 + 时间戳防重放 + BodyLimit 512KB + 速率限制（滑动窗口 10 req/s/IP）
 
@@ -81,8 +88,8 @@ store/
 | 方法 | 路径 | 说明 | 状态 |
 |------|------|------|------|
 | GET | `/actuator/health` | 综合健康检查 | ✅ 已实现 |
-| GET | `/live` | Liveness 探针 | ✅ 已实现 |
-| GET | `/ready` | Readiness 探针（含 DB 依赖检查） | ✅ 已实现 |
+| GET | `/actuator/health/live` | Liveness 探针 | ✅ 已实现 |
+| GET | `/actuator/health/ready` | Readiness 探针（含 DB 依赖检查） | ✅ 已实现 |
 | GET | `/tickets/stats` | 工单统计（open/assigned/resolved） | ✅ 已实现 |
 
 ---
@@ -106,17 +113,15 @@ store/
 | internal/platform/health | **100%** | — | ✅ |
 | **整体覆盖率** | **77.4%** | >70% | ✅ |
 
-### 4.2 上线门禁
+### 4.2 当前门禁结论
 
-| 阻断条件 | 状态 | 说明 |
+| 门禁层级 | 状态 | 说明 |
 |---------|------|------|
-| BC-01 接口路由漂移 | 🟢 解除 | Phase 1 核心端点已全部实现 |
-| BC-02 P0 安全测试覆盖 | 🟢 解除 | webhook 签名/重放/幂等/速率限制全通过 |
-| BC-03 错误码一致 | 🟢 解除 | CS_TKT_4002 等统一使用 |
-| BC-04 会话端点 | 🟢 解除 | feedback + handoff 已实现 |
-| BC-05 速率限制 | 🟢 解除 | RateLimiter 已实现并测试 |
+| 代码级门禁 | ✅ 通过 | `go test ./...`、`go test -race ./...`、`go build ./...` 通过 |
+| 预生产门禁 | ⚠️ 未闭环 | 真实环境 DB/migration/webhook/audit/ticket 入库验证仍需证据化 |
+| 灰度门禁 | ❌ 未通过 | 鉴权、最小监控、灰度阈值、回滚演练未闭环 |
 
-**所有 22 个测试包通过，19/19 E2E 通过，go test -race 无竞态。**
+**当前解释口径**：仓库内测试通过，只能证明现有实现稳定，不等于“PRD 功能已完成”或“可直接灰度发布”。 
 
 ### 4.3 安全审计
 
@@ -153,30 +158,31 @@ make run     # 本地运行（go run）
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `POSTGRES_HOST` | PostgreSQL 地址 | `10.0.0.5:5432` |
-| `POSTGRES_USER` | 数据库用户 | `ai_cs` |
-| `POSTGRES_PASSWORD` | 数据库密码 | — |
-| `POSTGRES_DATABASE` | 数据库名 | `ai_customer_service` |
-| `WEBHOOK_HMAC_KEY` | HMAC 签名密钥 | — |
-| `SERVER_PORT` | HTTP 监听端口 | `8080` |
-| `RATE_LIMIT_RPS` | 每秒请求上限 | `10` |
-| `LOG_LEVEL` | 日志级别 | `info` |
+| `AI_CS_RUNTIME_ENV` | 运行环境 | `production` |
+| `AI_CS_ADDR` | HTTP 监听地址 | `:8080` |
+| `AI_CS_POSTGRES_ENABLED` | 是否启用 PostgreSQL store | `true` |
+| `AI_CS_POSTGRES_DSN` | PostgreSQL 连接串 | `postgres://ai_cs:***@localhost:5432/ai_customer_service?sslmode=disable` |
+| `AI_CS_POSTGRES_MIGRATION_DIR` | migration 目录 | `db/migration` |
+| `AI_CS_WEBHOOK_SECRET` | Webhook HMAC 密钥 | — |
+| `AI_CS_WEBHOOK_TIMESTAMP_HEADER` | 时间戳请求头 | `X-CS-Timestamp` |
+| `AI_CS_WEBHOOK_SIGNATURE_HEADER` | 签名请求头 | `X-CS-Signature` |
+| `AI_CS_WEBHOOK_MAX_SKEW_SECONDS` | 最大时钟偏差（秒） | `300` |
 
 ### 5.3 数据库初始化
 
 ```bash
 # 执行 migration（项目 db/ 目录）
-psql -h $POSTGRES_HOST -U ai_cs -d ai_customer_service -f db/migration/001_init.sql
+psql "$AI_CS_POSTGRES_DSN" -f db/migration/0001_init.up.sql
 ```
 
 ### 5.4 健康检查
 
 ```bash
 # Readiness（含 DB 依赖检查）
-curl http://localhost:8080/ready
+curl http://localhost:8080/actuator/health/ready
 
 # Liveness
-curl http://localhost:8080/live
+curl http://localhost:8080/actuator/health/live
 
 # 综合健康
 curl http://localhost:8080/actuator/health
@@ -202,13 +208,13 @@ curl http://localhost:8080/actuator/health
 
 | 功能 | 优先级 | 说明 |
 |------|--------|------|
-| 按渠道独立 Webhook（`/webhook/{channel}`） | P1 | 当前为统一入口 |
+| 真实多渠道适配器产品化 | P1 | 当前只有统一 webhook 模型与路径覆写 channel |
 | 人工回复用户链路 | P1 | 只有工单创建，无回复闭环 |
 | 排队位置查询 | P1 | 无此 API |
-| 工单关闭语义补齐 | P1 | resolve=关闭语义待明确 |
+| 真实 LLM / RAG | P1 | 当前为规则识别 + 静态 FAQ |
 | 安全拒绝事件审计（签名失败/非法 body） | P0 | 此类事件暂未写审计 |
 | metrics / tracing / SLO | P1 | 暂无可观测基础设施 |
-| 灰度/回滚 runbook | P1 | 文档缺失 |
+| 灰度/回滚 Runbook | P1 | 需完成演练与证据化验证 |
 
 ---
 

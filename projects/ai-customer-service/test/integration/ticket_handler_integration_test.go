@@ -68,14 +68,14 @@ func (m *mockTicketSvcForHandler) Assign(ctx context.Context, ticketID, agentID,
 		return err
 	}
 	m.audit.Add(ctx, audit.Event{
-		ID:        "audit-assign-1",
-		Type:      "ticket_state_changed",
-		Action:    "assign",
-		TicketID:  ticketID,
-		ActorID:   actorID,
-		SourceIP:  sourceIP,
+		ID:         "audit-assign-1",
+		Type:       "ticket_state_changed",
+		Action:     "assign",
+		TicketID:   ticketID,
+		ActorID:    actorID,
+		SourceIP:   sourceIP,
 		AfterState: map[string]any{"assigned_to": agentID, "status": ticket.StatusAssigned},
-		CreatedAt: now,
+		CreatedAt:  now,
 	})
 	return nil
 }
@@ -85,14 +85,14 @@ func (m *mockTicketSvcForHandler) Resolve(ctx context.Context, ticketID, resolut
 		return err
 	}
 	m.audit.Add(ctx, audit.Event{
-		ID:        "audit-resolve-1",
-		Type:      "ticket_state_changed",
-		Action:    "resolve",
-		TicketID:  ticketID,
-		ActorID:   actorID,
-		SourceIP:  sourceIP,
+		ID:         "audit-resolve-1",
+		Type:       "ticket_state_changed",
+		Action:     "resolve",
+		TicketID:   ticketID,
+		ActorID:    actorID,
+		SourceIP:   sourceIP,
 		AfterState: map[string]any{"resolution": resolution, "status": ticket.StatusResolved},
-		CreatedAt: now,
+		CreatedAt:  now,
 	})
 	return nil
 }
@@ -102,14 +102,14 @@ func (m *mockTicketSvcForHandler) Close(ctx context.Context, ticketID, resolutio
 		return err
 	}
 	m.audit.Add(ctx, audit.Event{
-		ID:        "audit-close-1",
-		Type:      "ticket_state_changed",
-		Action:    "close",
-		TicketID:  ticketID,
-		ActorID:   actorID,
-		SourceIP:  sourceIP,
+		ID:         "audit-close-1",
+		Type:       "ticket_state_changed",
+		Action:     "close",
+		TicketID:   ticketID,
+		ActorID:    actorID,
+		SourceIP:   sourceIP,
 		AfterState: map[string]any{"resolution": resolution, "status": ticket.StatusClosed},
-		CreatedAt: now,
+		CreatedAt:  now,
 	})
 	return nil
 }
@@ -163,6 +163,7 @@ func TestTicketCreateAndList_CreateThenFind(t *testing.T) {
 	handoffBodyBytes, _ := json.Marshal(handoffBody)
 	sessionReq := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/sessions/widget:u_list_test/handoff", bytes.NewReader(handoffBodyBytes))
 	sessionReq.Header.Set("Content-Type", "application/json")
+	sessionReq = withActor(sessionReq, "agent-list", "agent")
 	sessionResp := httptest.NewRecorder()
 	sessionHdlr.Handoff(sessionResp, sessionReq)
 
@@ -292,7 +293,12 @@ func TestTicketList_PaginationParams(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, err := http.Get(server.URL + tc.query)
+			req, err := http.NewRequest(http.MethodGet, server.URL+tc.query, nil)
+			if err != nil {
+				t.Fatalf("new GET request error = %v", err)
+			}
+			setActorHeaders(req, "supervisor-page", "supervisor")
+			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatalf("GET error = %v", err)
 			}
