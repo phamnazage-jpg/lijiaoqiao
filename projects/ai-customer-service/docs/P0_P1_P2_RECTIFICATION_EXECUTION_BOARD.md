@@ -29,8 +29,8 @@
 | TL-P0-3 | P0 | 输出代码视角配置契约基线 | TechLead | 配置契约文档 | 与 `internal/config/config.go` 完全一致 | 无 | 已完成 |
 | QA-P0-1 | P0 | 重做 QA 门禁文档，区分代码门禁与生产门禁 | QA | 更新 `test/QA_GATE_STATUS.md` | 报告包含通过项、未通过项、漂移项、阻断项 | PM-P0-1, TL-P0-1, TL-P0-2 | 已完成 |
 | QA-P0-2 | P0 | 将 memory fallback / 宽松 readiness / 文档漂移列为 Critical | QA | QA 审查结论 | 报告中明确列为 Critical，未修复前不得 APPROVED | QA-P0-1 | 已完成 |
-| DO-P0-1 | P0 | 形成真实部署基线（启动、变量、探针、migration、回滚） | DevOps | 部署基线文档 | 覆盖启动命令、必填变量、探针、回滚方式 | TL-P0-3 | 未开始 |
-| DO-P0-2 | P0 | 建立关键配置缺失即启动失败的部署标准 | DevOps | CI/CD 或启动脚本校验规则 | prod 缺 `AI_CS_POSTGRES_DSN` / `AI_CS_WEBHOOK_SECRET` 时 fail | TL-P0-3, DO-P0-1 | 进行中 |
+| DO-P0-1 | P0 | 形成真实部署基线（启动、变量、探针、migration、回滚） | DevOps | 部署基线文档 | 覆盖启动命令、必填变量、探针、回滚方式 | TL-P0-3 | ✅ 已完成（Gate B 验证通过）|
+| DO-P0-2 | P0 | 建立关键配置缺失即启动失败的部署标准 | DevOps | CI/CD 或启动脚本校验规则 | prod 缺 `AI_CS_POSTGRES_DSN` / `AI_CS_WEBHOOK_SECRET` 时 fail | TL-P0-3 | ✅ 已完成（config.go 强制）|
 
 ---
 
@@ -107,8 +107,8 @@
 ### 4.5 DevOps
 | ID | 项目 | 优先级 | 状态 |
 |---|---|---|---|
-| DO-P0-1 | 真实部署基线 | P0 | 未开始 |
-| DO-P0-2 | 关键配置 fail-fast 部署标准 | P0 | 进行中 |
+| DO-P0-1 | 真实部署基线 | P0 | ✅ 已完成 |
+| DO-P0-2 | 关键配置 fail-fast 部署标准 | P0 | ✅ 已完成 |
 | DO-P1-1 | 最小监控与告警闭环 | P1 | 未开始 |
 | DO-P1-2 | 运行与回滚 runbook | P1 | 未开始 |
 | DO-P2-1 | 容量与可观测性细化 | P2 | 未开始 |
@@ -125,12 +125,12 @@
 - [x] 配置契约与代码一致
 
 ### Gate B：预生产通过
-- [ ] 真实 Postgres 联通
-- [ ] migration 成功
-- [ ] webhook 签名联调成功
-- [ ] audit / ticket 入库成功
-- [ ] ready/live 符合预期
-- [ ] 最小监控已接通
+- [x] 真实 Postgres 联通
+- [x] migration 成功（DB 有完整表结构，schema 初始化完成）
+- [x] webhook 签名联调成功（HMAC-SHA256 验证通过）
+- [x] audit / ticket 入库成功（实测：webhook → session → handoff → ticket → audit 全链路）
+- [x] ready/live 符合预期（/actuator/health/ready → 200，postgres checker → UP）
+- [ ] 最小监控已接通（未完成）
 
 ### Gate C：生产灰度通过
 - [ ] 5% 灰度稳定
