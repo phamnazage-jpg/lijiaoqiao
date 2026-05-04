@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/bridge/ai-customer-service/internal/domain/audit"
 	intentdomain "github.com/bridge/ai-customer-service/internal/domain/intent"
 	"github.com/bridge/ai-customer-service/internal/domain/message"
@@ -110,7 +112,7 @@ func (s *Service) Process(ctx context.Context, msg *message.UnifiedMessage) (*Re
 		sess.Status = session.StatusHandoff
 		replyText = "已为您转人工客服，请稍候，我们会尽快处理。"
 		if s.tickets != nil {
-			ticketID = fmt.Sprintf("%s-%d", sess.ID, now.UnixNano())
+			ticketID = uuid.New().String()
 			ticketPriority := ticket.Priority(handoffDecision.Priority)
 			if ticketPriority == "" {
 				ticketPriority = ticket.PriorityP2
@@ -136,7 +138,7 @@ func (s *Service) Process(ctx context.Context, msg *message.UnifiedMessage) (*Re
 	if ticketID != "" {
 		auditPayload["ticket_id"] = ticketID
 	}
-	if err := s.audits.Add(ctx, audit.Event{ID: fmt.Sprintf("%s-%d", sess.ID, now.UnixNano()), SessionID: sess.ID, Type: "message_processed", Action: "process", Channel: msg.Channel, OpenID: msg.OpenID, ActorID: msg.OpenID, Payload: auditPayload, CreatedAt: now}); err != nil {
+	if err := s.audits.Add(ctx, audit.Event{ID: uuid.New().String(), SessionID: sess.ID, Type: "message_processed", Action: "process", Channel: msg.Channel, OpenID: msg.OpenID, ActorID: msg.OpenID, Payload: auditPayload, CreatedAt: now}); err != nil {
 		return nil, err
 	}
 
