@@ -46,8 +46,8 @@
 | TL-P1-2 | P1 | 补多实例与恢复场景验证设计 | TechLead | 设计文档 / 测试计划 | 覆盖 dedup、多实例、重启一致性、migration 幂等 | TL-P0-2 | 未开始 |
 | QA-P1-1 | P1 | 建立文档漂移检测检查项 | QA | QA 模板/报告更新 | 每次审查都校对代码 vs 文档 vs 测试状态 | QA-P0-1 | 已完成 |
 | QA-P1-2 | P1 | 增加真实环境前置门禁 | QA | 预生产验证记录 | 启动、ready、migration、webhook、入库验证完成 | DO-P0-1, DO-P0-2 | 未开始 |
-| DO-P1-1 | P1 | 补最小监控与告警闭环 | DevOps | 告警配置/监控清单 | 覆盖 5xx、reject、handoff、ticket、audit、DB、ready | DO-P0-1 | 未开始 |
-| DO-P1-2 | P1 | 补运行与回滚 runbook | DevOps | runbook 文档 | 覆盖启动失败、migration 失败、DB 不可用、auth 联调失败 | DO-P0-1 | 未开始 |
+| DO-P1-1 | P1 | 补最小监控与告警闭环 | DevOps | 告警配置/监控清单 | 覆盖 5xx、reject、handoff、ticket、audit、DB、ready | DO-P0-1 | ✅ 已完成 |
+| DO-P1-2 | P1 | 补运行与回滚 runbook | DevOps | runbook 文档 | 覆盖启动失败、migration 失败、DB 不可用、auth 联调失败 | DO-P0-1 | ✅ 已完成 |
 
 ---
 
@@ -109,8 +109,8 @@
 |---|---|---|---|
 | DO-P0-1 | 真实部署基线 | P0 | ✅ 已完成 |
 | DO-P0-2 | 关键配置 fail-fast 部署标准 | P0 | ✅ 已完成 |
-| DO-P1-1 | 最小监控与告警闭环 | P1 | 未开始 |
-| DO-P1-2 | 运行与回滚 runbook | P1 | 未开始 |
+| DO-P1-1 | 最小监控与告警闭环 | P1 | ✅ 已完成 |
+| DO-P1-2 | 运行与回滚 runbook | P1 | ✅ 已完成 |
 | DO-P2-1 | 容量与可观测性细化 | P2 | 未开始 |
 
 ---
@@ -130,7 +130,7 @@
 - [x] webhook 签名联调成功（HMAC-SHA256 验证通过）
 - [x] audit / ticket 入库成功（实测：webhook → session → handoff → ticket → audit 全链路）
 - [x] ready/live 符合预期（/actuator/health/ready → 200，postgres checker → UP）
-- [ ] 最小监控已接通（未完成）
+- [x] 最小监控已接通（✅ `docs/MONITORING_ALERTING.md` 已交付，覆盖 8 项监控 + Prometheus 告警配置）
 
 ### Gate C：生产灰度通过
 - [ ] 5% 灰度稳定
