@@ -85,6 +85,22 @@ func TestGetEnvInt64_ValidValue(t *testing.T) {
 	}
 }
 
+func TestGetEnvIntList_ValidValue(t *testing.T) {
+	t.Setenv("TEST_INT_LIST", "10,30,60")
+	got := getEnvIntList("TEST_INT_LIST", []int{1})
+	if len(got) != 3 || got[0] != 10 || got[1] != 30 || got[2] != 60 {
+		t.Fatalf("getEnvIntList(TEST_INT_LIST) = %v, want [10 30 60]", got)
+	}
+}
+
+func TestGetEnvIntList_InvalidValueFallsBack(t *testing.T) {
+	t.Setenv("TEST_INT_LIST", "10,oops,60")
+	got := getEnvIntList("TEST_INT_LIST", []int{1, 2})
+	if len(got) != 2 || got[0] != 1 || got[1] != 2 {
+		t.Fatalf("getEnvIntList(invalid) = %v, want [1 2]", got)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("AI_CS_ADDR", "")
 	cfg, err := Load()
@@ -240,6 +256,21 @@ func TestLoad_RejectsEnabledSub2APIWithoutIngressSecret(t *testing.T) {
 	}
 }
 
+func TestLoad_RejectsEnabledSub2APIWithInvalidWorkerPollingConfig(t *testing.T) {
+	t.Setenv("AI_CS_PLATFORM_ADAPTERS_ENABLED", "true")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_ENABLED", "true")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_INGRESS_SECRET", "sub2api-secret")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_CALLBACK_POLL_INTERVAL_MS", "0")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when sub2api callback poll interval is invalid")
+	}
+	if !strings.Contains(err.Error(), "AI_CS_PLATFORM_SUB2API_CALLBACK_POLL_INTERVAL_MS") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoad_PlatformAdapterOverrides(t *testing.T) {
 	t.Setenv("AI_CS_PLATFORM_ADAPTERS_ENABLED", "true")
 	t.Setenv("AI_CS_PLATFORM_SUB2API_ENABLED", "true")
@@ -248,6 +279,9 @@ func TestLoad_PlatformAdapterOverrides(t *testing.T) {
 	t.Setenv("AI_CS_PLATFORM_SUB2API_CALLBACK_SECRET", "cb-secret")
 	t.Setenv("AI_CS_PLATFORM_SUB2API_CALLBACK_TIMEOUT_MS", "4000")
 	t.Setenv("AI_CS_PLATFORM_SUB2API_CALLBACK_MAX_RETRIES", "7")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_CALLBACK_POLL_INTERVAL_MS", "2500")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_CALLBACK_BATCH_SIZE", "12")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_CALLBACK_RETRY_SCHEDULE_SEC", "5,15,45")
 
 	cfg, err := Load()
 	if err != nil {
@@ -273,5 +307,14 @@ func TestLoad_PlatformAdapterOverrides(t *testing.T) {
 	}
 	if cfg.PlatformAdapters.Sub2API.CallbackMaxRetries != 7 {
 		t.Fatalf("sub2api callback max retries = %d, want 7", cfg.PlatformAdapters.Sub2API.CallbackMaxRetries)
+	}
+	if cfg.PlatformAdapters.Sub2API.CallbackPollIntervalMS != 2500 {
+		t.Fatalf("sub2api callback poll interval ms = %d, want 2500", cfg.PlatformAdapters.Sub2API.CallbackPollIntervalMS)
+	}
+	if cfg.PlatformAdapters.Sub2API.CallbackBatchSize != 12 {
+		t.Fatalf("sub2api callback batch size = %d, want 12", cfg.PlatformAdapters.Sub2API.CallbackBatchSize)
+	}
+	if len(cfg.PlatformAdapters.Sub2API.CallbackRetrySchedule) != 3 || cfg.PlatformAdapters.Sub2API.CallbackRetrySchedule[0] != 5 || cfg.PlatformAdapters.Sub2API.CallbackRetrySchedule[1] != 15 || cfg.PlatformAdapters.Sub2API.CallbackRetrySchedule[2] != 45 {
+		t.Fatalf("sub2api callback retry schedule = %v, want [5 15 45]", cfg.PlatformAdapters.Sub2API.CallbackRetrySchedule)
 	}
 }

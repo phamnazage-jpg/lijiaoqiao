@@ -178,6 +178,9 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 				profile.CallbackMaxRetries,
 			)
 			worker.Logger = logger
+			worker.PollInterval = time.Duration(profile.CallbackPollIntervalMS) * time.Millisecond
+			worker.BatchSize = profile.CallbackBatchSize
+			worker.RetrySchedule = toRetrySchedule(profile.CallbackRetrySchedule)
 			go worker.Start(workerCtx)
 		}
 		startWorker("sub2api", cfg.PlatformAdapters.Sub2API)
@@ -200,6 +203,19 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		closers:     closers,
 		ticketStore: ticketListerStore,
 	}, nil
+}
+
+func toRetrySchedule(seconds []int) []time.Duration {
+	if len(seconds) == 0 {
+		return nil
+	}
+	result := make([]time.Duration, 0, len(seconds))
+	for _, value := range seconds {
+		if value > 0 {
+			result = append(result, time.Duration(value)*time.Second)
+		}
+	}
+	return result
 }
 
 func (a *App) TicketStore() ticketLister {

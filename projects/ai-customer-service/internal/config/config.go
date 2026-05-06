@@ -52,12 +52,15 @@ type PlatformAdaptersConfig struct {
 }
 
 type PlatformAdapterProfileConfig struct {
-	Enabled            bool
-	IngressSecret      string
-	CallbackBaseURL    string
-	CallbackSecret     string
-	CallbackTimeoutMS  int
-	CallbackMaxRetries int
+	Enabled                bool
+	IngressSecret          string
+	CallbackBaseURL        string
+	CallbackSecret         string
+	CallbackTimeoutMS      int
+	CallbackMaxRetries     int
+	CallbackPollIntervalMS int
+	CallbackBatchSize      int
+	CallbackRetrySchedule  []int
 }
 
 func Load() (*Config, error) {
@@ -88,20 +91,26 @@ func Load() (*Config, error) {
 		PlatformAdapters: PlatformAdaptersConfig{
 			Enabled: getEnvBool("AI_CS_PLATFORM_ADAPTERS_ENABLED", false),
 			Sub2API: PlatformAdapterProfileConfig{
-				Enabled:            getEnvBool("AI_CS_PLATFORM_SUB2API_ENABLED", false),
-				IngressSecret:      getEnv("AI_CS_PLATFORM_SUB2API_INGRESS_SECRET", ""),
-				CallbackBaseURL:    getEnv("AI_CS_PLATFORM_SUB2API_CALLBACK_BASE_URL", ""),
-				CallbackSecret:     getEnv("AI_CS_PLATFORM_SUB2API_CALLBACK_SECRET", ""),
-				CallbackTimeoutMS:  getEnvInt("AI_CS_PLATFORM_SUB2API_CALLBACK_TIMEOUT_MS", 3000),
-				CallbackMaxRetries: getEnvInt("AI_CS_PLATFORM_SUB2API_CALLBACK_MAX_RETRIES", 5),
+				Enabled:                getEnvBool("AI_CS_PLATFORM_SUB2API_ENABLED", false),
+				IngressSecret:          getEnv("AI_CS_PLATFORM_SUB2API_INGRESS_SECRET", ""),
+				CallbackBaseURL:        getEnv("AI_CS_PLATFORM_SUB2API_CALLBACK_BASE_URL", ""),
+				CallbackSecret:         getEnv("AI_CS_PLATFORM_SUB2API_CALLBACK_SECRET", ""),
+				CallbackTimeoutMS:      getEnvInt("AI_CS_PLATFORM_SUB2API_CALLBACK_TIMEOUT_MS", 3000),
+				CallbackMaxRetries:     getEnvInt("AI_CS_PLATFORM_SUB2API_CALLBACK_MAX_RETRIES", 5),
+				CallbackPollIntervalMS: getEnvInt("AI_CS_PLATFORM_SUB2API_CALLBACK_POLL_INTERVAL_MS", 5000),
+				CallbackBatchSize:      getEnvInt("AI_CS_PLATFORM_SUB2API_CALLBACK_BATCH_SIZE", 20),
+				CallbackRetrySchedule:  getEnvIntList("AI_CS_PLATFORM_SUB2API_CALLBACK_RETRY_SCHEDULE_SEC", []int{10, 30, 60, 300, 900}),
 			},
 			NewAPI: PlatformAdapterProfileConfig{
-				Enabled:            getEnvBool("AI_CS_PLATFORM_NEWAPI_ENABLED", false),
-				IngressSecret:      getEnv("AI_CS_PLATFORM_NEWAPI_INGRESS_SECRET", ""),
-				CallbackBaseURL:    getEnv("AI_CS_PLATFORM_NEWAPI_CALLBACK_BASE_URL", ""),
-				CallbackSecret:     getEnv("AI_CS_PLATFORM_NEWAPI_CALLBACK_SECRET", ""),
-				CallbackTimeoutMS:  getEnvInt("AI_CS_PLATFORM_NEWAPI_CALLBACK_TIMEOUT_MS", 3000),
-				CallbackMaxRetries: getEnvInt("AI_CS_PLATFORM_NEWAPI_CALLBACK_MAX_RETRIES", 5),
+				Enabled:                getEnvBool("AI_CS_PLATFORM_NEWAPI_ENABLED", false),
+				IngressSecret:          getEnv("AI_CS_PLATFORM_NEWAPI_INGRESS_SECRET", ""),
+				CallbackBaseURL:        getEnv("AI_CS_PLATFORM_NEWAPI_CALLBACK_BASE_URL", ""),
+				CallbackSecret:         getEnv("AI_CS_PLATFORM_NEWAPI_CALLBACK_SECRET", ""),
+				CallbackTimeoutMS:      getEnvInt("AI_CS_PLATFORM_NEWAPI_CALLBACK_TIMEOUT_MS", 3000),
+				CallbackMaxRetries:     getEnvInt("AI_CS_PLATFORM_NEWAPI_CALLBACK_MAX_RETRIES", 5),
+				CallbackPollIntervalMS: getEnvInt("AI_CS_PLATFORM_NEWAPI_CALLBACK_POLL_INTERVAL_MS", 5000),
+				CallbackBatchSize:      getEnvInt("AI_CS_PLATFORM_NEWAPI_CALLBACK_BATCH_SIZE", 20),
+				CallbackRetrySchedule:  getEnvIntList("AI_CS_PLATFORM_NEWAPI_CALLBACK_RETRY_SCHEDULE_SEC", []int{10, 30, 60, 300, 900}),
 			},
 		},
 		Runtime: RuntimeConfig{
@@ -151,6 +160,20 @@ func validatePlatformProfile(platform string, adaptersEnabled bool, profile Plat
 	}
 	if profile.CallbackMaxRetries < 0 {
 		return fmt.Errorf("AI_CS_PLATFORM_%s_CALLBACK_MAX_RETRIES must not be negative", upperPlatform)
+	}
+	if profile.CallbackPollIntervalMS <= 0 {
+		return fmt.Errorf("AI_CS_PLATFORM_%s_CALLBACK_POLL_INTERVAL_MS must be positive", upperPlatform)
+	}
+	if profile.CallbackBatchSize <= 0 {
+		return fmt.Errorf("AI_CS_PLATFORM_%s_CALLBACK_BATCH_SIZE must be positive", upperPlatform)
+	}
+	if len(profile.CallbackRetrySchedule) == 0 {
+		return fmt.Errorf("AI_CS_PLATFORM_%s_CALLBACK_RETRY_SCHEDULE_SEC must not be empty", upperPlatform)
+	}
+	for _, seconds := range profile.CallbackRetrySchedule {
+		if seconds <= 0 {
+			return fmt.Errorf("AI_CS_PLATFORM_%s_CALLBACK_RETRY_SCHEDULE_SEC must contain only positive integers", upperPlatform)
+		}
 	}
 	return nil
 }
@@ -212,4 +235,21 @@ func getEnvBool(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+func getEnvIntList(key string, fallback []int) []int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return append([]int(nil), fallback...)
+	}
+	parts := strings.Split(value, ",")
+	result := make([]int, 0, len(parts))
+	for _, part := range parts {
+		parsed, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil {
+			return append([]int(nil), fallback...)
+		}
+		result = append(result, parsed)
+	}
+	return result
 }

@@ -110,6 +110,9 @@ func TestNew_RegistersPlatformWebhookRouteWhenSub2APIEnabled(t *testing.T) {
 	cfg.PlatformAdapters.Enabled = true
 	cfg.PlatformAdapters.Sub2API.Enabled = true
 	cfg.PlatformAdapters.Sub2API.IngressSecret = "sub2api-secret"
+	cfg.PlatformAdapters.Sub2API.CallbackPollIntervalMS = 2500
+	cfg.PlatformAdapters.Sub2API.CallbackBatchSize = 8
+	cfg.PlatformAdapters.Sub2API.CallbackRetrySchedule = []int{5, 15, 45}
 
 	app, err := New(cfg, logging.New())
 	if err != nil {
@@ -121,6 +124,13 @@ func TestNew_RegistersPlatformWebhookRouteWhenSub2APIEnabled(t *testing.T) {
 	app.Server.Handler.ServeHTTP(rr, req)
 	if rr.Code == http.StatusNotFound {
 		t.Fatal("platform webhook route returned 404; route should be registered")
+	}
+}
+
+func TestToRetrySchedule(t *testing.T) {
+	got := toRetrySchedule([]int{5, 15, 45})
+	if len(got) != 3 || got[0] != 5*time.Second || got[1] != 15*time.Second || got[2] != 45*time.Second {
+		t.Fatalf("toRetrySchedule() = %v, want [5s 15s 45s]", got)
 	}
 }
 

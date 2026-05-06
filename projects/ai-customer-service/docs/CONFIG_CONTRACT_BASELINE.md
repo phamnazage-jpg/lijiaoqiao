@@ -62,12 +62,18 @@
 | `AI_CS_PLATFORM_SUB2API_CALLBACK_SECRET` | 空 | `sub2api` 回调签名 secret | 当前仅解析，不强校验 | 视后续出站回调批次决定 |
 | `AI_CS_PLATFORM_SUB2API_CALLBACK_TIMEOUT_MS` | `3000` | `sub2api` 回调超时（毫秒） | 必须 > 0（启用时） | 可 |
 | `AI_CS_PLATFORM_SUB2API_CALLBACK_MAX_RETRIES` | `5` | `sub2api` 回调最大重试次数 | 必须 >= 0（启用时） | 可 |
+| `AI_CS_PLATFORM_SUB2API_CALLBACK_POLL_INTERVAL_MS` | `5000` | `sub2api` callback worker 轮询间隔（毫秒） | 必须 > 0（启用时） | 可 |
+| `AI_CS_PLATFORM_SUB2API_CALLBACK_BATCH_SIZE` | `20` | `sub2api` callback worker 单轮最大投递数 | 必须 > 0（启用时） | 可 |
+| `AI_CS_PLATFORM_SUB2API_CALLBACK_RETRY_SCHEDULE_SEC` | `10,30,60,300,900` | `sub2api` callback 重试退避序列（秒） | 必须为正整数列表（启用时） | 可 |
 | `AI_CS_PLATFORM_NEWAPI_ENABLED` | `false` | 是否启用 `newapi` 入站适配 | 解析布尔值 | 视接入计划决定 |
 | `AI_CS_PLATFORM_NEWAPI_INGRESS_SECRET` | 空 | `newapi` 平台 webhook HMAC secret | 启用 `newapi` 时必填 | **不允许为空** |
 | `AI_CS_PLATFORM_NEWAPI_CALLBACK_BASE_URL` | 空 | `newapi` 回调基地址 | 当前仅解析，不强校验 | 视后续出站回调批次决定 |
 | `AI_CS_PLATFORM_NEWAPI_CALLBACK_SECRET` | 空 | `newapi` 回调签名 secret | 当前仅解析，不强校验 | 视后续出站回调批次决定 |
 | `AI_CS_PLATFORM_NEWAPI_CALLBACK_TIMEOUT_MS` | `3000` | `newapi` 回调超时（毫秒） | 必须 > 0（启用时） | 可 |
 | `AI_CS_PLATFORM_NEWAPI_CALLBACK_MAX_RETRIES` | `5` | `newapi` 回调最大重试次数 | 必须 >= 0（启用时） | 可 |
+| `AI_CS_PLATFORM_NEWAPI_CALLBACK_POLL_INTERVAL_MS` | `5000` | `newapi` callback worker 轮询间隔（毫秒） | 必须 > 0（启用时） | 可 |
+| `AI_CS_PLATFORM_NEWAPI_CALLBACK_BATCH_SIZE` | `20` | `newapi` callback worker 单轮最大投递数 | 必须 > 0（启用时） | 可 |
+| `AI_CS_PLATFORM_NEWAPI_CALLBACK_RETRY_SCHEDULE_SEC` | `10,30,60,300,900` | `newapi` callback 重试退避序列（秒） | 必须为正整数列表（启用时） | 可 |
 
 ---
 
@@ -85,6 +91,9 @@
 8. `AI_CS_PLATFORM_ADAPTERS_ENABLED=true` 且对应平台 `*_ENABLED=true` 时，`*_INGRESS_SECRET` 不允许为空
 9. `AI_CS_PLATFORM_*_CALLBACK_TIMEOUT_MS` 在对应平台启用时必须为正数
 10. `AI_CS_PLATFORM_*_CALLBACK_MAX_RETRIES` 在对应平台启用时不允许为负数
+11. `AI_CS_PLATFORM_*_CALLBACK_POLL_INTERVAL_MS` 在对应平台启用时必须为正数
+12. `AI_CS_PLATFORM_*_CALLBACK_BATCH_SIZE` 在对应平台启用时必须为正数
+13. `AI_CS_PLATFORM_*_CALLBACK_RETRY_SCHEDULE_SEC` 在对应平台启用时必须是正整数列表，且不允许为空
 
 ---
 
