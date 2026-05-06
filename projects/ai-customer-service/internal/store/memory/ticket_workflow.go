@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bridge/ai-customer-service/internal/domain/error/cserrors"
 	"github.com/bridge/ai-customer-service/internal/domain/ticket"
 )
 
@@ -30,46 +31,58 @@ func (s *TicketStore) Assign(_ context.Context, ticketID, agentID, _, _ string, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.tickets {
-		if s.tickets[i].ID == ticketID && s.tickets[i].Status == ticket.StatusOpen {
-			s.tickets[i].AssignedTo = agentID
-			s.tickets[i].Status = ticket.StatusAssigned
-			s.tickets[i].UpdatedAt = now
-			return nil
+		if s.tickets[i].ID != ticketID {
+			continue
 		}
+		if s.tickets[i].Status != ticket.StatusOpen {
+			return fmt.Errorf("%s:%s", cserrors.CS_TKT_4002, cserrors.ErrorMsg(cserrors.CS_TKT_4002))
+		}
+		s.tickets[i].AssignedTo = agentID
+		s.tickets[i].Status = ticket.StatusAssigned
+		s.tickets[i].UpdatedAt = now
+		return nil
 	}
-	return fmt.Errorf("ticket not assignable")
+	return fmt.Errorf("%s:%s", cserrors.CS_TICKET_4001, cserrors.ErrorMsg(cserrors.CS_TICKET_4001))
 }
 
 func (s *TicketStore) Resolve(_ context.Context, ticketID, resolution, _, _ string, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.tickets {
-		if s.tickets[i].ID == ticketID {
-			resolvedAt := now
-			s.tickets[i].Resolution = resolution
-			s.tickets[i].Status = ticket.StatusResolved
-			s.tickets[i].ResolvedAt = &resolvedAt
-			s.tickets[i].UpdatedAt = now
-			return nil
+		if s.tickets[i].ID != ticketID {
+			continue
 		}
+		if s.tickets[i].Status != ticket.StatusAssigned && s.tickets[i].Status != ticket.StatusProcessing {
+			return fmt.Errorf("%s:%s", cserrors.CS_TICKET_4092, cserrors.ErrorMsg(cserrors.CS_TICKET_4092))
+		}
+		resolvedAt := now
+		s.tickets[i].Resolution = resolution
+		s.tickets[i].Status = ticket.StatusResolved
+		s.tickets[i].ResolvedAt = &resolvedAt
+		s.tickets[i].UpdatedAt = now
+		return nil
 	}
-	return fmt.Errorf("ticket not resolvable")
+	return fmt.Errorf("%s:%s", cserrors.CS_TICKET_4001, cserrors.ErrorMsg(cserrors.CS_TICKET_4001))
 }
 
 func (s *TicketStore) Close(_ context.Context, ticketID, resolution, _, _ string, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.tickets {
-		if s.tickets[i].ID == ticketID && (s.tickets[i].Status == ticket.StatusResolved || s.tickets[i].Status == ticket.StatusAssigned || s.tickets[i].Status == ticket.StatusProcessing) {
-			resolvedAt := now
-			s.tickets[i].Resolution = resolution
-			s.tickets[i].Status = ticket.StatusClosed
-			if s.tickets[i].ResolvedAt == nil {
-				s.tickets[i].ResolvedAt = &resolvedAt
-			}
-			s.tickets[i].UpdatedAt = now
-			return nil
+		if s.tickets[i].ID != ticketID {
+			continue
 		}
+		if s.tickets[i].Status != ticket.StatusResolved {
+			return fmt.Errorf("%s:%s", cserrors.CS_TICKET_4093, cserrors.ErrorMsg(cserrors.CS_TICKET_4093))
+		}
+		resolvedAt := now
+		s.tickets[i].Resolution = resolution
+		s.tickets[i].Status = ticket.StatusClosed
+		if s.tickets[i].ResolvedAt == nil {
+			s.tickets[i].ResolvedAt = &resolvedAt
+		}
+		s.tickets[i].UpdatedAt = now
+		return nil
 	}
-	return fmt.Errorf("ticket not closable")
+	return fmt.Errorf("%s:%s", cserrors.CS_TICKET_4001, cserrors.ErrorMsg(cserrors.CS_TICKET_4001))
 }

@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/bridge/ai-customer-service/internal/domain/audit"
+	"github.com/google/uuid"
 )
 
 type AuditRecorder interface {
@@ -13,5 +13,5 @@ type AuditRecorder interface {
 }
 
 func newAuditID(prefix string, now time.Time) string {
-	return fmt.Sprintf("%s-%d", prefix, now.UnixNano())
+	return uuid.NewString()
 }

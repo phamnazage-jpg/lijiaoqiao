@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,8 +42,8 @@ func TestTicketStore_Assign(t *testing.T) {
 
 	// Create an open ticket
 	store.Create(ctx, &ticket.Ticket{
-		ID:     "t1",
-		Status: ticket.StatusOpen,
+		ID:        "t1",
+		Status:    ticket.StatusOpen,
 		CreatedAt: now,
 		UpdatedAt: now,
 	})
@@ -91,11 +92,11 @@ func TestTicketStore_Resolve(t *testing.T) {
 
 	// Create an assigned ticket
 	store.Create(ctx, &ticket.Ticket{
-		ID:     "t1",
-		Status: ticket.StatusAssigned,
+		ID:         "t1",
+		Status:     ticket.StatusAssigned,
 		AssignedTo: "agent1",
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	})
 
 	// Resolve it
@@ -114,6 +115,30 @@ func TestTicketStore_Resolve(t *testing.T) {
 	}
 	if tkt.ResolvedAt == nil {
 		t.Error("ticket.ResolvedAt should be set")
+	}
+}
+
+func TestTicketStore_Resolve_ClosedTicketConflict(t *testing.T) {
+	store := NewTicketStore()
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+	resolvedAt := now.Add(-30 * time.Minute)
+
+	store.Create(ctx, &ticket.Ticket{
+		ID:         "t-closed",
+		Status:     ticket.StatusClosed,
+		Resolution: "done",
+		ResolvedAt: &resolvedAt,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+
+	err := store.Resolve(ctx, "t-closed", "retry", "admin", "127.0.0.1", now)
+	if err == nil {
+		t.Fatal("Resolve() on closed ticket should return error")
+	}
+	if !strings.HasPrefix(err.Error(), "CS_TICKET_4092") {
+		t.Fatalf("Resolve() error = %v, want CS_TICKET_4092 prefix", err)
 	}
 }
 
@@ -153,8 +178,8 @@ func TestTicketStore_Close_NotResolved(t *testing.T) {
 
 	// Create an open ticket (not resolved)
 	store.Create(ctx, &ticket.Ticket{
-		ID:     "t1",
-		Status: ticket.StatusOpen,
+		ID:        "t1",
+		Status:    ticket.StatusOpen,
 		CreatedAt: now,
 		UpdatedAt: now,
 	})
@@ -163,5 +188,30 @@ func TestTicketStore_Close_NotResolved(t *testing.T) {
 	err := store.Close(ctx, "t1", "user confirmed", "admin", "127.0.0.1", now)
 	if err == nil {
 		t.Fatal("Close() on non-resolved ticket should return error")
+	}
+	if !strings.HasPrefix(err.Error(), "CS_TICKET_4093") {
+		t.Fatalf("Close() error = %v, want CS_TICKET_4093 prefix", err)
+	}
+}
+
+func TestTicketStore_Close_AssignedTicketConflict(t *testing.T) {
+	store := NewTicketStore()
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+
+	store.Create(ctx, &ticket.Ticket{
+		ID:         "t-assigned",
+		Status:     ticket.StatusAssigned,
+		AssignedTo: "agent1",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+
+	err := store.Close(ctx, "t-assigned", "premature close", "admin", "127.0.0.1", now)
+	if err == nil {
+		t.Fatal("Close() on assigned ticket should return error")
+	}
+	if !strings.HasPrefix(err.Error(), "CS_TICKET_4093") {
+		t.Fatalf("Close() error = %v, want CS_TICKET_4093 prefix", err)
 	}
 }

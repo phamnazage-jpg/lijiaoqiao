@@ -9,11 +9,11 @@
 
 ```
 用户触发转人工
-    → [待落地] 工单创建（含排队位置）
+    → 工单创建
     → 客服接单（assign）
     → 客服处理
     → 客服解决（resolve）
-    → [待明确] 工单关闭（close？）
+    → 客服/主管关闭（close）
     → 用户满意度反馈（可选）
 ```
 
@@ -25,8 +25,17 @@
 |------|------|----------|--------------|
 | `open` | 待接单 | 转人工触发工单创建 | ✅ 已落地 |
 | `assigned` | 已分配 | 客服主动接单或系统分配 | ✅ 已落地 |
-| `resolved` | 已解决 | 客服处理完毕 | ✅ 已落地 |
-| `closed` | 已关闭 | 显式调用 close 接口 | ✅ 已落地（`TicketWorkflowStore.Close`） |
+| `resolved` | 已给出处理结论，等待最终归档 | 已分配工单处理完毕后调用 `resolve` | ✅ 已落地 |
+| `closed` | 已最终关闭，不允许再继续流转 | 仅 `resolved` 工单可调用 `close` | ✅ 已落地 |
+
+### 2.1 状态流转规则
+
+| 当前状态 | 允许动作 | 下一个状态 | 不允许动作 |
+|----------|----------|------------|------------|
+| `open` | `assign` | `assigned` | `resolve` / `close` |
+| `assigned` | `resolve` | `resolved` | 重复 `assign` / 直接 `close` |
+| `resolved` | `close` | `closed` | 重复 `resolve` / 重复 `assign` |
+| `closed` | 无 | 无 | `assign` / `resolve` / `close` |
 
 ---
 
@@ -101,12 +110,10 @@
 **接口**：`POST /api/v1/customer-service/tickets/{id}/resolve?resolution={resolution}`
 
 **流程**：
-1. 客服处理完毕后调用 resolve
+1. 已接单工单处理完毕后调用 resolve
 2. 更新 ticket.status = `resolved`，ticket.resolution = resolution
 3. 写入审计日志（✅ 已落地：调用 `TicketWorkflowStore.writeAudit`）
-
-**缺失项**：
-- 工单状态流转审计 ✅ 已落地（`TicketWorkflowStore.writeAudit` 在 resolve 时调用）
+4. `resolved` 表示已经有处理结论，但尚未最终关闭
 
 ---
 
@@ -117,13 +124,27 @@
 **已落地**：`TicketWorkflowStore.Close` 接口已实现，支持显式关闭工单。
 
 **语义定义**：
-- `resolve` = 客服确认问题已解决，工单进入 `resolved` 状态
-- `close` = 工单正式关闭，进入 `closed` 状态（resolved 后可选调用）
-- 已解决工单（resolved）可直接 close；未解决工单也可强制 close
+- `resolve` = 客服确认已给出处理结论，工单进入 `resolved`
+- `close` = 对 `resolved` 工单做最终归档，工单进入 `closed`
+- 未 `resolved` 的工单不能直接 `close`
+- `closed` 工单不能再次 `resolve`
+
+### 7.2 返回语义
+
+| 场景 | HTTP | 错误码 |
+|------|------|--------|
+| 工单不存在 | `404` | `CS_TICKET_4001` |
+| 非法 `resolve` 状态流转 | `409` | `CS_TICKET_4092` |
+| 非法 `close` 状态流转 | `409` | `CS_TICKET_4093` |
 
 ---
 
 ## 8. 客服工作台操作规范（API 层）
+
+受保护接口必须携带：
+
+- `X-CS-Actor-ID`
+- `X-CS-Actor-Role`
 
 ### 8.1 班次开始
 
@@ -144,7 +165,17 @@ curl -X POST "https://{host}/api/v1/customer-service/tickets/{ticket_id}/assign?
 curl -X POST "https://{host}/api/v1/customer-service/tickets/{ticket_id}/resolve?resolution={解决说明}"
 ```
 
-### 8.4 工单列表查询
+成功后工单状态变为 `resolved`。
+
+### 8.4 最终关闭
+
+```bash
+curl -X POST "https://{host}/api/v1/customer-service/tickets/{ticket_id}/close?resolution={最终结论}"
+```
+
+只有 `resolved` 工单可以执行该操作，成功后状态变为 `closed`。
+
+### 8.5 工单列表查询
 
 ```bash
 # 查看所有 open 工单

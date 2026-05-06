@@ -69,7 +69,8 @@ func setActorHeaders(req *http.Request, actorID, role string) {
 //  1. Webhook triggers handoff → ticket created
 //  2. Ticket is assigned to an agent
 //  3. Ticket is resolved by the agent
-//  4. Ticket is retrieved and verified in final resolved state
+//  4. Ticket is explicitly closed
+//  5. Ticket is retrieved and verified in final closed state
 func TestFullTicketFlow_E2E(t *testing.T) {
 	application := newTestAppE2E(t)
 	server := httptest.NewServer(application.Server.Handler)
@@ -161,7 +162,36 @@ func TestFullTicketFlow_E2E(t *testing.T) {
 		t.Fatalf("[step3] resolved = %v, want true", resolvePayload["resolved"])
 	}
 
-	// ── Step 4: Verify ticket is retrievable in final resolved state ──────
+	// ── Step 4: Close the ticket explicitly ───────────────────────────────
+	closeURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/close?resolution=refund+processed+and+confirmed", baseURL, ticketID)
+	closeReq, err := http.NewRequest(http.MethodPost, closeURL, nil)
+	if err != nil {
+		t.Fatalf("new close request error = %v", err)
+	}
+	setActorHeaders(closeReq, "supervisor-e2e", "supervisor")
+	closeReq.RemoteAddr = "192.168.1.3:65432"
+	closeResp, err := http.DefaultClient.Do(closeReq)
+	if err != nil {
+		t.Fatalf("close POST error = %v", err)
+	}
+	closeBody, err := io.ReadAll(closeResp.Body)
+	closeResp.Body.Close()
+	if err != nil {
+		t.Fatalf("read close body error = %v", err)
+	}
+	if closeResp.StatusCode != http.StatusOK {
+		t.Fatalf("[step4 close] status = %d, want 200; body: %s", closeResp.StatusCode, string(closeBody))
+	}
+
+	var closePayload map[string]any
+	if err := json.Unmarshal(closeBody, &closePayload); err != nil {
+		t.Fatalf("decode close response error = %v", err)
+	}
+	if closePayload["closed"] != true {
+		t.Fatalf("[step4] closed = %v, want true", closePayload["closed"])
+	}
+
+	// ── Step 5: Verify ticket is retrievable in final closed state ───────
 	getURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s", baseURL, ticketID)
 	getReq, err := http.NewRequest(http.MethodGet, getURL, nil)
 	if err != nil {
@@ -186,14 +216,14 @@ func TestFullTicketFlow_E2E(t *testing.T) {
 		t.Fatalf("decode ticket response error = %v", err)
 	}
 	tkt := ticketPayload["ticket"].(map[string]any)
-	if tkt["status"] != "resolved" {
-		t.Fatalf("[step4] ticket status = %v, want resolved", tkt["status"])
+	if tkt["status"] != "closed" {
+		t.Fatalf("[step5] ticket status = %v, want closed", tkt["status"])
 	}
 	if tkt["assigned_to"] != "agent-e2e-001" {
-		t.Fatalf("[step4] assigned_to = %v, want agent-e2e-001", tkt["assigned_to"])
+		t.Fatalf("[step5] assigned_to = %v, want agent-e2e-001", tkt["assigned_to"])
 	}
-	if tkt["resolution"] != "refund processed and closed" {
-		t.Fatalf("[step4] resolution = %v, want 'refund processed and closed'", tkt["resolution"])
+	if tkt["resolution"] != "refund processed and confirmed" {
+		t.Fatalf("[step5] resolution = %v, want 'refund processed and confirmed'", tkt["resolution"])
 	}
 }
 
@@ -601,6 +631,23 @@ func TestFullTicketFlow_StateTransitionAuditOrder(t *testing.T) {
 		t.Fatalf("resolve status = %d, want 200", resolveResp.StatusCode)
 	}
 
+	// Close (audit event: close)
+	closeURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s/close?resolution=confirmed", baseURL, ticketID)
+	closeReq, err := http.NewRequest(http.MethodPost, closeURL, nil)
+	if err != nil {
+		t.Fatalf("new close request error = %v", err)
+	}
+	setActorHeaders(closeReq, "supervisor-order", "supervisor")
+	closeResp, err := http.DefaultClient.Do(closeReq)
+	if err != nil {
+		t.Fatalf("close POST error = %v", err)
+	}
+	io.ReadAll(closeResp.Body)
+	closeResp.Body.Close()
+	if closeResp.StatusCode != http.StatusOK {
+		t.Fatalf("close status = %d, want 200", closeResp.StatusCode)
+	}
+
 	// Final state check: proves all audit writes succeeded in order
 	getURL := fmt.Sprintf("%s/api/v1/customer-service/tickets/%s", baseURL, ticketID)
 	getReq, err := http.NewRequest(http.MethodGet, getURL, nil)
@@ -627,13 +674,13 @@ func TestFullTicketFlow_StateTransitionAuditOrder(t *testing.T) {
 	}
 	tkt := finalPayload["ticket"].(map[string]any)
 
-	if tkt["status"] != "resolved" {
-		t.Fatalf("final status = %v, want resolved", tkt["status"])
+	if tkt["status"] != "closed" {
+		t.Fatalf("final status = %v, want closed", tkt["status"])
 	}
 	if tkt["assigned_to"] != "agent-order-1" {
 		t.Fatalf("final assigned_to = %v, want agent-order-1", tkt["assigned_to"])
 	}
-	if tkt["resolution"] != "handled" {
-		t.Fatalf("final resolution = %v, want handled", tkt["resolution"])
+	if tkt["resolution"] != "confirmed" {
+		t.Fatalf("final resolution = %v, want confirmed", tkt["resolution"])
 	}
 }

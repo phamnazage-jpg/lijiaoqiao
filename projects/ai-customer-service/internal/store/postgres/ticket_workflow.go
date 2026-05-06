@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/bridge/ai-customer-service/internal/domain/audit"
-	"github.com/google/uuid"
 	"github.com/bridge/ai-customer-service/internal/domain/ticket"
+	"github.com/google/uuid"
 )
 
 // TicketWorkflowStore composes TicketStore with AuditStore for workflow operations.
@@ -37,14 +37,14 @@ func (s *TicketWorkflowStore) writeAudit(ctx context.Context, ticketID, action, 
 	}
 	now := time.Now()
 	event := audit.Event{
-		ID:        uuid.New().String(),
-		Type:      "ticket_state_changed",
-		Action:    action,
-		TicketID:  ticketID,
-		ActorID:   actorID,
-		SourceIP:  sourceIP,
+		ID:         uuid.New().String(),
+		Type:       "ticket_state_changed",
+		Action:     action,
+		TicketID:   ticketID,
+		ActorID:    actorID,
+		SourceIP:   sourceIP,
 		AfterState: afterState,
-		CreatedAt: now,
+		CreatedAt:  now,
 	}
 	if err := s.audit.Add(ctx, event); err != nil {
 		if s.log != nil {
@@ -134,10 +134,10 @@ func (s *TicketWorkflowStore) Resolve(ctx context.Context, ticketID, resolution,
 	if currentStatus == "" {
 		return fmt.Errorf("CS_TICKET_4001:ticket not found")
 	}
-	if currentStatus == "resolved" || currentStatus == "closed" {
+	if currentStatus != "assigned" && currentStatus != "processing" {
 		return fmt.Errorf("CS_TICKET_4092:ticket resolve conflict")
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE cs_tickets SET resolution = NULLIF($2,''), status = 'resolved', resolved_at = $3, updated_at = $3 WHERE id = $1::uuid AND status IN ('assigned','processing','open')`, ticketID, resolution, now)
+	result, err := s.db.ExecContext(ctx, `UPDATE cs_tickets SET resolution = NULLIF($2,''), status = 'resolved', resolved_at = $3, updated_at = $3 WHERE id = $1::uuid AND status IN ('assigned','processing')`, ticketID, resolution, now)
 	if err != nil {
 		return err
 	}
@@ -166,10 +166,10 @@ func (s *TicketWorkflowStore) Close(ctx context.Context, ticketID, resolution, a
 	if currentStatus == "" {
 		return fmt.Errorf("CS_TICKET_4001:ticket not found")
 	}
-	if currentStatus == "closed" {
+	if currentStatus != "resolved" {
 		return fmt.Errorf("CS_TICKET_4093:ticket close conflict")
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE cs_tickets SET resolution = NULLIF($2,''), status = 'closed', resolved_at = COALESCE(resolved_at, $3), updated_at = $3 WHERE id = $1::uuid AND status IN ('resolved','assigned','processing')`, ticketID, resolution, now)
+	result, err := s.db.ExecContext(ctx, `UPDATE cs_tickets SET resolution = NULLIF($2,''), status = 'closed', resolved_at = COALESCE(resolved_at, $3), updated_at = $3 WHERE id = $1::uuid AND status = 'resolved'`, ticketID, resolution, now)
 	if err != nil {
 		return err
 	}

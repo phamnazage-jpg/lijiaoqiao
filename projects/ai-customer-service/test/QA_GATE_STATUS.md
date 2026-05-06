@@ -9,7 +9,7 @@
 
 ## 0. 阶段门控结论
 
-- **当前结论：CONDITIONAL_PASS（代码级） / REQUEST_CHANGES（预生产与生产门禁）**
+- **当前结论：CONDITIONAL_PASS（代码级 + 本地/容器化 Gate B 预演 + 本地/容器化 Gate C 回滚演练） / REQUEST_CHANGES（真实预生产与生产放量门禁）**
 - **是否可进入下一阶段（按“生产可直接上线”口径放行）：否**
 - **是否可进入预生产整改 / 灰度准备：是，但前提是继续完成剩余 P0/P1 真实环境项**
 
@@ -23,8 +23,8 @@
 4. **配置契约、执行板、QA 文档已同步回写**
 
 当前剩余阻断已收敛到：
-1. **真实环境门禁（DB / migration / webhook 联调 / 入库验证）未闭环**
-2. **部署侧 fail-fast / 监控 / 回滚基线仍未落地**
+1. **真实共享预生产环境门禁未闭环**（本地/容器化 Gate B 已通过，但真实预生产环境尚未用同脚本复跑）
+2. **真实共享预生产/灰度环境监控与回滚证据仍未闭环**
 3. **代码级通过 ≠ 预生产通过 ≠ 生产可放量，仍需严格分层门禁**
 
 ---
@@ -49,6 +49,8 @@
 go test ./internal/config ./internal/app ./test/integration -count=1
 go test ./... -count=1
 go vet ./...
+AI_CS_RUNTIME_ENV=production ... scripts/verify_preprod_gate_b.sh
+AI_CS_RUNTIME_ENV=production ... scripts/verify_gate_c_rollback.sh
 ```
 
 ### 1.4 关键事实校准
@@ -58,6 +60,12 @@ go vet ./...
 - 新的 readiness 语义：
   - **production 缺关键配置/缺 Postgres：启动失败，不进入 ready**
   - **非 production 的 memory 模式：可正常 ready，不再被误判为 DOWN**
+- 本地/容器化 Gate B 预演：
+  - **已通过**，记录见 `docs/PREPROD_VERIFICATION_RECORD.md`
+  - **ticket / audit / dedup / health / migration** 均已有脚本化证据
+- 本地/容器化 Gate C 回滚演练：
+  - **已通过**，记录见 `docs/ROLLBACK_DRILL_RECORD.md`
+  - **坏发布阻断 -> 回滚恢复 -> webhook / dedup / ticket / audit 恢复** 均已有脚本化证据
 - 旧的“可以直接按生产上线口径放行”结论：**仍不成立**
 
 ---
@@ -76,10 +84,11 @@ go vet ./...
 - prod memory fallback 已收紧并 fail-fast
 - runtime env 契约已明确，兼容旧变量名并补齐测试
 - readiness 语义已收紧且校准，不再对非 prod memory 场景误伤
+- `scripts/verify_preprod_gate_b.sh` 已建立并通过本地/容器化联调验证
 
 ### 2.2 未通过项
-- 真实环境 DB / migration / webhook / audit / ticket 入库验证缺证据
-- 部署侧关键配置 fail-fast、监控、回滚 runbook 未闭环
+- 真实共享预生产环境 DB / migration / webhook / audit / ticket 入库验证仍缺同脚本复跑证据
+- 真实共享预生产/灰度环境监控接线与回滚演练仍缺真实环境证据
 - 生产放行仍缺 Gate B / Gate C 证据
 
 ### 2.3 结论
@@ -100,7 +109,7 @@ go vet ./...
 | 测试覆盖状态 | PASS | 本轮新增约束已有单测/集成测试覆盖，且全量 Go 测试与 vet 通过 |
 | readiness / 运行门禁 | PASS（代码级） | prod fail-fast；memory 非 prod 场景 ready 语义恢复正确 |
 | 上线状态文档 | PASS（当前基线） | 已回写执行板与 QA / checklist 文档 |
-| 日志/监控/运行闭环 | PARTIAL | 代码未覆盖真实部署监控与回滚基线 |
+| 日志/监控/运行闭环 | PARTIAL | Gate B 预演已脚本化，但真实部署监控与回滚基线未闭环 |
 
 ---
 
@@ -114,7 +123,9 @@ go vet ./...
 | 生产运行约束 | PASS（代码级） | prod 下要求 Postgres 且禁止 memory fallback |
 | readiness 真实性 | PASS（代码级） | 配置错误走启动失败；非 prod memory 正常 ready |
 | 配置契约一致性 | PASS | 文档与代码变量名已对齐 |
-| 真实环境门禁 | FAIL | DB/migration/webhook/入库闭环未完成证据化验证 |
+| 本地/容器化 Gate B 预演 | PASS | `scripts/verify_preprod_gate_b.sh` 已通过，见 `docs/PREPROD_VERIFICATION_RECORD.md` |
+| 本地/容器化 Gate C 回滚演练 | PASS | `scripts/verify_gate_c_rollback.sh` 已通过，见 `docs/ROLLBACK_DRILL_RECORD.md` |
+| 真实共享预生产门禁 | FAIL | 尚未在真实共享预生产环境复跑同一脚本并留痕 |
 | 文档状态一致性 | PASS | 当前 QA / board / checklist 已同步 |
 
 ---
@@ -122,13 +133,13 @@ go vet ./...
 ## 5. 当前问题清单
 
 ### Critical
-1. **真实环境验证闭环缺证据**  
-   - 影响：无法证明 Gate B 已满足  
-   - 建议：补预生产验证记录（真实 DB / migration / webhook / audit / ticket）
+1. **真实共享预生产环境验证闭环缺证据**  
+   - 影响：无法证明共享预生产环境已满足 Gate B  
+   - 建议：在共享预生产环境复跑 `scripts/verify_preprod_gate_b.sh` 并补同结构记录
 
-2. **部署侧 fail-fast 与运行基线未闭环**  
-   - 影响：代码已具备门禁，但部署入口仍可能绕过或缺失运行保障  
-   - 建议：补 DevOps 基线、监控、回滚 runbook
+2. **真实共享预生产/灰度环境运行证据未闭环**  
+   - 影响：本地脚本化演练不能替代真实共享预生产/灰度环境的放量与回滚证据  
+   - 建议：在真实共享预生产环境复跑 Gate B，并在同环境执行一次回滚演练留痕
 
 ### Important
 1. **代码级通过与生产放行边界仍需持续防漂移**  
@@ -146,7 +157,9 @@ go vet ./...
 因此 QA 当前给出的正式门禁结论是：
 
 - **代码级门禁：通过**
-- **预生产门禁：未通过**
+- **本地/容器化 Gate B 预演：通过**
+- **本地/容器化 Gate C 回滚演练：通过**
+- **真实共享预生产门禁：未通过**
 - **生产放行门禁：未通过**
 
 ---

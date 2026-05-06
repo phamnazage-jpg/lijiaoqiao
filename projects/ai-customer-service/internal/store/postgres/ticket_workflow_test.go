@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -191,6 +192,41 @@ func TestTicketWorkflowStore_Resolve(t *testing.T) {
 	}
 }
 
+func TestTicketWorkflowStore_Resolve_ClosedTicketConflict(t *testing.T) {
+	db := openDBForTest(t)
+	defer db.Close()
+
+	sessionStore := NewSessionStore(db)
+	ticketStore := NewTicketStore(db)
+	auditStore := NewAuditStore(db)
+	workflowStore := NewTicketWorkflowStore(db, auditStore)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+	resolvedTime := now.Add(-1 * time.Hour)
+
+	sess, _ := sessionStore.GetOrCreate(ctx, "widget", uniqueID("user"), now)
+	tkt := &ticket.Ticket{
+		ID:         uniqueID("tick"),
+		SessionID:  sess.ID,
+		UserID:     "user1",
+		Priority:   ticket.PriorityP1,
+		Status:     ticket.StatusClosed,
+		Resolution: "done",
+		ResolvedAt: &resolvedTime,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	ticketStore.Create(ctx, tkt)
+
+	err := workflowStore.Resolve(ctx, tkt.ID, "retry", "admin", "127.0.0.1", now)
+	if err == nil {
+		t.Fatal("Resolve() on closed ticket should return error")
+	}
+	if !strings.HasPrefix(err.Error(), "CS_TICKET_4092") {
+		t.Fatalf("Resolve() error = %v, want CS_TICKET_4092 prefix", err)
+	}
+}
+
 func TestTicketWorkflowStore_Close(t *testing.T) {
 	db := openDBForTest(t)
 	defer db.Close()
@@ -259,6 +295,42 @@ func TestTicketWorkflowStore_Close_NotResolved(t *testing.T) {
 	err := workflowStore.Close(ctx, tkt.ID, "user confirmed", "admin", "127.0.0.1", now)
 	if err == nil {
 		t.Fatal("Close() on non-resolved ticket should return error")
+	}
+	if !strings.HasPrefix(err.Error(), "CS_TICKET_4093") {
+		t.Fatalf("Close() error = %v, want CS_TICKET_4093 prefix", err)
+	}
+}
+
+func TestTicketWorkflowStore_Close_AssignedTicketConflict(t *testing.T) {
+	db := openDBForTest(t)
+	defer db.Close()
+
+	sessionStore := NewSessionStore(db)
+	ticketStore := NewTicketStore(db)
+	auditStore := NewAuditStore(db)
+	workflowStore := NewTicketWorkflowStore(db, auditStore)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+
+	sess, _ := sessionStore.GetOrCreate(ctx, "widget", uniqueID("user"), now)
+	tkt := &ticket.Ticket{
+		ID:         uniqueID("tick"),
+		SessionID:  sess.ID,
+		UserID:     "user1",
+		Priority:   ticket.PriorityP1,
+		Status:     ticket.StatusAssigned,
+		AssignedTo: "agent-001",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	ticketStore.Create(ctx, tkt)
+
+	err := workflowStore.Close(ctx, tkt.ID, "premature close", "admin", "127.0.0.1", now)
+	if err == nil {
+		t.Fatal("Close() on assigned ticket should return error")
+	}
+	if !strings.HasPrefix(err.Error(), "CS_TICKET_4093") {
+		t.Fatalf("Close() error = %v, want CS_TICKET_4093 prefix", err)
 	}
 }
 

@@ -450,3 +450,64 @@ func TestTicketHandlerAssign_RejectsWhenActorOnlyProvidedByQuery(t *testing.T) {
 		t.Fatalf("status = %d, want 403", resp.Code)
 	}
 }
+
+func TestTicketHandlerResolve_ReturnsNotFoundForMissingTicket(t *testing.T) {
+	auditRecorder := &ticketAuditRecorder{}
+	svc := newMockTicketService(auditRecorder)
+	h := NewTicketHandler(svc, auditRecorder)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/missing-ticket/resolve?resolution=handled", nil)
+	req = withActor(req, "agent-404", "agent")
+	resp := httptest.NewRecorder()
+	h.Resolve(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.Code)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json decode error = %v", err)
+	}
+	errPayload := payload["error"].(map[string]any)
+	if errPayload["code"] != "CS_TICKET_4001" {
+		t.Fatalf("error code = %v, want CS_TICKET_4001", errPayload["code"])
+	}
+}
+
+func TestTicketHandlerClose_ReturnsConflictWhenTicketNotResolved(t *testing.T) {
+	auditRecorder := &ticketAuditRecorder{}
+	svc := newMockTicketService(auditRecorder)
+	now := time.Date(2026, 4, 29, 21, 0, 0, 0, time.UTC)
+	if err := svc.tickets.Create(context.Background(), &ticket.Ticket{
+		ID:            "ticket-close-conflict-1",
+		SessionID:     "session-close-conflict-1",
+		Priority:      ticket.PriorityP1,
+		Status:        ticket.StatusAssigned,
+		AssignedTo:    "agent-1",
+		HandoffReason: "refund",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	h := NewTicketHandler(svc, auditRecorder)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/tickets/ticket-close-conflict-1/close?resolution=user+confirmed", nil)
+	req = withActor(req, "supervisor-1", "supervisor")
+	resp := httptest.NewRecorder()
+	h.Close(resp, req)
+
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", resp.Code)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json decode error = %v", err)
+	}
+	errPayload := payload["error"].(map[string]any)
+	if errPayload["code"] != "CS_TICKET_4093" {
+		t.Fatalf("error code = %v, want CS_TICKET_4093", errPayload["code"])
+	}
+}

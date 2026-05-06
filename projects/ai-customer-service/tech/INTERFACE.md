@@ -271,12 +271,27 @@ type LLMOptions struct {
 
 | 方法 | 路径 | 描述 |
 |------|------|------|
-| GET | `/api/v1/customer-service/tickets` | 列表工单 |
+| GET | `/api/v1/customer-service/tickets` | 列表 open / assigned / processing 工单 |
 | GET | `/api/v1/customer-service/tickets/{id}` | 获取工单 |
-| POST | `/api/v1/customer-service/tickets/{id}/assign` | 分配工单 |
-| POST | `/api/v1/customer-service/tickets/{id}/resolve` | 解决工单 |
-| POST | `/api/v1/customer-service/tickets/{id}/close` | 关闭工单 |
+| POST | `/api/v1/customer-service/tickets/{id}/assign?agent_id={agent_id}` | 将 `open` 工单分配给客服 |
+| POST | `/api/v1/customer-service/tickets/{id}/resolve?resolution={resolution}` | 将 `assigned`/`processing` 工单标记为 `resolved` |
+| POST | `/api/v1/customer-service/tickets/{id}/close?resolution={resolution}` | 将 `resolved` 工单最终关闭为 `closed` |
 | GET | `/api/v1/customer-service/tickets/stats` | 工单统计 |
+
+#### 工单状态机
+
+| 当前状态 | 允许动作 | 目标状态 |
+|----------|----------|----------|
+| `open` | `assign` | `assigned` |
+| `assigned` | `resolve` | `resolved` |
+| `processing` | `resolve` | `resolved` |
+| `resolved` | `close` | `closed` |
+| `closed` | 无 | 无 |
+
+受保护工单接口使用请求头鉴权：
+
+- `X-CS-Actor-ID`
+- `X-CS-Actor-Role`
 
 #### 知识库
 
@@ -307,8 +322,10 @@ type LLMOptions struct {
 | `CS_SES_4003` | 403 | 身份校验已锁定 |
 | `CS_IDT_4001` | 400 | 身份信息不匹配 |
 | `CS_IDT_4002` | 400 | 验证码错误 |
-| `CS_TKT_4001` | 404 | 工单不存在 |
+| `CS_TICKET_4001` | 404 | 工单不存在 |
 | `CS_TKT_4002` | 409 | 工单已被分配 |
+| `CS_TICKET_4092` | 409 | 工单状态不允许 resolve |
+| `CS_TICKET_4093` | 409 | 工单状态不允许 close |
 | `CS_KB_4001` | 404 | 知识库条目不存在 |
 | `CS_KB_4002` | 409 | 条目名称已存在 |
 | `CS_LLM_5001` | 503 | LLM 服务不可用 |

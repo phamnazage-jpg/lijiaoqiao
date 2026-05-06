@@ -7,6 +7,49 @@
 
 ---
 
+## 0. Gate B 推荐入口
+
+预生产 Gate B 不再建议靠零散手工命令拼接验证。优先使用：
+
+- [scripts/verify_preprod_gate_b.sh](/home/long/project/立交桥/projects/ai-customer-service/scripts/verify_preprod_gate_b.sh)
+- 最近一次实测记录：[PREPROD_VERIFICATION_RECORD.md](/home/long/project/立交桥/projects/ai-customer-service/docs/PREPROD_VERIFICATION_RECORD.md)
+- Gate C 回滚演练入口：[scripts/verify_gate_c_rollback.sh](/home/long/project/立交桥/projects/ai-customer-service/scripts/verify_gate_c_rollback.sh)
+- 最近一次回滚演练记录：[ROLLBACK_DRILL_RECORD.md](/home/long/project/立交桥/projects/ai-customer-service/docs/ROLLBACK_DRILL_RECORD.md)
+
+脚本会完成：
+
+1. 环境变量完整性检查
+2. PostgreSQL 连通性检查
+3. migration 基线检查
+4. 当前源码构建与服务启动
+5. `live` / `ready` 探针检查
+6. signed webhook 联调
+7. dedup 入库验证
+8. ticket / audit 入库闭环验证
+
+推荐执行方式：
+
+```bash
+AI_CS_RUNTIME_ENV=production \
+AI_CS_ADDR=127.0.0.1:18080 \
+AI_CS_POSTGRES_ENABLED=true \
+AI_CS_POSTGRES_DSN='host=localhost port=5434 user=ai_cs password=ai_cs_secret dbname=ai_customer_service sslmode=disable' \
+AI_CS_POSTGRES_MIGRATION_DIR="$PWD/db/migration" \
+AI_CS_WEBHOOK_SECRET='replace-with-real-secret' \
+AI_CS_WEBHOOK_TIMESTAMP_HEADER='X-CS-Timestamp' \
+AI_CS_WEBHOOK_SIGNATURE_HEADER='X-CS-Signature' \
+AI_CS_WEBHOOK_MAX_SKEW_SECONDS=300 \
+scripts/verify_preprod_gate_b.sh
+```
+
+通过标准：
+
+- 脚本退出码为 `0`
+- 输出末尾出现 `summary: pass=... fail=0`
+- 产物目录中保留 `summary.txt`、`service.log`、`webhook_response.json`
+
+---
+
 ## 一、部署前检查清单（Pre-flight）
 
 ```bash
