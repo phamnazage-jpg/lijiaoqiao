@@ -51,6 +51,24 @@
 | `AI_CS_WEBHOOK_SIGNATURE_HEADER` | `X-CS-Signature` | 签名请求头 | 无额外校验 | 可 |
 | `AI_CS_WEBHOOK_MAX_SKEW_SECONDS` | `300` | 最大时钟偏差（秒） | 必须 > 0 | 需安全确认 |
 
+### 1.4 Platform Adapters
+
+| 变量名 | 默认值 | 含义 | 当前代码是否校验 | prod 是否应允许默认值 |
+|---|---|---|---|---|
+| `AI_CS_PLATFORM_ADAPTERS_ENABLED` | `false` | 是否启用平台适配入口 | 解析布尔值 | 视接入计划决定 |
+| `AI_CS_PLATFORM_SUB2API_ENABLED` | `false` | 是否启用 `sub2api` 入站适配 | 解析布尔值 | 视接入计划决定 |
+| `AI_CS_PLATFORM_SUB2API_INGRESS_SECRET` | 空 | `sub2api` 平台 webhook HMAC secret | 启用 `sub2api` 时必填 | **不允许为空** |
+| `AI_CS_PLATFORM_SUB2API_CALLBACK_BASE_URL` | 空 | `sub2api` 回调基地址 | 当前仅解析，不强校验 | 视后续出站回调批次决定 |
+| `AI_CS_PLATFORM_SUB2API_CALLBACK_SECRET` | 空 | `sub2api` 回调签名 secret | 当前仅解析，不强校验 | 视后续出站回调批次决定 |
+| `AI_CS_PLATFORM_SUB2API_CALLBACK_TIMEOUT_MS` | `3000` | `sub2api` 回调超时（毫秒） | 必须 > 0（启用时） | 可 |
+| `AI_CS_PLATFORM_SUB2API_CALLBACK_MAX_RETRIES` | `5` | `sub2api` 回调最大重试次数 | 必须 >= 0（启用时） | 可 |
+| `AI_CS_PLATFORM_NEWAPI_ENABLED` | `false` | 是否启用 `newapi` 入站适配 | 解析布尔值 | 视接入计划决定 |
+| `AI_CS_PLATFORM_NEWAPI_INGRESS_SECRET` | 空 | `newapi` 平台 webhook HMAC secret | 启用 `newapi` 时必填 | **不允许为空** |
+| `AI_CS_PLATFORM_NEWAPI_CALLBACK_BASE_URL` | 空 | `newapi` 回调基地址 | 当前仅解析，不强校验 | 视后续出站回调批次决定 |
+| `AI_CS_PLATFORM_NEWAPI_CALLBACK_SECRET` | 空 | `newapi` 回调签名 secret | 当前仅解析，不强校验 | 视后续出站回调批次决定 |
+| `AI_CS_PLATFORM_NEWAPI_CALLBACK_TIMEOUT_MS` | `3000` | `newapi` 回调超时（毫秒） | 必须 > 0（启用时） | 可 |
+| `AI_CS_PLATFORM_NEWAPI_CALLBACK_MAX_RETRIES` | `5` | `newapi` 回调最大重试次数 | 必须 >= 0（启用时） | 可 |
+
 ---
 
 ## 2. 当前代码已经执行的校验
@@ -64,6 +82,9 @@
 5. `AI_CS_RUNTIME_ENV` 只允许 `production/development/test`
 6. `AI_CS_RUNTIME_ENV=production` 时，`AI_CS_POSTGRES_ENABLED` 必须为 `true`
 7. `AI_CS_RUNTIME_ENV=production` 时，`AI_CS_WEBHOOK_SECRET` 不允许为空
+8. `AI_CS_PLATFORM_ADAPTERS_ENABLED=true` 且对应平台 `*_ENABLED=true` 时，`*_INGRESS_SECRET` 不允许为空
+9. `AI_CS_PLATFORM_*_CALLBACK_TIMEOUT_MS` 在对应平台启用时必须为正数
+10. `AI_CS_PLATFORM_*_CALLBACK_MAX_RETRIES` 在对应平台启用时不允许为负数
 
 ---
 
@@ -86,6 +107,7 @@
 - `DATABASE_URL`
 - `POSTGRES_*`
 - `WEBHOOK_SECRET`
+- `AI_CS_PLATFORM_*`
 - `RATE_LIMIT_*`
 - `LOG_LEVEL`
 - `OPENAI_API_KEY`

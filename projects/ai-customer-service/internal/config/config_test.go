@@ -208,3 +208,70 @@ func TestLoad_RejectsProdWhenWebhookSecretMissing(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestLoad_PlatformAdaptersDisabled_IgnoresPlatformSecrets(t *testing.T) {
+	t.Setenv("AI_CS_PLATFORM_ADAPTERS_ENABLED", "false")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_ENABLED", "true")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_INGRESS_SECRET", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.PlatformAdapters.Enabled {
+		t.Fatalf("platform adapters enabled = true, want false")
+	}
+	if !cfg.PlatformAdapters.Sub2API.Enabled {
+		t.Fatalf("sub2api enabled = false, want true")
+	}
+}
+
+func TestLoad_RejectsEnabledSub2APIWithoutIngressSecret(t *testing.T) {
+	t.Setenv("AI_CS_PLATFORM_ADAPTERS_ENABLED", "true")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_ENABLED", "true")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_INGRESS_SECRET", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when sub2api ingress secret is missing")
+	}
+	if !strings.Contains(err.Error(), "AI_CS_PLATFORM_SUB2API_INGRESS_SECRET") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoad_PlatformAdapterOverrides(t *testing.T) {
+	t.Setenv("AI_CS_PLATFORM_ADAPTERS_ENABLED", "true")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_ENABLED", "true")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_INGRESS_SECRET", "sub2api-secret")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_CALLBACK_BASE_URL", "https://callback.example.com/sub2api")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_CALLBACK_SECRET", "cb-secret")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_CALLBACK_TIMEOUT_MS", "4000")
+	t.Setenv("AI_CS_PLATFORM_SUB2API_CALLBACK_MAX_RETRIES", "7")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.PlatformAdapters.Enabled {
+		t.Fatalf("platform adapters enabled = false, want true")
+	}
+	if !cfg.PlatformAdapters.Sub2API.Enabled {
+		t.Fatalf("sub2api enabled = false, want true")
+	}
+	if cfg.PlatformAdapters.Sub2API.IngressSecret != "sub2api-secret" {
+		t.Fatalf("sub2api ingress secret = %s, want sub2api-secret", cfg.PlatformAdapters.Sub2API.IngressSecret)
+	}
+	if cfg.PlatformAdapters.Sub2API.CallbackBaseURL != "https://callback.example.com/sub2api" {
+		t.Fatalf("sub2api callback base url = %s", cfg.PlatformAdapters.Sub2API.CallbackBaseURL)
+	}
+	if cfg.PlatformAdapters.Sub2API.CallbackSecret != "cb-secret" {
+		t.Fatalf("sub2api callback secret = %s", cfg.PlatformAdapters.Sub2API.CallbackSecret)
+	}
+	if cfg.PlatformAdapters.Sub2API.CallbackTimeoutMS != 4000 {
+		t.Fatalf("sub2api callback timeout ms = %d, want 4000", cfg.PlatformAdapters.Sub2API.CallbackTimeoutMS)
+	}
+	if cfg.PlatformAdapters.Sub2API.CallbackMaxRetries != 7 {
+		t.Fatalf("sub2api callback max retries = %d, want 7", cfg.PlatformAdapters.Sub2API.CallbackMaxRetries)
+	}
+}

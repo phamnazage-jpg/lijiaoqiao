@@ -8,10 +8,11 @@ import (
 )
 
 type Config struct {
-	HTTP     HTTPConfig
-	Postgres PostgresConfig
-	Webhook  WebhookConfig
-	Runtime  RuntimeConfig
+	HTTP             HTTPConfig
+	Postgres         PostgresConfig
+	Webhook          WebhookConfig
+	PlatformAdapters PlatformAdaptersConfig
+	Runtime          RuntimeConfig
 }
 
 type RuntimeConfig struct {
@@ -44,6 +45,21 @@ type WebhookConfig struct {
 	MaxSkewSeconds  int
 }
 
+type PlatformAdaptersConfig struct {
+	Enabled bool
+	Sub2API PlatformAdapterProfileConfig
+	NewAPI  PlatformAdapterProfileConfig
+}
+
+type PlatformAdapterProfileConfig struct {
+	Enabled            bool
+	IngressSecret      string
+	CallbackBaseURL    string
+	CallbackSecret     string
+	CallbackTimeoutMS  int
+	CallbackMaxRetries int
+}
+
 func Load() (*Config, error) {
 	cfg := &Config{
 		HTTP: HTTPConfig{
@@ -69,6 +85,25 @@ func Load() (*Config, error) {
 			SignatureHeader: getEnv("AI_CS_WEBHOOK_SIGNATURE_HEADER", "X-CS-Signature"),
 			MaxSkewSeconds:  getEnvInt("AI_CS_WEBHOOK_MAX_SKEW_SECONDS", 300),
 		},
+		PlatformAdapters: PlatformAdaptersConfig{
+			Enabled: getEnvBool("AI_CS_PLATFORM_ADAPTERS_ENABLED", false),
+			Sub2API: PlatformAdapterProfileConfig{
+				Enabled:            getEnvBool("AI_CS_PLATFORM_SUB2API_ENABLED", false),
+				IngressSecret:      getEnv("AI_CS_PLATFORM_SUB2API_INGRESS_SECRET", ""),
+				CallbackBaseURL:    getEnv("AI_CS_PLATFORM_SUB2API_CALLBACK_BASE_URL", ""),
+				CallbackSecret:     getEnv("AI_CS_PLATFORM_SUB2API_CALLBACK_SECRET", ""),
+				CallbackTimeoutMS:  getEnvInt("AI_CS_PLATFORM_SUB2API_CALLBACK_TIMEOUT_MS", 3000),
+				CallbackMaxRetries: getEnvInt("AI_CS_PLATFORM_SUB2API_CALLBACK_MAX_RETRIES", 5),
+			},
+			NewAPI: PlatformAdapterProfileConfig{
+				Enabled:            getEnvBool("AI_CS_PLATFORM_NEWAPI_ENABLED", false),
+				IngressSecret:      getEnv("AI_CS_PLATFORM_NEWAPI_INGRESS_SECRET", ""),
+				CallbackBaseURL:    getEnv("AI_CS_PLATFORM_NEWAPI_CALLBACK_BASE_URL", ""),
+				CallbackSecret:     getEnv("AI_CS_PLATFORM_NEWAPI_CALLBACK_SECRET", ""),
+				CallbackTimeoutMS:  getEnvInt("AI_CS_PLATFORM_NEWAPI_CALLBACK_TIMEOUT_MS", 3000),
+				CallbackMaxRetries: getEnvInt("AI_CS_PLATFORM_NEWAPI_CALLBACK_MAX_RETRIES", 5),
+			},
+		},
 		Runtime: RuntimeConfig{
 			Env: normalizeRuntimeEnv(getEnv("AI_CS_RUNTIME_ENV", getEnv("AI_CS_ENV", "development"))),
 		},
@@ -85,6 +120,12 @@ func Load() (*Config, error) {
 	if cfg.Webhook.MaxSkewSeconds <= 0 {
 		return nil, fmt.Errorf("AI_CS_WEBHOOK_MAX_SKEW_SECONDS must be positive")
 	}
+	if err := validatePlatformProfile("sub2api", cfg.PlatformAdapters.Enabled, cfg.PlatformAdapters.Sub2API); err != nil {
+		return nil, err
+	}
+	if err := validatePlatformProfile("newapi", cfg.PlatformAdapters.Enabled, cfg.PlatformAdapters.NewAPI); err != nil {
+		return nil, err
+	}
 	if cfg.Runtime.Env != "production" && cfg.Runtime.Env != "development" && cfg.Runtime.Env != "test" {
 		return nil, fmt.Errorf("AI_CS_RUNTIME_ENV must be one of production/development/test, got: %s", cfg.Runtime.Env)
 	}
@@ -95,6 +136,23 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("AI_CS_WEBHOOK_SECRET must not be empty in production")
 	}
 	return cfg, nil
+}
+
+func validatePlatformProfile(platform string, adaptersEnabled bool, profile PlatformAdapterProfileConfig) error {
+	if !adaptersEnabled || !profile.Enabled {
+		return nil
+	}
+	upperPlatform := strings.ToUpper(platform)
+	if strings.TrimSpace(profile.IngressSecret) == "" {
+		return fmt.Errorf("AI_CS_PLATFORM_%s_INGRESS_SECRET must not be empty when platform ingress is enabled", upperPlatform)
+	}
+	if profile.CallbackTimeoutMS <= 0 {
+		return fmt.Errorf("AI_CS_PLATFORM_%s_CALLBACK_TIMEOUT_MS must be positive", upperPlatform)
+	}
+	if profile.CallbackMaxRetries < 0 {
+		return fmt.Errorf("AI_CS_PLATFORM_%s_CALLBACK_MAX_RETRIES must not be negative", upperPlatform)
+	}
+	return nil
 }
 
 func normalizeRuntimeEnv(value string) string {

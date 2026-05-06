@@ -104,6 +104,26 @@ func TestNew_AllowsMemoryModeInTestEnv(t *testing.T) {
 	}
 }
 
+func TestNew_RegistersPlatformWebhookRouteWhenSub2APIEnabled(t *testing.T) {
+	cfg := minimalHTTPConfig()
+	cfg.Webhook.Secret = "test-secret"
+	cfg.PlatformAdapters.Enabled = true
+	cfg.PlatformAdapters.Sub2API.Enabled = true
+	cfg.PlatformAdapters.Sub2API.IngressSecret = "sub2api-secret"
+
+	app, err := New(cfg, logging.New())
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/customer-service/platforms/sub2api/webhook", nil)
+	rr := httptest.NewRecorder()
+	app.Server.Handler.ServeHTTP(rr, req)
+	if rr.Code == http.StatusNotFound {
+		t.Fatal("platform webhook route returned 404; route should be registered")
+	}
+}
+
 func TestApp_TicketStore(t *testing.T) {
 	cfg := minimalHTTPConfig()
 	cfg.Webhook.Secret = "test-secret"

@@ -1,13 +1,20 @@
 package httpserver
 
 import (
+	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
+	"github.com/bridge/ai-customer-service/internal/domain/message"
 	"github.com/bridge/ai-customer-service/internal/http/handlers"
 	"github.com/bridge/ai-customer-service/internal/http/middleware"
 	"github.com/bridge/ai-customer-service/internal/platform/health"
+	"github.com/bridge/ai-customer-service/internal/platformadapter"
+	"github.com/bridge/ai-customer-service/internal/service/dialog"
 )
 
 func TestRouter_HealthEndpoint(t *testing.T) {
@@ -256,5 +263,52 @@ func TestRouter_SessionHandoff_RejectsWhenAuthHeadersMissing(t *testing.T) {
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("POST /sessions/s1/handoff without auth = %d, want 403", rr.Code)
+	}
+}
+
+type stubPlatformRouterProcessor struct{}
+
+func (s *stubPlatformRouterProcessor) Process(_ context.Context, _ *message.UnifiedMessage) (*dialog.Result, error) {
+	return &dialog.Result{SessionID: "sess-router"}, nil
+}
+
+func TestRouter_PlatformWebhookRoute_Registered(t *testing.T) {
+	probe := health.NewProbe()
+	probe.SetReady(true)
+	h := handlers.NewHealthHandler(probe)
+	platformHandler := handlers.NewPlatformWebhookHandler(&stubPlatformRouterProcessor{}, platformadapter.NewRegistry(platformadapter.NewSub2APIAdapter()), nil)
+	router := NewRouter(RouterDeps{Health: h, PlatformWebhook: platformHandler})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/customer-service/platforms/sub2api/webhook", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code == http.StatusNotFound {
+		t.Fatalf("platform webhook route returned 404; route not registered")
+	}
+}
+
+func TestRouter_PlatformWebhookRoute_RejectsWhenSignatureMissing(t *testing.T) {
+	probe := health.NewProbe()
+	probe.SetReady(true)
+	h := handlers.NewHealthHandler(probe)
+	platformHandler := handlers.NewPlatformWebhookHandler(&stubPlatformRouterProcessor{}, platformadapter.NewRegistry(platformadapter.NewSub2APIAdapter()), nil)
+	router := NewRouter(RouterDeps{
+		Health:          h,
+		PlatformWebhook: platformHandler,
+		PlatformWebhookAuth: handlers.PlatformWebhookSecurity{
+			Sub2APISecret:   "sub2api-secret",
+			TimestampHeader: "X-CS-Timestamp",
+			SignatureHeader: "X-CS-Signature",
+			MaxSkew:         5 * time.Minute,
+		},
+	})
+
+	body := []byte(`{"message_id":"m1","channel":"sub2api","open_id":"u1","content":"hello"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customer-service/platforms/sub2api/webhook", bytes.NewReader(body))
+	req.Header.Set("X-CS-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("POST /platforms/sub2api/webhook without signature = %d, want 403", rr.Code)
 	}
 }

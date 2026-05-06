@@ -11,14 +11,16 @@ import (
 )
 
 type RouterDeps struct {
-	Health       *handlers.HealthHandler
-	Webhook      *handlers.WebhookHandler
-	Tickets      *handlers.TicketHandler
-	TicketStats  *handlers.TicketStatsHandler
-	Sessions     *handlers.SessionHandler
-	WebhookAuth  handlers.WebhookSecurity
-	MaxBodyBytes int64
-	RateLimiter  *httpx.RateLimiter
+	Health              *handlers.HealthHandler
+	Webhook             *handlers.WebhookHandler
+	PlatformWebhook     *handlers.PlatformWebhookHandler
+	PlatformWebhookAuth handlers.PlatformWebhookSecurity
+	Tickets             *handlers.TicketHandler
+	TicketStats         *handlers.TicketStatsHandler
+	Sessions            *handlers.SessionHandler
+	WebhookAuth         handlers.WebhookSecurity
+	MaxBodyBytes        int64
+	RateLimiter         *httpx.RateLimiter
 }
 
 func NewRouter(deps RouterDeps) http.Handler {
@@ -51,6 +53,15 @@ func NewRouter(deps RouterDeps) http.Handler {
 	}
 	webhookChannel = deps.WebhookAuth.Wrap(webhookChannel)
 	mux.Handle("/api/v1/customer-service/webhook/", webhookChannel)
+
+	if deps.PlatformWebhook != nil {
+		platformWebhook := httpx.WithBodyLimit(http.HandlerFunc(deps.PlatformWebhook.Handle), deps.MaxBodyBytes)
+		if deps.RateLimiter != nil {
+			platformWebhook = deps.RateLimiter.WithRateLimit(platformWebhook)
+		}
+		platformWebhook = deps.PlatformWebhookAuth.Wrap(platformWebhook)
+		mux.Handle("/api/v1/customer-service/platforms/", platformWebhook)
+	}
 
 	if deps.Tickets != nil {
 		mux.HandleFunc("/api/v1/customer-service/tickets", func(w http.ResponseWriter, r *http.Request) {

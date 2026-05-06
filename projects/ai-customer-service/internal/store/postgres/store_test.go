@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -40,6 +41,10 @@ func openDBForTest(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("failed to open DB: %v", err)
 	}
+	if err := RunMigrations(db, filepath.Join("..", "..", "..", "db", "migration")); err != nil {
+		_ = db.Close()
+		t.Fatalf("failed to run migrations: %v", err)
+	}
 	return db
 }
 
@@ -70,7 +75,7 @@ func TestTicketStore_CreateAndGet(t *testing.T) {
 		AssignedTo:      "agent-001",
 		ContextSnapshot: map[string]any{"key": "value"},
 		CreatedAt:       now,
-		UpdatedAt:        now,
+		UpdatedAt:       now,
 	}
 
 	if err := ticketStore.Create(ctx, tkt); err != nil {

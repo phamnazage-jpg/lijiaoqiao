@@ -318,6 +318,12 @@ TEC-01 ~ TEC-10（全 10 条）
 
 ### 7.4 NewAPI / Sub2API 适配层验证
 
+当前实现状态：
+- **Sub2API 最小接入链路已落地并有自动化覆盖**
+  - `test/integration/sub2api_webhook_flow_test.go`
+  - `test/e2e/sub2api_callback_flow_test.go`
+- **NewAPI 仍为同构占位，未启用真实 profile**
+
 | 用例 ID | 描述 | 类型 | 验证条件 |
 |---------|------|------|---------|
 | TCS-ADP-01 | Webhook 转发适配 | Integration | Given NewAPI/Sub2API 按标准 Webhook 推送消息 When 适配层处理 Then 消息被正确转换为 `UnifiedMessage` 并进入主链路 |
@@ -340,6 +346,12 @@ TEC-01 ~ TEC-10（全 10 条）
 - [ ] 审计日志对会话、工单、知识库变更全量留痕，写失败会阻断高风险操作
 - [ ] Prompt Injection、越权访问、适配层限流/熔断三类高风险测试全部通过
 - [ ] 至少一条主路径、一条关键失败路径、一条集成模式链路完成真实验证
+
+适配层当前已完成的自动化闭环：
+- [x] Sub2API 入站签名 + 主链处理 + outbox 入库
+- [x] Sub2API callback 成功投递顺序验证
+- [x] Sub2API callback 死信路径验证
+- [ ] NewAPI profile 实现与验证
 
 ### 8.2 阶段门控结论
 

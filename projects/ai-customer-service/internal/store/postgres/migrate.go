@@ -52,7 +52,7 @@ func RunMigrations(db *sql.DB, dir string) error {
 			_ = tx.Rollback()
 			return fmt.Errorf("apply migration %s: %w", name, err)
 		}
-		if _, err := tx.Exec(`INSERT INTO cs_schema_migrations(version) VALUES ($1)`, version); err != nil {
+		if _, err := tx.Exec(`INSERT INTO cs_schema_migrations(version) VALUES ($1) ON CONFLICT (version) DO NOTHING`, version); err != nil {
 			_ = tx.Rollback()
 			return err
 		}

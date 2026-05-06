@@ -14,9 +14,11 @@ import (
 	"github.com/bridge/ai-customer-service/internal/http/handlers"
 	"github.com/bridge/ai-customer-service/internal/platform/health"
 	"github.com/bridge/ai-customer-service/internal/platform/httpx"
+	"github.com/bridge/ai-customer-service/internal/platformadapter"
 	"github.com/bridge/ai-customer-service/internal/service/dialog"
 	"github.com/bridge/ai-customer-service/internal/service/handoff"
 	intentservice "github.com/bridge/ai-customer-service/internal/service/intent"
+	"github.com/bridge/ai-customer-service/internal/service/platformdelivery"
 	"github.com/bridge/ai-customer-service/internal/service/reply"
 	memoryStore "github.com/bridge/ai-customer-service/internal/store/memory"
 	pgstore "github.com/bridge/ai-customer-service/internal/store/postgres"
@@ -52,9 +54,11 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		audits            dialog.AuditRepository
 		tickets           dialog.TicketRepository
 		dedup             dialog.DedupRepository
+		platformEvents    *pgstore.PlatformEventStore
 		ticketService     handlers.TicketService
 		checkers          []health.Checker
 		closers           []func() error
+		workerClosers     []func() error
 		ticketListerStore ticketLister
 		sessionStore      dialog.SessionRepository
 		ticketStore       dialog.TicketRepository
@@ -75,6 +79,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		auditStore := pgstore.NewAuditStore(db)
 		ticketStore := pgstore.NewTicketStore(db)
 		dedupStore := pgstore.NewDedupStore(db)
+		platformEvents = pgstore.NewPlatformEventStore(db)
 		sessions = sessionStore
 		audits = auditStore
 		tickets = ticketStore
@@ -111,7 +116,74 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	ticketStatsHandler := handlers.NewTicketStatsHandler(ticketListerStore, audits)
 	sessionHandler := handlers.NewSessionHandler(sessionStore, ticketStore, audits)
 	webhookSecurity := handlers.WebhookSecurity{Secret: cfg.Webhook.Secret, TimestampHeader: cfg.Webhook.TimestampHeader, SignatureHeader: cfg.Webhook.SignatureHeader, MaxSkew: time.Duration(cfg.Webhook.MaxSkewSeconds) * time.Second, Audit: audits}
-	router := httpserver.NewRouter(httpserver.RouterDeps{Health: healthHandler, Webhook: webhookHandler, Tickets: ticketHandler, TicketStats: ticketStatsHandler, Sessions: sessionHandler, WebhookAuth: webhookSecurity, MaxBodyBytes: cfg.HTTP.MaxBodyBytes, RateLimiter: rateLimiter})
+
+	var (
+		platformWebhookHandler *handlers.PlatformWebhookHandler
+		platformWebhookAuth    handlers.PlatformWebhookSecurity
+	)
+	if cfg.PlatformAdapters.Enabled {
+		var adapters []platformadapter.PlatformAdapter
+		if cfg.PlatformAdapters.Sub2API.Enabled {
+			adapters = append(adapters, platformadapter.NewSub2APIAdapter())
+		}
+		if cfg.PlatformAdapters.NewAPI.Enabled {
+			adapters = append(adapters, platformadapter.NewNewAPIAdapter())
+		}
+		if len(adapters) > 0 {
+			platformWebhookHandler = handlers.NewPlatformWebhookHandler(dialogSvc, platformadapter.NewRegistry(adapters...), platformEvents)
+			platformWebhookAuth = handlers.PlatformWebhookSecurity{
+				TimestampHeader: cfg.Webhook.TimestampHeader,
+				SignatureHeader: cfg.Webhook.SignatureHeader,
+				MaxSkew:         time.Duration(cfg.Webhook.MaxSkewSeconds) * time.Second,
+				Audit:           audits,
+				Sub2APISecret:   cfg.PlatformAdapters.Sub2API.IngressSecret,
+				NewAPISecret:    cfg.PlatformAdapters.NewAPI.IngressSecret,
+			}
+		}
+	}
+
+	router := httpserver.NewRouter(httpserver.RouterDeps{
+		Health:              healthHandler,
+		Webhook:             webhookHandler,
+		PlatformWebhook:     platformWebhookHandler,
+		PlatformWebhookAuth: platformWebhookAuth,
+		Tickets:             ticketHandler,
+		TicketStats:         ticketStatsHandler,
+		Sessions:            sessionHandler,
+		WebhookAuth:         webhookSecurity,
+		MaxBodyBytes:        cfg.HTTP.MaxBodyBytes,
+		RateLimiter:         rateLimiter,
+	})
+
+	if cfg.PlatformAdapters.Enabled && platformEvents != nil {
+		startWorker := func(platform string, profile config.PlatformAdapterProfileConfig) {
+			if !profile.Enabled || profile.CallbackBaseURL == "" || profile.CallbackSecret == "" {
+				return
+			}
+			workerCtx, cancel := context.WithCancel(context.Background())
+			workerClosers = append(workerClosers, func() error {
+				cancel()
+				return nil
+			})
+			worker := platformdelivery.NewWorker(
+				platform,
+				profile.CallbackBaseURL,
+				platformEvents,
+				&http.Client{Timeout: time.Duration(profile.CallbackTimeoutMS) * time.Millisecond},
+				platformdelivery.Signer{
+					Secret:          profile.CallbackSecret,
+					TimestampHeader: cfg.Webhook.TimestampHeader,
+					SignatureHeader: cfg.Webhook.SignatureHeader,
+				},
+				profile.CallbackMaxRetries,
+			)
+			worker.Logger = logger
+			go worker.Start(workerCtx)
+		}
+		startWorker("sub2api", cfg.PlatformAdapters.Sub2API)
+		startWorker("newapi", cfg.PlatformAdapters.NewAPI)
+	}
+	closers = append(workerClosers, closers...)
 
 	return &App{
 		Server: &http.Server{

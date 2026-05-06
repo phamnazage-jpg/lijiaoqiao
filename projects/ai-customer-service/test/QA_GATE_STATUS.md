@@ -43,6 +43,7 @@
 - `prd/PRODUCTION_CHECKLIST.md`
 - `docs/CONFIG_CONTRACT_BASELINE.md`
 - `docs/P0_P1_P2_RECTIFICATION_EXECUTION_BOARD.md`
+- `docs/RUNBOOK_PLATFORM_CALLBACKS.md`
 
 ### 1.3 本轮已执行验证
 ```bash
@@ -52,6 +53,10 @@ go vet ./...
 AI_CS_RUNTIME_ENV=production ... scripts/verify_preprod_gate_b.sh
 AI_CS_RUNTIME_ENV=production ... scripts/verify_gate_c_rollback.sh
 ```
+
+适配层新增实测：
+- `go test ./test/integration ./test/e2e -count=1`
+- 覆盖 `Sub2API` 平台入口、outbox、callback 成功投递、callback 死信路径
 
 ### 1.4 关键事实校准
 - 当前仓库实测结论：**全量 Go 测试与 `go vet` 已通过**
@@ -76,6 +81,7 @@ AI_CS_RUNTIME_ENV=production ... scripts/verify_gate_c_rollback.sh
 
 ### 2.1 已通过项
 - webhook / dialog / handoff / ticket 主链已落地
+- `Sub2API` 平台适配入口、outbox、callback worker、死信链路已落地并有自动化覆盖
 - feedback / handoff / stats 等 Phase 1 核心接口已具备
 - Webhook HMAC / timestamp / dedup / body limit / rate limit 已存在
 - Postgres 持久化链路已接通
